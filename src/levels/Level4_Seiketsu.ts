@@ -11,7 +11,7 @@ const posicionesZonas: Record<ZonaChecklist, number> = {
   descartar: 2,
 };
 
-export function cargarNivel4(scene: Scene, hud: HUD) {
+export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
 
   const suelo = MeshBuilder.CreateGround("sueloN4", { width: 10, height: 10 }, scene);
@@ -61,14 +61,12 @@ export function cargarNivel4(scene: Scene, hud: HUD) {
 
         if (itemsResueltos === items.length) {
           corriendoTiempo = false;
-          // "Prueba" del estándar: el NPC camina hasta el checklist ya
-          // armado — como el checklist quedó bien clasificado, la prueba
-          // siempre resulta exitosa; el desafío real ya ocurrió al elegir.
           npc.caminarHacia(new Vector3(posicionesZonas.checklist, 0.6, 1.8), 2, () => {
             const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
             const bonusTiempo = Math.max(0, 60 - segundosTotales);
             gameManager.sumarPuntos(bonusTiempo);
-            hud.mostrarResultadoFinal(itemsResueltos * 10, bonusTiempo, segundosTotales);
+            onCompletado();
+            hud.mostrarResultadoFinal("Nivel 4", itemsResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
           });
         }
       } else {

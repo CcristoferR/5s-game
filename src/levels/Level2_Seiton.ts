@@ -6,7 +6,7 @@ import { crearShelfSlot } from "../entities/ShelfSlot";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
-export function cargarNivel2(scene: Scene, hud: HUD) {
+export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel2", true, scene);
 
@@ -55,7 +55,8 @@ export function cargarNivel2(scene: Scene, hud: HUD) {
           const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
           const bonusTiempo = Math.max(0, 60 - segundosTotales);
           gameManager.sumarPuntos(bonusTiempo);
-          hud.mostrarResultadoFinal(objetosResueltos * 10, bonusTiempo, segundosTotales);
+          onCompletado();
+          hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
         }
       } else {
         hud.mostrarFeedback(false, objeto.datos.explicacion);

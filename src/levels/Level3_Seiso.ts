@@ -5,7 +5,7 @@ import { mostrarPanelOpciones } from "../ui/ChoicePanel";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
-export function cargarNivel3(scene: Scene, hud: HUD) {
+export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
 
   const suelo = MeshBuilder.CreateGround("sueloN3", { width: 10, height: 10 }, scene);
@@ -50,7 +50,8 @@ export function cargarNivel3(scene: Scene, hud: HUD) {
             const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
             const bonusTiempo = Math.max(0, 60 - segundosTotales);
             gameManager.sumarPuntos(bonusTiempo);
-            hud.mostrarResultadoFinal(manchasLimpias * 5 + 20, bonusTiempo, segundosTotales);
+            onCompletado();
+            hud.mostrarResultadoFinal("Nivel 3", manchasLimpias * 5 + 20, bonusTiempo, segundosTotales, onVolverMenu);
           } else {
             hud.mostrarFeedback(false, opcion.explicacion);
           }

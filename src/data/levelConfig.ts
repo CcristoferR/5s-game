@@ -183,3 +183,50 @@ export const itemsNivel4: ItemChecklistNivel4[] = [
     explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo.",
   },
 ];
+
+// Datos del Nivel 5 (Shitsuke / Disciplina) — modo auditoría.
+export interface PuntoControlNivel5 {
+  id: string;
+  posicion: [number, number];
+  descripcionControl: string; // qué se revisa en ese punto, sin revelar si está mal
+  tieneDesviacion: boolean;
+  explicacion: string;
+}
+
+export const puntosControlNivel5: PuntoControlNivel5[] = [
+  {
+    id: "p1",
+    posicion: [-1.5, 0.2],
+    descripcionControl: "Ubicación del teléfono según estándar",
+    tieneDesviacion: false,
+    explicacion: "El teléfono está en su lugar asignado — sin desviación.",
+  },
+  {
+    id: "p2",
+    posicion: [-0.5, -0.2],
+    descripcionControl: "Vigencia de la tarjeta roja del área",
+    tieneDesviacion: true,
+    explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse.",
+  },
+  {
+    id: "p3",
+    posicion: [0.5, 0.1],
+    descripcionControl: "Estado de limpieza del área de trabajo",
+    tieneDesviacion: true,
+    explicacion: "Apareció una mancha nueva desde la última auditoría.",
+  },
+  {
+    id: "p4",
+    posicion: [1.5, -0.1],
+    descripcionControl: "Ubicación de la carpeta de proyecto",
+    tieneDesviacion: false,
+    explicacion: "La carpeta está archivada correctamente según el estándar.",
+  },
+  {
+    id: "p5",
+    posicion: [0, 0.3],
+    descripcionControl: "Organización general del estante",
+    tieneDesviacion: true,
+    explicacion: "Un objeto quedó fuera de su casilla asignada.",
+  },
+];

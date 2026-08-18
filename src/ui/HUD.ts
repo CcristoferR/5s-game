@@ -1,5 +1,5 @@
 import { Scene } from "@babylonjs/core";
-import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel, Button } from "@babylonjs/gui";
 
 export class HUD {
   private textoPuntaje: TextBlock;
@@ -8,6 +8,7 @@ export class HUD {
   private textoFeedback: TextBlock;
   private pantallaFinal: Rectangle;
   private textoPantallaFinal: TextBlock;
+  private botonVolverMenu: Button;
 
   constructor(scene: Scene) {
     const gui = AdvancedDynamicTexture.CreateFullscreenUI("hudPrincipal", true, scene);
@@ -52,11 +53,9 @@ export class HUD {
     this.textoFeedback.textWrapping = true;
     this.cartelFeedback.addControl(this.textoFeedback);
 
-    // Pantalla de resultado final: más grande, centrada, tapa el juego —
-    // se distingue claramente del cartelito de feedback de cada objeto.
     this.pantallaFinal = new Rectangle("pantallaFinal");
     this.pantallaFinal.width = "480px";
-    this.pantallaFinal.height = "260px";
+    this.pantallaFinal.height = "300px";
     this.pantallaFinal.cornerRadius = 16;
     this.pantallaFinal.thickness = 0;
     this.pantallaFinal.background = "rgba(15, 20, 18, 0.95)";
@@ -67,7 +66,20 @@ export class HUD {
     this.textoPantallaFinal.color = "white";
     this.textoPantallaFinal.fontSize = 20;
     this.textoPantallaFinal.textWrapping = true;
+    this.textoPantallaFinal.top = "-40px";
     this.pantallaFinal.addControl(this.textoPantallaFinal);
+
+    // Botón para volver al mapa de niveles — se crea una sola vez, oculto
+    // hasta que se muestra el resultado final del nivel.
+    this.botonVolverMenu = Button.CreateSimpleButton("btnVolverMenu", "Volver al menú");
+    this.botonVolverMenu.width = "200px";
+    this.botonVolverMenu.height = "42px";
+    this.botonVolverMenu.color = "white";
+    this.botonVolverMenu.cornerRadius = 8;
+    this.botonVolverMenu.thickness = 0;
+    this.botonVolverMenu.background = "#2e7d46";
+    this.botonVolverMenu.top = "100px";
+    this.pantallaFinal.addControl(this.botonVolverMenu);
   }
 
   actualizarPuntaje(puntaje: number): void {
@@ -76,6 +88,10 @@ export class HUD {
 
   actualizarTiempo(segundos: number): void {
     this.textoTiempo.text = `Tiempo: ${segundos}s`;
+  }
+
+  actualizarTiempoRestante(segundos: number): void {
+    this.textoTiempo.text = `Tiempo restante: ${segundos}s`;
   }
 
   mostrarFeedback(correcto: boolean, mensaje: string): void {
@@ -88,13 +104,16 @@ export class HUD {
     }, 2200);
   }
 
-  mostrarResultadoFinal(puntosBase: number, bonusTiempo: number, segundosTotales: number): void {
+  mostrarResultadoFinal(nombreNivel: string, puntosBase: number, bonusTiempo: number, segundosTotales: number, onVolverMenu: () => void): void {
     const total = puntosBase + bonusTiempo;
     this.textoPantallaFinal.text =
-      `🎉 Nivel 1 completado\n\n` +
-      `Puntos por clasificación: ${puntosBase}\n` +
+      `🎉 ${nombreNivel} completado\n\n` +
+      `Puntos por desempeño: ${puntosBase}\n` +
       `Bonus por tiempo (${segundosTotales}s): +${bonusTiempo}\n\n` +
       `Total: ${total}`;
     this.pantallaFinal.isVisible = true;
+
+    this.botonVolverMenu.onPointerUpObservable.clear();
+    this.botonVolverMenu.onPointerUpObservable.add(onVolverMenu);
   }
 }

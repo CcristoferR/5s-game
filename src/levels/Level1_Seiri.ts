@@ -11,7 +11,7 @@ const posicionesZonas: Record<ZonaClasificacion, number> = {
   descartar: 2,
 };
 
-export function cargarNivel1(scene: Scene, hud: HUD) {
+export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
 
   const suelo = MeshBuilder.CreateGround("suelo", { width: 10, height: 10 }, scene);
@@ -32,8 +32,6 @@ export function cargarNivel1(scene: Scene, hud: HUD) {
   const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15));
   const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2));
 
-  // Cronómetro: arranca al cargar el nivel, se detiene al completar el
-  // último objeto. Cumple el "+ tiempo" que pide la guía en el scoring.
   const inicioNivel = performance.now();
   let corriendoTiempo = true;
 
@@ -63,10 +61,10 @@ export function cargarNivel1(scene: Scene, hud: HUD) {
         if (objetosResueltos === objetos.length) {
           corriendoTiempo = false;
           const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
-          // Bonus simple: mientras más rápido, más puntos extra, con un piso de 0.
           const bonusTiempo = Math.max(0, 60 - segundosTotales);
           gameManager.sumarPuntos(bonusTiempo);
-          hud.mostrarResultadoFinal(objetosResueltos * 10, bonusTiempo, segundosTotales);
+          onCompletado();
+          hud.mostrarResultadoFinal("Nivel 1", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
         }
       } else {
         hud.mostrarFeedback(false, objeto.datos.explicacion);
