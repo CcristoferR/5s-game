@@ -92,3 +92,94 @@ export const objetosNivel2: ObjetoNivel2[] = [
     explicacion: "Se necesita tomar rápido y seguido — mejor en el borde, a mano.",
   },
 ];
+
+// Datos del Nivel 3 (Seiso / Limpiar).
+export interface ManchaNivel3 {
+  id: string;
+  posicion: [number, number];
+}
+
+export interface OpcionCausaNivel3 {
+  id: string;
+  texto: string;
+  esCorrecta: boolean;
+  explicacion: string;
+}
+
+export const manchasNivel3: ManchaNivel3[] = [
+  { id: "m1", posicion: [-0.8, -0.3] },
+  { id: "m2", posicion: [0.2, 0.1] },
+  { id: "m3", posicion: [1.0, -0.1] },
+];
+
+export const preguntaCausaNivel3 = "¿Cuál es el origen más probable de estas manchas de aceite?";
+
+export const opcionesCausaNivel3: OpcionCausaNivel3[] = [
+  {
+    id: "fuga_maquina",
+    texto: "Fuga de aceite en la máquina cercana",
+    esCorrecta: true,
+    explicacion: "Correcto — las manchas concentradas cerca del mismo punto suelen indicar una fuga activa, no derrames aislados.",
+  },
+  {
+    id: "filtro_sucio",
+    texto: "Filtro de aire sucio",
+    esCorrecta: false,
+    explicacion: "Un filtro sucio afecta el rendimiento del equipo, pero no genera manchas de aceite en el suelo.",
+  },
+  {
+    id: "mal_habito",
+    texto: "Mal hábito del turno anterior",
+    esCorrecta: false,
+    explicacion: "Posible, pero manchas repetidas en el mismo lugar apuntan primero a una causa mecánica, no humana.",
+  },
+];
+
+// Datos del Nivel 4 (Seiketsu / Estandarizar).
+export type ZonaChecklist = "checklist" | "descartar";
+
+export interface ItemChecklistNivel4 {
+  id: string;
+  textoVisible: string;
+  posicionInicial: [number, number, number];
+  zonaCorrecta: ZonaChecklist;
+  explicacion: string;
+}
+
+export const itemsNivel4: ItemChecklistNivel4[] = [
+  {
+    id: "limpiar_vago",
+    textoVisible: "Limpiar el escritorio cada cierto tiempo",
+    posicionInicial: [-1.6, 0.9, 0.2],
+    zonaCorrecta: "descartar",
+    explicacion: "Demasiado vago — 'cada cierto tiempo' no es medible, cada persona lo interpretaría distinto.",
+  },
+  {
+    id: "limpiar_claro",
+    textoVisible: "Limpiar con paño húmedo al finalizar el turno",
+    posicionInicial: [-0.8, 0.9, -0.2],
+    zonaCorrecta: "checklist",
+    explicacion: "Claro y medible — cualquiera puede seguir esta instrucción sin ambigüedad.",
+  },
+  {
+    id: "archivar_vago",
+    textoVisible: "Guardar los documentos en algún lugar ordenado",
+    posicionInicial: [0, 0.9, 0.3],
+    zonaCorrecta: "descartar",
+    explicacion: "No dice dónde ni cómo — deja la decisión al criterio de cada persona, eso no es un estándar.",
+  },
+  {
+    id: "archivar_claro",
+    textoVisible: "Archivar en carpeta por proyecto, ordenado por fecha",
+    posicionInicial: [0.8, 0.9, -0.1],
+    zonaCorrecta: "checklist",
+    explicacion: "Instrucción específica y replicable por cualquier persona nueva en el puesto.",
+  },
+  {
+    id: "correo_personal",
+    textoVisible: "Revisar el correo personal",
+    posicionInicial: [1.6, 0.9, 0.2],
+    zonaCorrecta: "descartar",
+    explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo.",
+  },
+];
