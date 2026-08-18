@@ -157,14 +157,14 @@ export const itemsNivel4: ItemChecklistNivel4[] = [
   {
     id: "limpiar_vago",
     textoVisible: "Limpiar el escritorio cada cierto tiempo",
-    posicionInicial: [-1.6, 0.9, 0.2],
+    posicionInicial: [-1.8, 0.9, 0.2],
     zonaCorrecta: "descartar",
     explicacion: "Demasiado vago — 'cada cierto tiempo' no es medible, cada persona lo interpretaría distinto.",
   },
   {
     id: "limpiar_claro",
     textoVisible: "Limpiar con paño húmedo al finalizar el turno",
-    posicionInicial: [-0.8, 0.9, -0.2],
+    posicionInicial: [-0.9, 0.9, -0.2],
     zonaCorrecta: "checklist",
     explicacion: "Claro y medible — cualquiera puede seguir esta instrucción sin ambigüedad.",
   },
@@ -178,14 +178,14 @@ export const itemsNivel4: ItemChecklistNivel4[] = [
   {
     id: "archivar_claro",
     textoVisible: "Archivar en carpeta por proyecto, ordenado por fecha",
-    posicionInicial: [0.8, 0.9, -0.1],
+    posicionInicial: [0.9, 0.9, -0.1],
     zonaCorrecta: "checklist",
     explicacion: "Instrucción específica y replicable por cualquier persona nueva en el puesto.",
   },
   {
     id: "correo_personal",
     textoVisible: "Revisar el correo personal",
-    posicionInicial: [1.6, 0.9, 0.2],
+    posicionInicial: [1.8, 0.9, 0.2],
     zonaCorrecta: "descartar",
     explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo.",
   },

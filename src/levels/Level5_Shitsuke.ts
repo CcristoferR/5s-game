@@ -1,15 +1,19 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture, Button, Control } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, Button, TextBlock, Control } from "@babylonjs/gui";
 import { puntosControlNivel5 } from "../data/levelConfig";
 import { crearPuntoControl } from "../entities/AuditPoint";
+import { mostrarInformeAuditoria } from "../ui/AuditReport";
+import { crearAmbienteOficina } from "../entities/OfficeAmbience";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
-const tiempoLimiteSegundos = 30;
+const tiempoLimiteSegundos = 40;
 
 export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel5", true, scene);
+
+  crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("sueloN5", { width: 10, height: 10 }, scene);
   const matSuelo = new StandardMaterial("matSueloN5", scene);
@@ -22,10 +26,42 @@ export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const matEscritorio = new StandardMaterial("matEscritorioN5", scene);
   matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
   escritorio.material = matEscritorio;
+  escritorio.receiveShadows = true;
 
-const puntos = puntosControlNivel5.map((datos) =>
-  crearPuntoControl(scene, gui, datos.id, datos.posicion[0], datos.posicion[1], datos.descripcionControl, datos.tipoEvidencia)
-);
+  const instruccion = new TextBlock(
+    "instruccionNivel5",
+    "🔍 Revisa cada punto de control. Haz click en la esfera si detectas un problema (click de nuevo para desmarcar)."
+  );
+  instruccion.color = "white";
+  instruccion.fontSize = 15;
+  instruccion.outlineWidth = 3;
+  instruccion.outlineColor = "rgba(0,0,0,0.6)";
+  instruccion.textWrapping = true;
+  instruccion.width = "520px";
+  instruccion.top = "70px";
+  instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  gui.addControl(instruccion);
+
+  const contador = new TextBlock("contadorNivel5", "Marcados: 0/5");
+  contador.color = "white";
+  contador.fontSize = 15;
+  contador.outlineWidth = 3;
+  contador.outlineColor = "rgba(0,0,0,0.6)";
+  contador.top = "110px";
+  contador.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  gui.addControl(contador);
+
+  const puntos = puntosControlNivel5.map((datos) =>
+    crearPuntoControl(scene, gui, datos.id, datos.posicion[0], datos.posicion[1], datos.descripcionControl, datos.tipoEvidencia)
+  );
+
+  let marcados = 0;
+  puntos.forEach((punto) => {
+    punto.onCambio.add((estaMarcado) => {
+      marcados += estaMarcado ? 1 : -1;
+      contador.text = `Marcados: ${marcados}/${puntos.length}`;
+    });
+  });
 
   const botonFinalizar = Button.CreateSimpleButton("btnFinalizarAuditoria", "Finalizar auditoría");
   botonFinalizar.width = "220px";
@@ -61,18 +97,24 @@ const puntos = puntosControlNivel5.map((datos) =>
     finalizado = true;
     corriendoTiempo = false;
     botonFinalizar.isVisible = false;
+    instruccion.isVisible = false;
+    contador.isVisible = false;
 
     let puntosBase = 0;
-    puntos.forEach((punto, i) => {
-      const correcto = punto.estaMarcado() === puntosControlNivel5[i].tieneDesviacion;
+    const filas = puntosControlNivel5.map((datos, i) => {
+      const marcadoPorJugador = puntos[i].estaMarcado();
+      const correcto = marcadoPorJugador === datos.tieneDesviacion;
       puntosBase += correcto ? 5 : 1;
+      return { datos, marcadoPorJugador };
     });
 
     gameManager.sumarPuntos(puntosBase);
-
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
-    onCompletado();
-    hud.mostrarResultadoFinal("Nivel 5 (Auditoría)", puntosBase, 0, segundosTotales, onVolverMenu);
+
+    mostrarInformeAuditoria(scene, filas, () => {
+      onCompletado();
+      hud.mostrarResultadoFinal("Nivel 5 (Auditoría)", puntosBase, 0, segundosTotales, onVolverMenu);
+    });
   }
 
   return { puntos };

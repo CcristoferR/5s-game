@@ -62,10 +62,12 @@ function cargarNivel(numeroNivel: number): void {
     objetos.forEach((obj) => sceneManager.shadowGenerator.addShadowCaster(obj.mesh));
     slots.forEach((s) => sceneManager.shadowGenerator.addShadowCaster(s.mesh));
   } else if (numeroNivel === 3) {
-    cargarNivel3(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { maquina } = cargarNivel3(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    maquina.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
   } else if (numeroNivel === 4) {
-    const { items } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { items, zonas } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
     items.forEach((item) => sceneManager.shadowGenerator.addShadowCaster(item.mesh));
+    zonas.forEach((z) => sceneManager.shadowGenerator.addShadowCaster(z));
   } else if (numeroNivel === 5) {
     cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado);
   }
