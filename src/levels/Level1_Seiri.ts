@@ -5,8 +5,6 @@ import { crearDropZone } from "../entities/DropZone";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
-// Posiciones X de cada zona — deben calzar con las que usa crearDropZone
-// en este mismo archivo, es la referencia contra la que se evalúa el soltar.
 const posicionesZonas: Record<ZonaClasificacion, number> = {
   necesario: -2,
   dudoso: 0,
@@ -34,11 +32,21 @@ export function cargarNivel1(scene: Scene, hud: HUD) {
   const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15));
   const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2));
 
+  // Cronómetro: arranca al cargar el nivel, se detiene al completar el
+  // último objeto. Cumple el "+ tiempo" que pide la guía en el scoring.
+  const inicioNivel = performance.now();
+  let corriendoTiempo = true;
+
+  scene.onBeforeRenderObservable.add(() => {
+    if (!corriendoTiempo) return;
+    const segundos = Math.floor((performance.now() - inicioNivel) / 1000);
+    hud.actualizarTiempo(segundos);
+  });
+
   let objetosResueltos = 0;
 
   objetos.forEach((objeto) => {
     objeto.onSoltar.add((mesh) => {
-      // Encuentra la zona más cercana en X — no necesita tocarla exacto.
       const zonaMasCercana = (Object.entries(posicionesZonas) as [ZonaClasificacion, number][])
         .reduce((mejor, actual) =>
           Math.abs(mesh.position.x - actual[1]) < Math.abs(mesh.position.x - mejor[1]) ? actual : mejor
@@ -49,11 +57,16 @@ export function cargarNivel1(scene: Scene, hud: HUD) {
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
         hud.mostrarFeedback(true, objeto.datos.explicacion);
-        mesh.isPickable = false; // decisión tomada — ya no se puede volver a mover
+        mesh.isPickable = false;
         objetosResueltos++;
 
         if (objetosResueltos === objetos.length) {
-          hud.mostrarFeedback(true, `¡Nivel completado! Puntaje final: ${gameManager.puntaje}`);
+          corriendoTiempo = false;
+          const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
+          // Bonus simple: mientras más rápido, más puntos extra, con un piso de 0.
+          const bonusTiempo = Math.max(0, 60 - segundosTotales);
+          gameManager.sumarPuntos(bonusTiempo);
+          hud.mostrarResultadoFinal(objetosResueltos * 10, bonusTiempo, segundosTotales);
         }
       } else {
         hud.mostrarFeedback(false, objeto.datos.explicacion);
