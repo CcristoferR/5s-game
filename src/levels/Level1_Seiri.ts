@@ -1,7 +1,10 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
+import { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { objetosNivel1, type ZonaClasificacion } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearDropZone } from "../entities/DropZone";
+import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
@@ -11,8 +14,17 @@ const posicionesZonas: Record<ZonaClasificacion, number> = {
   descartar: 2,
 };
 
+const etiquetasZonas: Record<ZonaClasificacion, string> = {
+  necesario: "NECESARIO",
+  dudoso: "DUDOSO",
+  descartar: "DESCARTAR",
+};
+
 export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
+  const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel1", true, scene);
+
+  crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("suelo", { width: 10, height: 10 }, scene);
   const matSuelo = new StandardMaterial("matSuelo", scene);
@@ -25,12 +37,13 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const matEscritorio = new StandardMaterial("matEscritorio", scene);
   matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
   escritorio.material = matEscritorio;
+  escritorio.receiveShadows = true;
 
-  const objetos = objetosNivel1.map((datos) => crearObjetoInteractable(scene, datos));
+  const objetos = objetosNivel1.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel1));
 
-  const zonaNecesario = crearDropZone(scene, "necesario", posicionesZonas.necesario, new Color3(0.2, 0.7, 0.3));
-  const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15));
-  const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2));
+  const zonaNecesario = crearDropZone(scene, "necesario", posicionesZonas.necesario, new Color3(0.2, 0.7, 0.3), gui, etiquetasZonas.necesario);
+  const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15), gui, etiquetasZonas.dudoso);
+  const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2), gui, etiquetasZonas.descartar);
 
   const inicioNivel = performance.now();
   let corriendoTiempo = true;

@@ -12,17 +12,28 @@ export interface ObjetoInteractableResult<T extends DatosObjetoBase> {
   onSoltar: Observable<Mesh>;
 }
 
-// Representa visualmente cualquier objeto arrastrable del juego (Nivel 1,
-// Nivel 2, y los que vengan) y lo hace arrastrable. Hoy son cajas simples
-// — cuando lleguen modelos reales, se reemplaza solo esta función.
-export function crearObjetoInteractable<T extends DatosObjetoBase>(scene: Scene, datos: T): ObjetoInteractableResult<T> {
-  const mesh = MeshBuilder.CreateBox(datos.id, { size: 0.4 }, scene);
+// Representa visualmente cualquier objeto arrastrable. Por defecto crea
+// una caja genérica (compatible con Nivel 2 y 4, que no necesitan formas
+// especiales); si se pasa "crearMalla", se usa esa forma personalizada
+// en su lugar — así el Nivel 1 puede tener objetos reconocibles sin
+// tocar el resto de niveles.
+export function crearObjetoInteractable<T extends DatosObjetoBase>(
+  scene: Scene,
+  datos: T,
+  crearMalla?: (scene: Scene, datos: T) => Mesh
+): ObjetoInteractableResult<T> {
+  let mesh: Mesh;
+
+  if (crearMalla) {
+    mesh = crearMalla(scene, datos);
+  } else {
+    mesh = MeshBuilder.CreateBox(datos.id, { size: 0.4 }, scene);
+    const mat = new StandardMaterial(`mat_${datos.id}`, scene);
+    mat.diffuseColor = new Color3(0.6, 0.6, 0.65);
+    mesh.material = mat;
+  }
+
   mesh.position.set(...datos.posicionInicial);
-
-  const mat = new StandardMaterial(`mat_${datos.id}`, scene);
-  mat.diffuseColor = new Color3(0.6, 0.6, 0.65);
-  mesh.material = mat;
-
   mesh.metadata = datos;
 
   const { onSoltar } = hacerArrastrable(mesh, datos.posicionInicial[1]);

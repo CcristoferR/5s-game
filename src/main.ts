@@ -8,17 +8,13 @@ import { cargarNivel4 } from "./levels/Level4_Seiketsu";
 import { cargarNivel5 } from "./levels/Level5_Shitsuke";
 import { HUD } from "./ui/HUD";
 import { mostrarMenuPrincipal } from "./ui/MainMenu";
+import { mostrarCertificado } from "./ui/CertificateScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true);
 
 let sceneManager = new SceneManager(engine);
 const gameManager = GameManager.getInstance();
-
-// Progreso de desbloqueo de esta sesión — se reinicia si recargas la
-// página. Guardarlo de forma permanente es tarea del login/backend, que
-// todavía no existe.
-const nivelesDesbloqueados = new Set<number>([1]);
 
 const infoNiveles = [
   { numero: 1, nombre: "Seiri - Clasificar" },
@@ -29,8 +25,18 @@ const infoNiveles = [
 ];
 
 function mostrarMenu(): void {
-  const niveles = infoNiveles.map((n) => ({ ...n, desbloqueado: nivelesDesbloqueados.has(n.numero) }));
-  mostrarMenuPrincipal(sceneManager.scene, niveles, (numeroNivel) => cargarNivel(numeroNivel));
+  const niveles = infoNiveles.map((n) => ({
+    ...n,
+    desbloqueado: gameManager.estaDesbloqueado(n.numero),
+    completado: gameManager.estaCompletado(n.numero),
+  }));
+  mostrarMenuPrincipal(
+    sceneManager.scene,
+    niveles,
+    gameManager.getPorcentajeMadurez(),
+    (numeroNivel) => cargarNivel(numeroNivel),
+    () => mostrarCertificado(sceneManager.scene, () => mostrarMenu())
+  );
 }
 
 function volverAlMenu(): void {
@@ -46,7 +52,7 @@ function cargarNivel(numeroNivel: number): void {
   const hud = new HUD(sceneManager.scene);
   gameManager.onPuntajeCambiado.add((puntaje) => hud.actualizarPuntaje(puntaje));
 
-  const onCompletado = () => nivelesDesbloqueados.add(numeroNivel + 1);
+  const onCompletado = () => gameManager.completarNivel(numeroNivel);
 
   if (numeroNivel === 1) {
     const { objetos } = cargarNivel1(sceneManager.scene, hud, volverAlMenu, onCompletado);

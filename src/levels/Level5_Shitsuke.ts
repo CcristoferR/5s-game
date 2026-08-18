@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture, Button } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, Button, Control } from "@babylonjs/gui";
 import { puntosControlNivel5 } from "../data/levelConfig";
 import { crearPuntoControl } from "../entities/AuditPoint";
 import { GameManager } from "../core/GameManager";
@@ -23,9 +23,9 @@ export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
   escritorio.material = matEscritorio;
 
-  const puntos = puntosControlNivel5.map((datos) =>
-    crearPuntoControl(scene, gui, datos.id, datos.posicion[0], datos.posicion[1], datos.descripcionControl)
-  );
+const puntos = puntosControlNivel5.map((datos) =>
+  crearPuntoControl(scene, gui, datos.id, datos.posicion[0], datos.posicion[1], datos.descripcionControl, datos.tipoEvidencia)
+);
 
   const botonFinalizar = Button.CreateSimpleButton("btnFinalizarAuditoria", "Finalizar auditoría");
   botonFinalizar.width = "220px";
@@ -34,6 +34,7 @@ export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   botonFinalizar.cornerRadius = 8;
   botonFinalizar.thickness = 0;
   botonFinalizar.background = "#3a4550";
+  botonFinalizar.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   botonFinalizar.top = "-24px";
   gui.addControl(botonFinalizar);
 

@@ -38,6 +38,13 @@ export const objetosNivel1: ObjetoNivel1[] = [
     zonaCorrecta: "descartar",
     explicacion: "Información desactualizada — ya no aporta valor vigente.",
   },
+  {
+    id: "caja_sin_etiqueta",
+    nombreVisible: "Caja sin etiqueta",
+    posicionInicial: [0, 0.9, -0.4],
+    zonaCorrecta: "dudoso",
+    explicacion: "No se sabe su contenido — requiere una tarjeta roja (red tag) para revisión antes de decidir si se mantiene o se descarta.",
+  },
 ];
 
 // Datos del Nivel 2 (Seiton / Ordenar).
@@ -185,48 +192,56 @@ export const itemsNivel4: ItemChecklistNivel4[] = [
 ];
 
 // Datos del Nivel 5 (Shitsuke / Disciplina) — modo auditoría.
+export type TipoEvidencia = "tarjetaVencida" | "manchaVisible" | "objetoFueraDeLugar" | "sinProblema";
+
 export interface PuntoControlNivel5 {
   id: string;
   posicion: [number, number];
-  descripcionControl: string; // qué se revisa en ese punto, sin revelar si está mal
+  descripcionControl: string;
   tieneDesviacion: boolean;
+  tipoEvidencia: TipoEvidencia;
   explicacion: string;
 }
 
 export const puntosControlNivel5: PuntoControlNivel5[] = [
   {
     id: "p1",
-    posicion: [-1.5, 0.2],
+    posicion: [-4, 0.4],
     descripcionControl: "Ubicación del teléfono según estándar",
     tieneDesviacion: false,
+    tipoEvidencia: "sinProblema",
     explicacion: "El teléfono está en su lugar asignado — sin desviación.",
   },
   {
     id: "p2",
-    posicion: [-0.5, -0.2],
+    posicion: [-2, -0.3],
     descripcionControl: "Vigencia de la tarjeta roja del área",
     tieneDesviacion: true,
+    tipoEvidencia: "tarjetaVencida",
     explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse.",
   },
   {
     id: "p3",
-    posicion: [0.5, 0.1],
+    posicion: [0, 0.5],
     descripcionControl: "Estado de limpieza del área de trabajo",
     tieneDesviacion: true,
+    tipoEvidencia: "manchaVisible",
     explicacion: "Apareció una mancha nueva desde la última auditoría.",
   },
   {
     id: "p4",
-    posicion: [1.5, -0.1],
+    posicion: [2, -0.2],
     descripcionControl: "Ubicación de la carpeta de proyecto",
     tieneDesviacion: false,
+    tipoEvidencia: "sinProblema",
     explicacion: "La carpeta está archivada correctamente según el estándar.",
   },
   {
     id: "p5",
-    posicion: [0, 0.3],
+    posicion: [4, 0.3],
     descripcionControl: "Organización general del estante",
     tieneDesviacion: true,
+    tipoEvidencia: "objetoFueraDeLugar",
     explicacion: "Un objeto quedó fuera de su casilla asignada.",
   },
 ];
