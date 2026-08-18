@@ -58,8 +58,9 @@ function cargarNivel(numeroNivel: number): void {
     const { objetos } = cargarNivel1(sceneManager.scene, hud, volverAlMenu, onCompletado);
     objetos.forEach((obj) => sceneManager.shadowGenerator.addShadowCaster(obj.mesh));
   } else if (numeroNivel === 2) {
-    const { objetos } = cargarNivel2(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { objetos, slots } = cargarNivel2(sceneManager.scene, hud, volverAlMenu, onCompletado);
     objetos.forEach((obj) => sceneManager.shadowGenerator.addShadowCaster(obj.mesh));
+    slots.forEach((s) => sceneManager.shadowGenerator.addShadowCaster(s.mesh));
   } else if (numeroNivel === 3) {
     cargarNivel3(sceneManager.scene, hud, volverAlMenu, onCompletado);
   } else if (numeroNivel === 4) {

@@ -6,17 +6,22 @@ export interface ShelfSlotResult {
   id: string;
 }
 
-// Silueta de un lugar designado en el estante (shadow board). Color
-// neutro a propósito: no revela qué objeto va ahí — el jugador razona
-// según la etiqueta de contexto que flota sobre la casilla.
+// Repisa física elevada — no una zona plana en el piso como el Nivel 1.
+// Esto es la corrección clave de diseño: antes se veía idéntica a las
+// zonas de clasificación, y el jugador no notaba que era una mecánica
+// distinta. Ahora se lee de inmediato como "un estante real".
 export function crearShelfSlot(scene: Scene, gui: AdvancedDynamicTexture, id: string, x: number, descripcion: string): ShelfSlotResult {
-  const mesh = MeshBuilder.CreateBox(`slot_${id}`, { width: 1.3, height: 0.04, depth: 1.3 }, scene);
-  mesh.position.set(x, 0.02, 1.8);
+  const matMadera = new StandardMaterial(`matRepisa_${id}`, scene);
+  matMadera.diffuseColor = new Color3(0.5, 0.36, 0.24);
 
-  const mat = new StandardMaterial(`matSlot_${id}`, scene);
-  mat.diffuseColor = new Color3(0.5, 0.55, 0.6);
-  mat.alpha = 0.35;
-  mesh.material = mat;
+  const soporte = MeshBuilder.CreateBox(`soporteRepisa_${id}`, { width: 0.15, height: 0.75, depth: 0.15 }, scene);
+  soporte.position.set(x, 0.375, 1.8);
+  soporte.material = matMadera;
+
+  const tabla = MeshBuilder.CreateBox(`tablaRepisa_${id}`, { width: 1.1, height: 0.05, depth: 1.1 }, scene);
+  tabla.position.set(x, 0.775, 1.8);
+  tabla.material = matMadera;
+  tabla.receiveShadows = true;
 
   const etiqueta = new TextBlock(`etiqueta_${id}`, descripcion);
   etiqueta.color = "white";
@@ -25,10 +30,10 @@ export function crearShelfSlot(scene: Scene, gui: AdvancedDynamicTexture, id: st
   etiqueta.width = "140px";
   etiqueta.height = "50px";
   etiqueta.outlineWidth = 3;
-  etiqueta.outlineColor = "rgba(0,0,0,0.6)"; // legible sobre cualquier fondo
+  etiqueta.outlineColor = "rgba(0,0,0,0.6)";
   gui.addControl(etiqueta);
-  etiqueta.linkWithMesh(mesh);
-  etiqueta.linkOffsetY = -60; // flota justo encima de la casilla en el suelo
+  etiqueta.linkWithMesh(tabla);
+  etiqueta.linkOffsetY = -70;
 
-  return { mesh, id };
+  return { mesh: tabla, id };
 }

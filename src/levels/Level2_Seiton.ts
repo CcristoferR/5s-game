@@ -3,12 +3,16 @@ import { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { objetosNivel2, slotsNivel2 } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
+import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { crearFormaNivel2 } from "../entities/Level2Shapes";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
 export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel2", true, scene);
+
+  crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("sueloN2", { width: 10, height: 10 }, scene);
   const matSuelo = new StandardMaterial("matSueloN2", scene);
@@ -21,8 +25,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const matEscritorio = new StandardMaterial("matEscritorioN2", scene);
   matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
   escritorio.material = matEscritorio;
+  escritorio.receiveShadows = true;
 
-  const objetos = objetosNivel2.map((datos) => crearObjetoInteractable(scene, datos));
+  const objetos = objetosNivel2.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel2));
   const slots = slotsNivel2.map((s) => crearShelfSlot(scene, gui, s.id, s.posicionX, s.descripcion));
 
   const inicioNivel = performance.now();
