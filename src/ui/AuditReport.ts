@@ -1,4 +1,3 @@
-import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock, StackPanel, Button, Rectangle, ScrollViewer, Control } from "@babylonjs/gui";
 import type { PuntoControlNivel5 } from "../data/levelConfig";
 
@@ -7,19 +6,15 @@ export interface FilaInforme {
   marcadoPorJugador: boolean;
 }
 
-// Informe detallado post-auditoría: punto por punto, si el jugador
-// acertó y por qué. Sin esto, el jugador solo veía un número final sin
-// entender qué evaluó bien o mal — es la corrección que le da sentido
-// pedagógico real al nivel.
-export function mostrarInformeAuditoria(scene: Scene, filas: FilaInforme[], onContinuar: () => void): void {
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("informeAuditoria", true, scene);
-
+export function mostrarInformeAuditoria(gui: AdvancedDynamicTexture, filas: FilaInforme[], onContinuar: () => void): void {
   const fondo = new Rectangle("fondoInforme");
   fondo.width = "600px";
   fondo.height = "520px";
   fondo.cornerRadius = 14;
-  fondo.thickness = 0;
-  fondo.background = "rgba(15, 18, 22, 0.97)";
+  fondo.thickness = 1;
+  fondo.color = "rgba(255,255,255,0.15)";
+  fondo.background = "rgba(15, 18, 22, 0.98)";
+  fondo.zIndex = 45;
   gui.addControl(fondo);
 
   const titulo = new TextBlock("tituloInforme", "📋 Informe de Auditoría");

@@ -1,27 +1,24 @@
-import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock, StackPanel, Button, Rectangle } from "@babylonjs/gui";
+
 export interface OpcionCausa {
   id: string;
   texto: string;
 }
 
-// Panel de opciones tipo "elige una respuesta" — para decisiones que no
-// tienen sentido como arrastrar (como identificar una causa entre varias).
-// Reutilizable por cualquier nivel futuro que necesite esta mecánica.
 export function mostrarPanelOpciones(
-  scene: Scene,
+  gui: AdvancedDynamicTexture,
   pregunta: string,
   opciones: OpcionCausa[],
   onElegir: (idOpcion: string) => void
 ): { ocultar: () => void } {
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("panelOpciones", true, scene);
-
   const fondo = new Rectangle("fondoOpciones");
   fondo.width = "460px";
   fondo.height = "320px";
   fondo.cornerRadius = 14;
-  fondo.thickness = 0;
-  fondo.background = "rgba(18, 20, 24, 0.95)";
+  fondo.thickness = 1;
+  fondo.color = "rgba(255,255,255,0.15)";
+  fondo.background = "rgba(18, 20, 24, 0.96)";
+  fondo.zIndex = 30;
   gui.addControl(fondo);
 
   const panel = new StackPanel("panelInternoOpciones");

@@ -1,5 +1,4 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { objetosNivel2, slotsNivel2 } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
@@ -10,7 +9,7 @@ import { HUD } from "../ui/HUD";
 
 export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel2", true, scene);
+  const gui = hud.gui;
 
   crearAmbienteOficina(scene);
 
@@ -44,9 +43,10 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   let objetosResueltos = 0;
 
-    objetos.forEach((objeto) => {
+  objetos.forEach((objeto) => {
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente) return;
+
       const slotMasCercano = slotsNivel2.reduce((mejor, actual) =>
         Math.abs(mesh.position.x - actual.posicionX) < Math.abs(mesh.position.x - mejor.posicionX) ? actual : mejor
       );

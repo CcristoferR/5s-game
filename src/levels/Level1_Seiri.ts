@@ -1,5 +1,4 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { objetosNivel1, type ZonaClasificacion } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearDropZone } from "../entities/DropZone";
@@ -22,13 +21,13 @@ const etiquetasZonas: Record<ZonaClasificacion, string> = {
 
 export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel1", true, scene);
+  const gui = hud.gui;
 
   crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("suelo", { width: 10, height: 10 }, scene);
   const matSuelo = new PBRMaterial("matSuelo", scene);
-  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46); // más rico, no blanco lavado
+  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
   matSuelo.roughness = 0.45;
   matSuelo.metallic = 0.05;
   suelo.material = matSuelo;
@@ -59,9 +58,10 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   let objetosResueltos = 0;
 
-    objetos.forEach((objeto) => {
+  objetos.forEach((objeto) => {
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
-      if (!movioSuficiente) return; // fue un click sin arrastre real, no evaluar
+      if (!movioSuficiente) return;
+
       const zonaMasCercana = (Object.entries(posicionesZonas) as [ZonaClasificacion, number][])
         .reduce((mejor, actual) =>
           Math.abs(mesh.position.x - actual[1]) < Math.abs(mesh.position.x - mejor[1]) ? actual : mejor

@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture, TextBlock, Control } from "@babylonjs/gui";
+import { TextBlock, Control } from "@babylonjs/gui";
 import { manchasNivel3, preguntaCausaNivel3, opcionesCausaNivel3 } from "../data/levelConfig";
 import { crearMancha } from "../entities/Stain";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
@@ -10,7 +10,7 @@ import { HUD } from "../ui/HUD";
 
 export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel3", true, scene);
+  const gui = hud.gui;
 
   crearAmbienteOficina(scene);
 
@@ -73,7 +73,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         instruccion.isVisible = false;
         progreso.isVisible = false;
 
-        const panelOpciones = mostrarPanelOpciones(scene, preguntaCausaNivel3, opcionesCausaNivel3, (idElegido) => {
+        const panelOpciones = mostrarPanelOpciones(gui, preguntaCausaNivel3, opcionesCausaNivel3, (idElegido) => {
           const opcion = opcionesCausaNivel3.find((o) => o.id === idElegido)!;
 
           if (opcion.esCorrecta) {

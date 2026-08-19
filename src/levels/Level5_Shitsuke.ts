@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture, Button, TextBlock, Control } from "@babylonjs/gui";
+import { Button, TextBlock, Control } from "@babylonjs/gui";
 import { puntosControlNivel5 } from "../data/levelConfig";
 import { crearPuntoControl } from "../entities/AuditPoint";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
@@ -11,7 +11,7 @@ const tiempoLimiteSegundos = 40;
 
 export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel5", true, scene);
+  const gui = hud.gui;
 
   crearAmbienteOficina(scene);
 
@@ -114,7 +114,7 @@ export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     gameManager.sumarPuntos(puntosBase);
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
 
-    mostrarInformeAuditoria(scene, filas, () => {
+    mostrarInformeAuditoria(gui, filas, () => {
       onCompletado();
       hud.mostrarResultadoFinal("Nivel 5 (Auditoría)", puntosBase, 0, segundosTotales, onVolverMenu);
     });

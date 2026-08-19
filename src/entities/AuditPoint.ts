@@ -6,7 +6,7 @@ export interface AuditPointResult {
   mesh: Mesh;
   estaMarcado: () => boolean;
   onCambio: Observable<boolean>;
-  meshesSombra: Mesh[]; // pedestal + evidencia + esfera — para agregarlas al shadowGenerator desde main.ts
+  meshesSombra: Mesh[];
 }
 
 const ALTURA_PEDESTAL = 0.5;
@@ -21,7 +21,7 @@ export function crearPuntoControl(
   tipoEvidencia: TipoEvidencia
 ): AuditPointResult {
   const pedestal = crearPedestal(scene, id, x, z);
-  const evidencia = crearEvidencia(scene, id, x, z, tipoEvidencia);
+  const evidencia = crearEvidencia(scene, gui, id, x, z, tipoEvidencia);
 
   const mesh = MeshBuilder.CreateSphere(`punto_${id}`, { diameter: 0.28 }, scene);
   mesh.position.set(x, ALTURA_PEDESTAL + 0.8, z);
@@ -33,7 +33,7 @@ export function crearPuntoControl(
   mat.albedoColor = colorNeutro;
   mat.emissiveColor = colorNeutro.scale(0.15);
   mat.roughness = 0.25;
-  mat.metallic = 0.4; // sensor pulido, no plástico mate
+  mat.metallic = 0.4;
   mesh.material = mat;
 
   const etiqueta = new TextBlock(`etiquetaPunto_${id}`, descripcion);
@@ -65,10 +65,6 @@ export function crearPuntoControl(
   return { mesh, estaMarcado: () => marcado, onCambio, meshesSombra: [pedestal, ...evidencia, mesh] };
 }
 
-// Pedestal individual bajo cada punto — antes solo el punto del centro
-// tenía algo debajo (la mesa); los otros 4 flotaban sin ningún apoyo
-// visible. Ahora cada punto es su propia estación de inspección,
-// sólida, sin importar dónde esté ubicado en la sala.
 function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
   const mat = new PBRMaterial(`matPedestal_${id}`, scene);
   mat.albedoColor = new Color3(0.5, 0.48, 0.44);
@@ -83,7 +79,7 @@ function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
   return pedestal;
 }
 
-function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: TipoEvidencia): Mesh[] {
+function crearEvidencia(scene: Scene, gui: AdvancedDynamicTexture, id: string, x: number, z: number, tipo: TipoEvidencia): Mesh[] {
   const y = ALTURA_PEDESTAL + 0.01;
   const creados: Mesh[] = [];
 
@@ -103,7 +99,7 @@ function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: Ti
     fecha.fontSize = 11;
     fecha.width = "100px";
     fecha.height = "20px";
-    AdvancedDynamicTexture.CreateFullscreenUI(`fechaUI_${id}`, true, scene).addControl(fecha);
+    gui.addControl(fecha);
     fecha.linkWithMesh(tarjeta);
     fecha.linkOffsetY = 20;
   } else if (tipo === "manchaVisible") {

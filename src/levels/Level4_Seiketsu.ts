@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture, TextBlock, Control, Rectangle } from "@babylonjs/gui";
+import { TextBlock, Control, Rectangle } from "@babylonjs/gui";
 import { itemsNivel4, type ZonaChecklist } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearFormaNivel4 } from "../entities/Level4Shapes";
@@ -16,7 +16,7 @@ const posicionesZonas: Record<ZonaChecklist, number> = {
 
 export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
-  const gui = AdvancedDynamicTexture.CreateFullscreenUI("labelsNivel4", true, scene);
+  const gui = hud.gui;
 
   crearAmbienteOficina(scene);
 
@@ -74,9 +74,6 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
 
-  // Panel de lectura: aparece grande y centrado mientras sostienes una
-  // tarjeta — así el texto siempre es legible, sin importar qué tan
-  // chico se vea el objeto en el mundo 3D.
   const panelLectura = new Rectangle("panelLectura");
   panelLectura.width = "480px";
   panelLectura.height = "110px";
@@ -127,10 +124,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       panelLectura.isVisible = true;
     });
 
-        item.onSoltar.add(({ mesh, movioSuficiente }) => {
-      panelLectura.isVisible = false; // el panel siempre se cierra al soltar, sea click o arrastre real
+    item.onSoltar.add(({ mesh, movioSuficiente }) => {
+      panelLectura.isVisible = false;
 
-      if (!movioSuficiente) return; // solo quería leerla, no la movió a ninguna zona todavía
+      if (!movioSuficiente) return;
 
       const zonaMasCercana = (Object.entries(posicionesZonas) as [ZonaChecklist, number][])
         .reduce((mejor, actual) =>
