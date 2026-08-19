@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Mesh, Observable } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh, Observable } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock } from "@babylonjs/gui";
 import type { TipoEvidencia } from "../data/levelConfig";
 
@@ -6,7 +6,10 @@ export interface AuditPointResult {
   mesh: Mesh;
   estaMarcado: () => boolean;
   onCambio: Observable<boolean>;
+  meshesSombra: Mesh[]; // pedestal + evidencia + esfera — para agregarlas al shadowGenerator desde main.ts
 }
+
+const ALTURA_PEDESTAL = 0.5;
 
 export function crearPuntoControl(
   scene: Scene,
@@ -17,17 +20,20 @@ export function crearPuntoControl(
   descripcion: string,
   tipoEvidencia: TipoEvidencia
 ): AuditPointResult {
-  crearEvidencia(scene, id, x, z, tipoEvidencia);
+  const pedestal = crearPedestal(scene, id, x, z);
+  const evidencia = crearEvidencia(scene, id, x, z, tipoEvidencia);
 
   const mesh = MeshBuilder.CreateSphere(`punto_${id}`, { diameter: 0.28 }, scene);
-  mesh.position.set(x, 1.3, z);
+  mesh.position.set(x, ALTURA_PEDESTAL + 0.8, z);
 
   const colorNeutro = new Color3(0.55, 0.55, 0.6);
-  const colorMarcado = new Color3(0.85, 0.45, 0.1); // naranja — mucho más notorio que solo agrandar
+  const colorMarcado = new Color3(0.85, 0.45, 0.1);
 
-  const mat = new StandardMaterial(`matPunto_${id}`, scene);
-  mat.diffuseColor = colorNeutro;
+  const mat = new PBRMaterial(`matPunto_${id}`, scene);
+  mat.albedoColor = colorNeutro;
   mat.emissiveColor = colorNeutro.scale(0.15);
+  mat.roughness = 0.25;
+  mat.metallic = 0.4; // sensor pulido, no plástico mate
   mesh.material = mat;
 
   const etiqueta = new TextBlock(`etiquetaPunto_${id}`, descripcion);
@@ -51,24 +57,46 @@ export function crearPuntoControl(
 
     marcado = !marcado;
     mesh.scaling.setAll(marcado ? 1.5 : 1);
-    mat.diffuseColor = marcado ? colorMarcado : colorNeutro;
-    mat.emissiveColor = (marcado ? colorMarcado : colorNeutro).scale(marcado ? 0.35 : 0.15);
+    mat.albedoColor = marcado ? colorMarcado : colorNeutro;
+    mat.emissiveColor = (marcado ? colorMarcado : colorNeutro).scale(marcado ? 0.4 : 0.15);
     onCambio.notifyObservers(marcado);
   });
 
-  return { mesh, estaMarcado: () => marcado, onCambio };
+  return { mesh, estaMarcado: () => marcado, onCambio, meshesSombra: [pedestal, ...evidencia, mesh] };
 }
 
-function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: TipoEvidencia): void {
-  const y = 0.92;
+// Pedestal individual bajo cada punto — antes solo el punto del centro
+// tenía algo debajo (la mesa); los otros 4 flotaban sin ningún apoyo
+// visible. Ahora cada punto es su propia estación de inspección,
+// sólida, sin importar dónde esté ubicado en la sala.
+function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
+  const mat = new PBRMaterial(`matPedestal_${id}`, scene);
+  mat.albedoColor = new Color3(0.5, 0.48, 0.44);
+  mat.roughness = 0.6;
+  mat.metallic = 0.1;
+
+  const pedestal = MeshBuilder.CreateCylinder(`pedestal_${id}`, { diameterTop: 0.5, diameterBottom: 0.42, height: ALTURA_PEDESTAL }, scene);
+  pedestal.position.set(x, ALTURA_PEDESTAL / 2, z);
+  pedestal.material = mat;
+  pedestal.receiveShadows = true;
+
+  return pedestal;
+}
+
+function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: TipoEvidencia): Mesh[] {
+  const y = ALTURA_PEDESTAL + 0.01;
+  const creados: Mesh[] = [];
 
   if (tipo === "tarjetaVencida") {
     const tarjeta = MeshBuilder.CreatePlane(`tarjeta_${id}`, { width: 0.3, height: 0.4 }, scene);
     tarjeta.position.set(x, y + 0.2, z);
-    const mat = new StandardMaterial(`matTarjeta_${id}`, scene);
-    mat.diffuseColor = new Color3(0.8, 0.1, 0.1);
+    tarjeta.rotation.y = Math.PI / 4;
+    const mat = new PBRMaterial(`matTarjeta_${id}`, scene);
+    mat.albedoColor = new Color3(0.8, 0.1, 0.1);
+    mat.roughness = 0.3;
     mat.backFaceCulling = false;
     tarjeta.material = mat;
+    creados.push(tarjeta);
 
     const fecha = new TextBlock(`fechaTarjeta_${id}`, "Vence: 15/06");
     fecha.color = "white";
@@ -77,31 +105,45 @@ function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: Ti
     fecha.height = "20px";
     AdvancedDynamicTexture.CreateFullscreenUI(`fechaUI_${id}`, true, scene).addControl(fecha);
     fecha.linkWithMesh(tarjeta);
-    fecha.linkOffsetY = 25;
+    fecha.linkOffsetY = 20;
   } else if (tipo === "manchaVisible") {
-    const mancha = MeshBuilder.CreateCylinder(`manchaAudit_${id}`, { diameter: 0.35, height: 0.02 }, scene);
+    const mancha = MeshBuilder.CreateDisc(`manchaAudit_${id}`, { radius: 0.18, tessellation: 14 }, scene);
+    mancha.rotation.x = Math.PI / 2;
     mancha.position.set(x, y, z);
-    const mat = new StandardMaterial(`matManchaAudit_${id}`, scene);
-    mat.diffuseColor = new Color3(0.15, 0.12, 0.08);
+    const mat = new PBRMaterial(`matManchaAudit_${id}`, scene);
+    mat.albedoColor = new Color3(0.12, 0.1, 0.07);
+    mat.roughness = 0.15;
     mancha.material = mat;
+    creados.push(mancha);
   } else if (tipo === "objetoFueraDeLugar") {
-    const casilla = MeshBuilder.CreateBox(`casillaAudit_${id}`, { width: 0.4, height: 0.02, depth: 0.4 }, scene);
-    casilla.position.set(x - 0.35, y, z);
-    const matCasilla = new StandardMaterial(`matCasillaAudit_${id}`, scene);
-    matCasilla.diffuseColor = new Color3(0.5, 0.55, 0.6);
-    matCasilla.alpha = 0.4;
-    casilla.material = matCasilla;
+    const matCasilla = new PBRMaterial(`matCasillaAudit_${id}`, scene);
+    matCasilla.albedoColor = new Color3(0.5, 0.55, 0.6);
+    matCasilla.alpha = 0.45;
+    matCasilla.roughness = 0.5;
 
-    const cajaFueraDeLugar = MeshBuilder.CreateBox(`objetoFuera_${id}`, { size: 0.2 }, scene);
-    cajaFueraDeLugar.position.set(x + 0.35, y + 0.1, z);
-    const matCaja = new StandardMaterial(`matObjetoFuera_${id}`, scene);
-    matCaja.diffuseColor = new Color3(0.6, 0.6, 0.65);
+    const casilla = MeshBuilder.CreateBox(`casillaAudit_${id}`, { width: 0.35, height: 0.02, depth: 0.35 }, scene);
+    casilla.position.set(x - 0.13, y, z);
+    casilla.material = matCasilla;
+    creados.push(casilla);
+
+    const matCaja = new PBRMaterial(`matObjetoFuera_${id}`, scene);
+    matCaja.albedoColor = new Color3(0.6, 0.6, 0.65);
+    matCaja.roughness = 0.7;
+
+    const cajaFueraDeLugar = MeshBuilder.CreateBox(`objetoFuera_${id}`, { size: 0.16 }, scene);
+    cajaFueraDeLugar.position.set(x + 0.13, y + 0.08, z);
     cajaFueraDeLugar.material = matCaja;
+    creados.push(cajaFueraDeLugar);
   } else if (tipo === "sinProblema") {
-    const objetoOk = MeshBuilder.CreateBox(`objetoOk_${id}`, { width: 0.25, height: 0.15, depth: 0.15 }, scene);
-    objetoOk.position.set(x, y + 0.08, z);
-    const mat = new StandardMaterial(`matObjetoOk_${id}`, scene);
-    mat.diffuseColor = new Color3(0.4, 0.45, 0.5);
-    objetoOk.material = mat;
+    const matOk = new PBRMaterial(`matObjetoOk_${id}`, scene);
+    matOk.albedoColor = new Color3(0.4, 0.45, 0.5);
+    matOk.roughness = 0.6;
+
+    const objetoOk = MeshBuilder.CreateBox(`objetoOk_${id}`, { width: 0.22, height: 0.13, depth: 0.13 }, scene);
+    objetoOk.position.set(x, y + 0.065, z);
+    objetoOk.material = matOk;
+    creados.push(objetoOk);
   }
+
+  return creados;
 }

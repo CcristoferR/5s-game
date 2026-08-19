@@ -1,6 +1,7 @@
-import { Engine } from "@babylonjs/core";
+import { Engine, Mesh } from "@babylonjs/core";
 import { GameManager } from "./core/GameManager";
 import { SceneManager } from "./core/SceneManager";
+import { setupXR } from "./core/XRManager";
 import { cargarNivel1 } from "./levels/Level1_Seiri";
 import { cargarNivel2 } from "./levels/Level2_Seiton";
 import { cargarNivel3 } from "./levels/Level3_Seiso";
@@ -24,6 +25,16 @@ const infoNiveles = [
   { numero: 5, nombre: "Shitsuke - Disciplina" },
 ];
 
+// Nombre del piso de cada nivel — se usa para saber sobre qué malla se
+// puede teletransportar el jugador una vez dentro del visor.
+const sueloPorNivel: Record<number, string> = {
+  1: "suelo",
+  2: "sueloN2",
+  3: "sueloN3",
+  4: "sueloN4",
+  5: "sueloN5",
+};
+
 function mostrarMenu(): void {
   const niveles = infoNiveles.map((n) => ({
     ...n,
@@ -37,6 +48,7 @@ function mostrarMenu(): void {
     (numeroNivel) => cargarNivel(numeroNivel),
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu())
   );
+  setupXR(sceneManager.scene, []); // sin piso propio, pero el botón de VR queda disponible
 }
 
 function volverAlMenu(): void {
@@ -68,9 +80,13 @@ function cargarNivel(numeroNivel: number): void {
     const { items, zonas } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
     items.forEach((item) => sceneManager.shadowGenerator.addShadowCaster(item.mesh));
     zonas.forEach((z) => sceneManager.shadowGenerator.addShadowCaster(z));
-  } else if (numeroNivel === 5) {
-    cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado);
+   } else if (numeroNivel === 5) {
+    const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));
   }
+  const nombreSuelo = sueloPorNivel[numeroNivel];
+  const suelo = sceneManager.scene.getMeshByName(nombreSuelo) as Mesh | null;
+  setupXR(sceneManager.scene, suelo ? [suelo] : []);
 }
 
 mostrarMenu();

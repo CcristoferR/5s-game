@@ -1,29 +1,41 @@
 import { Mesh, PointerDragBehavior, Vector3, Observable } from "@babylonjs/core";
 
-// Abstrae "cómo se agarra y suelta un objeto". Los niveles solo llaman a
-// esta función sin saber si por debajo es mouse/touch o, más adelante,
-// un control de VR — eso permite agregar el modo inmersivo sin tocar la
-// lógica de cada nivel.
-export function hacerArrastrable(mesh: Mesh, alturaFija: number): { onSoltar: Observable<Mesh> } {
+export interface ResultadoSoltar {
+  mesh: Mesh;
+  movioSuficiente: boolean; // false = fue un click/tap sin arrastre real, no una decisión
+}
+
+const DISTANCIA_MINIMA_ARRASTRE = 0.3;
+
+export function hacerArrastrable(mesh: Mesh, alturaFija: number): { onSoltar: Observable<ResultadoSoltar>; onAgarrar: Observable<Mesh> } {
   const comportamiento = new PointerDragBehavior({ dragPlaneNormal: Vector3.Up() });
   comportamiento.useObjectOrientationForDragging = false;
 
-  const onSoltar = new Observable<Mesh>();
+  const onSoltar = new Observable<ResultadoSoltar>();
+  const onAgarrar = new Observable<Mesh>();
+
+  let posicionAlAgarrar = mesh.position.clone();
 
   comportamiento.onDragStartObservable.add(() => {
-    mesh.scaling.setAll(1.15); // pequeño feedback visual: "esto es lo que estoy agarrando"
+    posicionAlAgarrar = mesh.position.clone();
+    mesh.scaling.setAll(1.15);
+    onAgarrar.notifyObservers(mesh);
   });
 
   comportamiento.onDragObservable.add(() => {
-    mesh.position.y = alturaFija; // mantiene la altura fija, evita que se hunda o flote raro
+    mesh.position.y = alturaFija;
   });
 
   comportamiento.onDragEndObservable.add(() => {
     mesh.scaling.setAll(1);
-    onSoltar.notifyObservers(mesh);
+    const distancia = Vector3.Distance(
+      new Vector3(posicionAlAgarrar.x, 0, posicionAlAgarrar.z),
+      new Vector3(mesh.position.x, 0, mesh.position.z)
+    );
+    onSoltar.notifyObservers({ mesh, movioSuficiente: distancia >= DISTANCIA_MINIMA_ARRASTRE });
   });
 
   mesh.addBehavior(comportamiento);
 
-  return { onSoltar };
+  return { onSoltar, onAgarrar };
 }

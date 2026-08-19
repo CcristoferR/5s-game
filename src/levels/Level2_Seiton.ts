@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
 import { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { objetosNivel2, slotsNivel2 } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
@@ -15,15 +15,18 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("sueloN2", { width: 10, height: 10 }, scene);
-  const matSuelo = new StandardMaterial("matSueloN2", scene);
-  matSuelo.diffuseColor = new Color3(0.75, 0.72, 0.68);
+  const matSuelo = new PBRMaterial("matSueloN2", scene);
+  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
+  matSuelo.roughness = 0.45;
+  matSuelo.metallic = 0.05;
   suelo.material = matSuelo;
   suelo.receiveShadows = true;
 
   const escritorio = MeshBuilder.CreateBox("escritorioN2", { width: 3, height: 0.1, depth: 1.4 }, scene);
   escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new StandardMaterial("matEscritorioN2", scene);
-  matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
+  const matEscritorio = new PBRMaterial("matEscritorioN2", scene);
+  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
+  matEscritorio.roughness = 0.5;
   escritorio.material = matEscritorio;
   escritorio.receiveShadows = true;
 
@@ -41,8 +44,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   let objetosResueltos = 0;
 
-  objetos.forEach((objeto) => {
-    objeto.onSoltar.add((mesh) => {
+    objetos.forEach((objeto) => {
+    objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
+      if (!movioSuficiente) return;
       const slotMasCercano = slotsNivel2.reduce((mejor, actual) =>
         Math.abs(mesh.position.x - actual.posicionX) < Math.abs(mesh.position.x - mejor.posicionX) ? actual : mejor
       );

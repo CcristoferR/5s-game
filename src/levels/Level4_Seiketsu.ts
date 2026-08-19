@@ -1,5 +1,5 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3 } from "@babylonjs/core";
-import { AdvancedDynamicTexture, TextBlock, Control } from "@babylonjs/gui";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/core";
+import { AdvancedDynamicTexture, TextBlock, Control, Rectangle } from "@babylonjs/gui";
 import { itemsNivel4, type ZonaChecklist } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearFormaNivel4 } from "../entities/Level4Shapes";
@@ -21,42 +21,28 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("sueloN4", { width: 10, height: 10 }, scene);
-  const matSuelo = new StandardMaterial("matSueloN4", scene);
-  matSuelo.diffuseColor = new Color3(0.75, 0.72, 0.68);
+  const matSuelo = new PBRMaterial("matSueloN4", scene);
+  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
+  matSuelo.roughness = 0.45;
+  matSuelo.metallic = 0.05;
   suelo.material = matSuelo;
   suelo.receiveShadows = true;
 
   const escritorio = MeshBuilder.CreateBox("escritorioN4", { width: 4.6, height: 0.1, depth: 1.4 }, scene);
   escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new StandardMaterial("matEscritorioN4", scene);
-  matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
+  const matEscritorio = new PBRMaterial("matEscritorioN4", scene);
+  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
+  matEscritorio.roughness = 0.5;
   escritorio.material = matEscritorio;
   escritorio.receiveShadows = true;
 
-  const items = itemsNivel4.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel4));
-
-  // Etiqueta de cada instrucción, con altura alternada (par/impar) para
-  // que dos etiquetas vecinas nunca queden a la misma altura en pantalla
-  // — así aunque los ítems se vean algo cerca, el texto nunca se pisa.
-  items.forEach((item, i) => {
-    const etiqueta = new TextBlock(`etiquetaItem_${item.datos.id}`, item.datos.textoVisible);
-    etiqueta.color = "white";
-    etiqueta.fontSize = 12;
-    etiqueta.textWrapping = true;
-    etiqueta.width = "150px";
-    etiqueta.height = "55px";
-    etiqueta.outlineWidth = 4;
-    etiqueta.outlineColor = "rgba(0,0,0,0.85)";
-    gui.addControl(etiqueta);
-    etiqueta.linkWithMesh(item.mesh);
-    etiqueta.linkOffsetY = i % 2 === 0 ? -45 : -85;
-  });
+  const items = itemsNivel4.map((datos, i) =>
+    crearObjetoInteractable(scene, datos, (s, d) => crearFormaNivel4(s, d, i + 1))
+  );
 
   const tableroChecklist = crearTableroChecklist(scene, posicionesZonas.checklist);
   const papeleraDescartar = crearPapeleraDescartar(scene, posicionesZonas.descartar);
 
-  // Rótulo grande sobre cada zona — antes no decían qué eran, y era
-  // exactamente lo que hacía imposible saber dónde soltar cada tarjeta.
   const etiquetaChecklist = new TextBlock("etiquetaZonaChecklist", "✅ CHECKLIST\n(instrucciones claras)");
   etiquetaChecklist.color = "white";
   etiquetaChecklist.fontSize = 16;
@@ -79,7 +65,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   etiquetaDescartar.linkWithMesh(papeleraDescartar);
   etiquetaDescartar.linkOffsetY = -70;
 
-  const instruccion = new TextBlock("instruccionNivel4", "📋 Arrastra cada tarjeta al CHECKLIST (izquierda) o a DESCARTAR (derecha)");
+  const instruccion = new TextBlock("instruccionNivel4", "📋 Toma cada tarjeta (1-5) para leerla en grande, luego suéltala en CHECKLIST o DESCARTAR");
   instruccion.color = "white";
   instruccion.fontSize = 15;
   instruccion.outlineWidth = 3;
@@ -87,6 +73,28 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
+
+  // Panel de lectura: aparece grande y centrado mientras sostienes una
+  // tarjeta — así el texto siempre es legible, sin importar qué tan
+  // chico se vea el objeto en el mundo 3D.
+  const panelLectura = new Rectangle("panelLectura");
+  panelLectura.width = "480px";
+  panelLectura.height = "110px";
+  panelLectura.cornerRadius = 12;
+  panelLectura.thickness = 0;
+  panelLectura.background = "rgba(20, 20, 25, 0.9)";
+  panelLectura.top = "140px";
+  panelLectura.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  panelLectura.isVisible = false;
+  gui.addControl(panelLectura);
+
+  const textoLectura = new TextBlock("textoLectura", "");
+  textoLectura.color = "white";
+  textoLectura.fontSize = 20;
+  textoLectura.textWrapping = true;
+  textoLectura.paddingLeft = "16px";
+  textoLectura.paddingRight = "16px";
+  panelLectura.addControl(textoLectura);
 
   const npc = crearNPCWorker(scene);
 
@@ -113,8 +121,17 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   let itemsResueltos = 0;
 
-  items.forEach((item) => {
-    item.onSoltar.add((mesh) => {
+  items.forEach((item, i) => {
+    item.onAgarrar.add(() => {
+      textoLectura.text = `Tarjeta ${i + 1}: ${item.datos.textoVisible}`;
+      panelLectura.isVisible = true;
+    });
+
+        item.onSoltar.add(({ mesh, movioSuficiente }) => {
+      panelLectura.isVisible = false; // el panel siempre se cierra al soltar, sea click o arrastre real
+
+      if (!movioSuficiente) return; // solo quería leerla, no la movió a ninguna zona todavía
+
       const zonaMasCercana = (Object.entries(posicionesZonas) as [ZonaChecklist, number][])
         .reduce((mejor, actual) =>
           Math.abs(mesh.position.x - actual[1]) < Math.abs(mesh.position.x - mejor[1]) ? actual : mejor

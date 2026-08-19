@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Mesh } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock } from "@babylonjs/gui";
 
 export interface ShelfSlotResult {
@@ -6,17 +6,15 @@ export interface ShelfSlotResult {
   id: string;
 }
 
-// Repisa física elevada — no una zona plana en el piso como el Nivel 1.
-// Esto es la corrección clave de diseño: antes se veía idéntica a las
-// zonas de clasificación, y el jugador no notaba que era una mecánica
-// distinta. Ahora se lee de inmediato como "un estante real".
 export function crearShelfSlot(scene: Scene, gui: AdvancedDynamicTexture, id: string, x: number, descripcion: string): ShelfSlotResult {
-  const matMadera = new StandardMaterial(`matRepisa_${id}`, scene);
-  matMadera.diffuseColor = new Color3(0.5, 0.36, 0.24);
+  const matMadera = new PBRMaterial(`matRepisa_${id}`, scene);
+  matMadera.albedoColor = new Color3(0.45, 0.32, 0.2);
+  matMadera.roughness = 0.6; // madera barnizada: mate con leve brillo
 
   const soporte = MeshBuilder.CreateBox(`soporteRepisa_${id}`, { width: 0.15, height: 0.75, depth: 0.15 }, scene);
   soporte.position.set(x, 0.375, 1.8);
   soporte.material = matMadera;
+  soporte.receiveShadows = true;
 
   const tabla = MeshBuilder.CreateBox(`tablaRepisa_${id}`, { width: 1.1, height: 0.05, depth: 1.1 }, scene);
   tabla.position.set(x, 0.775, 1.8);

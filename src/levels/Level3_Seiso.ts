@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock, Control } from "@babylonjs/gui";
 import { manchasNivel3, preguntaCausaNivel3, opcionesCausaNivel3 } from "../data/levelConfig";
 import { crearMancha } from "../entities/Stain";
@@ -15,15 +15,18 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   crearAmbienteOficina(scene);
 
   const suelo = MeshBuilder.CreateGround("sueloN3", { width: 10, height: 10 }, scene);
-  const matSuelo = new StandardMaterial("matSueloN3", scene);
-  matSuelo.diffuseColor = new Color3(0.75, 0.72, 0.68);
+  const matSuelo = new PBRMaterial("matSueloN3", scene);
+  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
+  matSuelo.roughness = 0.45;
+  matSuelo.metallic = 0.05;
   suelo.material = matSuelo;
   suelo.receiveShadows = true;
 
   const escritorio = MeshBuilder.CreateBox("escritorioN3", { width: 3, height: 0.1, depth: 1.4 }, scene);
   escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new StandardMaterial("matEscritorioN3", scene);
-  matEscritorio.diffuseColor = new Color3(0.45, 0.32, 0.22);
+  const matEscritorio = new PBRMaterial("matEscritorioN3", scene);
+  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
+  matEscritorio.roughness = 0.5;
   escritorio.material = matEscritorio;
   escritorio.receiveShadows = true;
 

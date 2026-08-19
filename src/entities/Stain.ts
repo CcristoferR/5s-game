@@ -1,17 +1,14 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Mesh, Observable } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh, Observable } from "@babylonjs/core";
 
 export interface StainResult {
   mesh: Mesh;
   onLimpia: Observable<void>;
 }
 
-// Mancha con forma irregular (varios óvalos superpuestos, no un círculo
-// perfecto) para que se lea como una mancha real de aceite. Al limpiarla
-// se desvanece (menos opaca) además de achicarse — simula "frotar hasta
-// que sale" en vez de solo encoger de golpe.
 export function crearMancha(scene: Scene, id: string, x: number, z: number, clicksNecesarios = 5): StainResult {
-  const mat = new StandardMaterial(`matMancha_${id}`, scene);
-  mat.diffuseColor = new Color3(0.12, 0.1, 0.07);
+  const mat = new PBRMaterial(`matMancha_${id}`, scene);
+  mat.albedoColor = new Color3(0.1, 0.08, 0.06);
+  mat.roughness = 0.15; // aceite mojado: brilla, no es mate como tierra
   mat.alpha = 0.85;
 
   const nucleo = MeshBuilder.CreateDisc(`manchaNucleo_${id}`, { radius: 0.22, tessellation: 16 }, scene);
