@@ -11,6 +11,12 @@ export function crearFormaNivel2(scene: Scene, datos: ObjetoNivel2): Mesh {
       return crearCarpeta(scene, datos.id);
     case "taza_lapices":
       return crearTazaLapices(scene, datos.id);
+    case "llavero":
+      return crearLlavero(scene, datos.id);
+    case "tijeras":
+      return crearTijeras(scene, datos.id);
+    case "manual_referencia":
+      return crearManualReferencia(scene, datos.id);
     default: {
       const mesh = MeshBuilder.CreateBox(datos.id, { size: 0.4 }, scene);
       const mat = new PBRMaterial(`mat_${datos.id}`, scene);
@@ -37,7 +43,6 @@ function crearTelefono(scene: Scene, id: string): Mesh {
   fusion.name = id;
   fusion.material = matCuerpo;
 
-  // Fila de botones — el detalle que lo hace leerse como teléfono real.
   const matBoton = new PBRMaterial(`matBoton_${id}`, scene);
   matBoton.albedoColor = new Color3(0.6, 0.6, 0.62);
   matBoton.roughness = 0.4;
@@ -109,7 +114,7 @@ function crearCarpeta(scene: Scene, id: string): Mesh {
 function crearTazaLapices(scene: Scene, id: string): Mesh {
   const matTaza = new PBRMaterial(`mat_${id}`, scene);
   matTaza.albedoColor = new Color3(0.25, 0.45, 0.6);
-  matTaza.roughness = 0.15; // cerámica brillante
+  matTaza.roughness = 0.15;
 
   const cuerpo = MeshBuilder.CreateCylinder(`cuerpo_${id}`, { diameterTop: 0.16, diameterBottom: 0.13, height: 0.18 }, scene);
   const fusion = Mesh.MergeMeshes([cuerpo], true, true, undefined, false, true)!;
@@ -131,13 +136,114 @@ function crearTazaLapices(scene: Scene, id: string): Mesh {
     lapiz.parent = fusion;
     lapiz.material = matMadera;
 
-    // Punta cónica al final del lápiz — el detalle que lo distingue de un simple cilindro.
     const punta = MeshBuilder.CreateCylinder(`punta_${id}_${i}`, { diameterTop: 0, diameterBottom: 0.015, height: 0.03 }, scene);
     punta.position.set(offset, 0.15 + 0.11, offset * 0.6);
     punta.rotation.z = offset * 3;
     punta.parent = fusion;
     punta.material = matPunta;
   });
+
+  return fusion;
+}
+
+function crearLlavero(scene: Scene, id: string): Mesh {
+  const matAnillo = new PBRMaterial(`matAnillo_${id}`, scene);
+  matAnillo.albedoColor = new Color3(0.6, 0.6, 0.63);
+  matAnillo.roughness = 0.25;
+  matAnillo.metallic = 0.8;
+
+  const anillo = MeshBuilder.CreateTorus(`anillo_${id}`, { diameter: 0.1, thickness: 0.012 }, scene);
+  const fusion = Mesh.MergeMeshes([anillo], true, true, undefined, false, true)!;
+  fusion.name = id;
+  fusion.material = matAnillo;
+
+  const matLlave = new PBRMaterial(`matLlave_${id}`, scene);
+  matLlave.albedoColor = new Color3(0.7, 0.68, 0.5);
+  matLlave.roughness = 0.3;
+  matLlave.metallic = 0.75;
+
+  [-0.02, 0.02, 0.06].forEach((offset, i) => {
+    const llave = MeshBuilder.CreateBox(`llave_${id}_${i}`, { width: 0.02, height: 0.14, depth: 0.005 }, scene);
+    llave.position.set(offset, -0.09, 0);
+    llave.rotation.z = offset * 2;
+    llave.parent = fusion;
+    llave.material = matLlave;
+  });
+
+  return fusion;
+}
+
+function crearTijeras(scene: Scene, id: string): Mesh {
+  const matHoja = new PBRMaterial(`matHoja_${id}`, scene);
+  matHoja.albedoColor = new Color3(0.65, 0.66, 0.68);
+  matHoja.roughness = 0.25;
+  matHoja.metallic = 0.85;
+
+  const hoja1 = MeshBuilder.CreateBox(`hoja1_${id}`, { width: 0.02, height: 0.005, depth: 0.22 }, scene);
+  hoja1.rotation.y = 0.25;
+  hoja1.position.set(0, 0, 0.09);
+
+  const hoja2 = MeshBuilder.CreateBox(`hoja2_${id}`, { width: 0.02, height: 0.005, depth: 0.22 }, scene);
+  hoja2.rotation.y = -0.25;
+  hoja2.position.set(0, 0, 0.09);
+
+  const fusion = Mesh.MergeMeshes([hoja1, hoja2], true, true, undefined, false, true)!;
+  fusion.name = id;
+  fusion.material = matHoja;
+
+  const matTornillo = new PBRMaterial(`matTornillo_${id}`, scene);
+  matTornillo.albedoColor = new Color3(0.4, 0.4, 0.42);
+  matTornillo.roughness = 0.3;
+  matTornillo.metallic = 0.7;
+
+  const tornillo = MeshBuilder.CreateCylinder(`tornillo_${id}`, { diameter: 0.02, height: 0.01 }, scene);
+  tornillo.rotation.x = Math.PI / 2;
+  tornillo.parent = fusion;
+  tornillo.material = matTornillo;
+
+  const matMango = new PBRMaterial(`matMango_${id}`, scene);
+  matMango.albedoColor = new Color3(0.85, 0.15, 0.1);
+  matMango.roughness = 0.6;
+
+  const mango1 = MeshBuilder.CreateTorus(`mango1_${id}`, { diameter: 0.06, thickness: 0.012 }, scene);
+  mango1.rotation.x = 0.25;
+  mango1.position.set(-0.02, 0, -0.09);
+  mango1.parent = fusion;
+  mango1.material = matMango;
+
+  const mango2 = MeshBuilder.CreateTorus(`mango2_${id}`, { diameter: 0.06, thickness: 0.012 }, scene);
+  mango2.rotation.x = -0.25;
+  mango2.position.set(0.02, 0, -0.09);
+  mango2.parent = fusion;
+  mango2.material = matMango;
+
+  return fusion;
+}
+
+function crearManualReferencia(scene: Scene, id: string): Mesh {
+  const matPagina = new PBRMaterial(`matPagina_${id}`, scene);
+  matPagina.albedoColor = new Color3(0.86, 0.85, 0.8);
+  matPagina.roughness = 0.9;
+
+  const hojas: Mesh[] = [];
+  for (let i = 0; i < 3; i++) {
+    const hoja = MeshBuilder.CreateBox(`hoja_${id}_${i}`, { width: 0.22, height: 0.01, depth: 0.28 }, scene);
+    hoja.position.y = i * 0.012;
+    hojas.push(hoja);
+  }
+
+  const fusion = Mesh.MergeMeshes(hojas, true, true, undefined, false, true)!;
+  fusion.name = id;
+  fusion.material = matPagina;
+
+  const matPortada = new PBRMaterial(`matPortada_${id}`, scene);
+  matPortada.albedoColor = new Color3(0.2, 0.5, 0.35);
+  matPortada.roughness = 0.55;
+
+  const portada = MeshBuilder.CreateBox(`portada_${id}`, { width: 0.23, height: 0.008, depth: 0.29 }, scene);
+  portada.position.y = 3 * 0.012 + 0.005;
+  portada.parent = fusion;
+  portada.material = matPortada;
 
   return fusion;
 }

@@ -12,7 +12,8 @@ import { mostrarMenuPrincipal } from "./ui/MainMenu";
 import { mostrarCertificado } from "./ui/CertificateScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-const engine = new Engine(canvas, true);
+const engine = new Engine(canvas, true, undefined, true);
+engine.setHardwareScalingLevel(1);
 
 let sceneManager = new SceneManager(engine);
 const gameManager = GameManager.getInstance();
@@ -25,8 +26,6 @@ const infoNiveles = [
   { numero: 5, nombre: "Shitsuke - Disciplina" },
 ];
 
-// Nombre del piso de cada nivel — se usa para saber sobre qué malla se
-// puede teletransportar el jugador una vez dentro del visor.
 const sueloPorNivel: Record<number, string> = {
   1: "suelo",
   2: "sueloN2",
@@ -48,7 +47,7 @@ function mostrarMenu(): void {
     (numeroNivel) => cargarNivel(numeroNivel),
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu())
   );
-  setupXR(sceneManager.scene, []); // sin piso propio, pero el botón de VR queda disponible
+  setupXR(sceneManager.scene, []);
 }
 
 function volverAlMenu(): void {
@@ -74,16 +73,18 @@ function cargarNivel(numeroNivel: number): void {
     objetos.forEach((obj) => sceneManager.shadowGenerator.addShadowCaster(obj.mesh));
     slots.forEach((s) => sceneManager.shadowGenerator.addShadowCaster(s.mesh));
   } else if (numeroNivel === 3) {
-    const { maquina } = cargarNivel3(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { maquina, impresora } = cargarNivel3(sceneManager.scene, hud, volverAlMenu, onCompletado);
     maquina.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
+    impresora.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
   } else if (numeroNivel === 4) {
     const { items, zonas } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
     items.forEach((item) => sceneManager.shadowGenerator.addShadowCaster(item.mesh));
     zonas.forEach((z) => sceneManager.shadowGenerator.addShadowCaster(z));
-   } else if (numeroNivel === 5) {
+  } else if (numeroNivel === 5) {
     const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado);
     puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));
   }
+
   const nombreSuelo = sueloPorNivel[numeroNivel];
   const suelo = sceneManager.scene.getMeshByName(nombreSuelo) as Mesh | null;
   setupXR(sceneManager.scene, suelo ? [suelo] : []);

@@ -45,26 +45,20 @@ export class SceneManager {
     const camara = new FreeCamera("camPrincipal", new Vector3(0, 4.5, -6), this.scene);
     camara.setTarget(new Vector3(0, 1, 0));
 
-    // Entorno más suave (antes lavaba los colores por ser muy fuerte
-    // comparado con las luces) — ahora aporta reflejos sutiles sin
-    // aplastar el contraste de cada material.
     this.scene.createDefaultEnvironment({ createGround: false, createSkybox: false });
     this.scene.environmentIntensity = 0.7;
 
     const pipeline = new DefaultRenderingPipeline("pipelineOficina", true, this.scene, [camara]);
-    pipeline.fxaaEnabled = true;
+    pipeline.fxaaEnabled = false; // el antialiasing real de la GPU (MSAA) ya cubre esto
     pipeline.bloomEnabled = true;
     pipeline.bloomThreshold = 0.9;
     pipeline.bloomWeight = 0.1;
     pipeline.bloomKernel = 32;
-    pipeline.imageProcessing.contrast = 1.2; // más punch, recupera lo que el entorno aplanaba
+    pipeline.imageProcessing.contrast = 1.2;
     pipeline.imageProcessing.exposure = 1.0;
     pipeline.imageProcessing.vignetteEnabled = true;
     pipeline.imageProcessing.vignetteWeight = 0.35;
 
-    // Sombras de contacto: donde el escritorio toca el piso, donde los
-    // objetos tocan el escritorio — es lo que hace que se sientan
-    // "apoyados" de verdad y no flotando.
     const ssao = new SSAO2RenderingPipeline("ssaoOficina", this.scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camara]);
     ssao.radius = 1.5;
     ssao.totalStrength = 0.7;

@@ -13,37 +13,72 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "engrapadora",
     nombreVisible: "Engrapadora",
-    posicionInicial: [-1.2, 0.9, 0],
+    posicionInicial: [-1.6, 0.9, -0.75],
     zonaCorrecta: "necesario",
     explicacion: "Herramienta de uso diario en el puesto de trabajo.",
   },
   {
     id: "taza_cafe",
     nombreVisible: "Taza con café viejo",
-    posicionInicial: [-0.4, 0.9, 0.3],
+    posicionInicial: [-0.8, 0.9, -0.75],
     zonaCorrecta: "descartar",
     explicacion: "Residuo que no debe permanecer en el área de trabajo.",
   },
   {
     id: "carpeta_activa",
     nombreVisible: "Carpeta 'Proyecto Activo'",
-    posicionInicial: [0.4, 0.9, -0.2],
+    posicionInicial: [0, 0.9, -0.75],
     zonaCorrecta: "necesario",
     explicacion: "Documentación en uso, se consulta con frecuencia.",
   },
   {
     id: "diario_viejo",
     nombreVisible: "Diario de hace 6 meses",
-    posicionInicial: [1.2, 0.9, 0.1],
+    posicionInicial: [0.8, 0.9, -0.75],
     zonaCorrecta: "descartar",
     explicacion: "Información desactualizada — ya no aporta valor vigente.",
   },
   {
     id: "caja_sin_etiqueta",
     nombreVisible: "Caja sin etiqueta",
-    posicionInicial: [0, 0.9, -0.4],
+    posicionInicial: [1.6, 0.9, -0.75],
     zonaCorrecta: "dudoso",
     explicacion: "No se sabe su contenido — requiere una tarjeta roja (red tag) para revisión antes de decidir si se mantiene o se descarta.",
+  },
+  {
+    id: "casco_agrietado",
+    nombreVisible: "Casco de seguridad agrietado",
+    posicionInicial: [-1.6, 0.9, -0.15],
+    zonaCorrecta: "descartar",
+    explicacion: "Tiene una grieta visible en el domo — compromete la protección, no cumple norma de seguridad.",
+  },
+  {
+    id: "cinta_metrica",
+    nombreVisible: "Cinta métrica",
+    posicionInicial: [-0.8, 0.9, -0.15],
+    zonaCorrecta: "necesario",
+    explicacion: "Herramienta de medición de uso frecuente en tareas de mantenimiento.",
+  },
+  {
+    id: "guantes_ocasionales",
+    nombreVisible: "Guantes de trabajo (uso ocasional)",
+    posicionInicial: [0, 0.9, -0.15],
+    zonaCorrecta: "dudoso",
+    explicacion: "Están en buen estado pero se usan pocas veces al mes — requieren tarjeta roja para confirmar si siguen siendo necesarios en este puesto.",
+  },
+  {
+    id: "chatarra_metal",
+    nombreVisible: "Pieza de metal sin identificar",
+    posicionInicial: [0.8, 0.9, -0.15],
+    zonaCorrecta: "descartar",
+    explicacion: "No corresponde a ningún equipo del área — chatarra sin función identificada.",
+  },
+  {
+    id: "manual_procedimientos",
+    nombreVisible: "Manual de procedimientos del área",
+    posicionInicial: [1.6, 0.9, -0.15],
+    zonaCorrecta: "necesario",
+    explicacion: "Documento de referencia activa, se consulta para tareas del puesto.",
   },
 ];
 
@@ -73,37 +108,62 @@ export const objetosNivel2: ObjetoNivel2[] = [
   {
     id: "telefono",
     nombreVisible: "Teléfono de oficina",
-    posicionInicial: [-1.2, 0.9, 0],
+    posicionInicial: [-2.1, 0.9, -0.75],
     slotCorrectoId: "slot_telefono",
     explicacion: "Se usa constantemente durante el día — debe quedar al alcance inmediato.",
   },
   {
     id: "engrapadora2",
     nombreVisible: "Engrapadora",
-    posicionInicial: [-0.4, 0.9, 0.3],
+    posicionInicial: [-0.7, 0.9, -0.75],
     slotCorrectoId: "slot_engrapadora",
     explicacion: "Uso diario pero no constante — cerca del área de trabajo es suficiente.",
   },
   {
     id: "carpeta_activa2",
     nombreVisible: "Carpeta 'Proyecto Activo'",
-    posicionInicial: [0.4, 0.9, -0.2],
+    posicionInicial: [0.7, 0.9, -0.75],
     slotCorrectoId: "slot_carpetas",
     explicacion: "Se consulta pocas veces al día — puede estar un poco más lejos.",
   },
   {
     id: "taza_lapices",
     nombreVisible: "Taza de lápices",
-    posicionInicial: [1.2, 0.9, 0.1],
+    posicionInicial: [2.1, 0.9, -0.75],
     slotCorrectoId: "slot_lapices",
     explicacion: "Se necesita tomar rápido y seguido — mejor en el borde, a mano.",
   },
+  {
+    id: "llavero",
+    nombreVisible: "Llavero con llaves de oficina",
+    posicionInicial: [-1.4, 0.9, -0.15],
+    slotCorrectoId: "slot_telefono",
+    explicacion: "Se necesita cada vez que se entra o sale — debe quedar al alcance inmediato, igual que el teléfono.",
+  },
+  {
+    id: "tijeras",
+    nombreVisible: "Tijeras de oficina",
+    posicionInicial: [0, 0.9, -0.15],
+    slotCorrectoId: "slot_engrapadora",
+    explicacion: "Uso diario, similar a la engrapadora — cerca del área de trabajo es suficiente.",
+  },
+  {
+    id: "manual_referencia",
+    nombreVisible: "Manual de referencia rápida",
+    posicionInicial: [1.4, 0.9, -0.15],
+    slotCorrectoId: "slot_carpetas",
+    explicacion: "Se consulta pocas veces al día — puede estar un poco más lejos, igual que las carpetas.",
+  },
 ];
 
-// Datos del Nivel 3 (Seiso / Limpiar).
-export interface ManchaNivel3 {
+// Datos del Nivel 3 (Seiso / Limpiar). Reestructurado en "incidentes":
+// cada uno agrupa sus propias manchas y su propia pregunta de causa —
+// permite tener varias investigaciones independientes en el mismo
+// nivel, y hace trivial agregar una tercera en el futuro.
+export interface ManchaIncidente {
   id: string;
   posicion: [number, number];
+  tipoVisual: "aceite" | "polvo";
 }
 
 export interface OpcionCausaNivel3 {
@@ -113,32 +173,73 @@ export interface OpcionCausaNivel3 {
   explicacion: string;
 }
 
-export const manchasNivel3: ManchaNivel3[] = [
-  { id: "m1", posicion: [-0.8, -0.3] },
-  { id: "m2", posicion: [0.2, 0.1] },
-  { id: "m3", posicion: [1.0, -0.1] },
-];
+export interface IncidenteNivel3 {
+  id: string;
+  nombreVisible: string;
+  manchas: ManchaIncidente[];
+  pregunta: string;
+  opciones: OpcionCausaNivel3[];
+}
 
-export const preguntaCausaNivel3 = "¿Cuál es el origen más probable de estas manchas de aceite?";
-
-export const opcionesCausaNivel3: OpcionCausaNivel3[] = [
+export const incidentesNivel3: IncidenteNivel3[] = [
   {
-    id: "fuga_maquina",
-    texto: "Fuga de aceite en la máquina cercana",
-    esCorrecta: true,
-    explicacion: "Correcto — las manchas concentradas cerca del mismo punto suelen indicar una fuga activa, no derrames aislados.",
+    id: "incidente_aceite",
+    nombreVisible: "Manchas junto a la máquina",
+    manchas: [
+      { id: "m1", posicion: [-0.8, -0.3], tipoVisual: "aceite" },
+      { id: "m2", posicion: [0.2, 0.1], tipoVisual: "aceite" },
+      { id: "m3", posicion: [1.0, -0.1], tipoVisual: "aceite" },
+    ],
+    pregunta: "¿Cuál es el origen más probable de estas manchas de aceite?",
+    opciones: [
+      {
+        id: "fuga_maquina",
+        texto: "Fuga de aceite en la máquina cercana",
+        esCorrecta: true,
+        explicacion: "Correcto — las manchas concentradas cerca del mismo punto suelen indicar una fuga activa, no derrames aislados.",
+      },
+      {
+        id: "filtro_sucio",
+        texto: "Filtro de aire sucio",
+        esCorrecta: false,
+        explicacion: "Un filtro sucio afecta el rendimiento del equipo, pero no genera manchas de aceite en el suelo.",
+      },
+      {
+        id: "mal_habito",
+        texto: "Mal hábito del turno anterior",
+        esCorrecta: false,
+        explicacion: "Posible, pero manchas repetidas en el mismo lugar apuntan primero a una causa mecánica, no humana.",
+      },
+    ],
   },
   {
-    id: "filtro_sucio",
-    texto: "Filtro de aire sucio",
-    esCorrecta: false,
-    explicacion: "Un filtro sucio afecta el rendimiento del equipo, pero no genera manchas de aceite en el suelo.",
-  },
-  {
-    id: "mal_habito",
-    texto: "Mal hábito del turno anterior",
-    esCorrecta: false,
-    explicacion: "Posible, pero manchas repetidas en el mismo lugar apuntan primero a una causa mecánica, no humana.",
+    id: "incidente_polvo",
+    nombreVisible: "Polvo negro junto a la impresora",
+    manchas: [
+      { id: "m4", posicion: [-3.5, 1.55], tipoVisual: "polvo" },
+      { id: "m5", posicion: [-2.9, 1.9], tipoVisual: "polvo" },
+    ],
+    pregunta: "¿Cuál es el origen más probable de este polvo negro junto a la impresora?",
+    opciones: [
+      {
+        id: "cartucho_danado",
+        texto: "Cartucho de tóner dañado",
+        esCorrecta: true,
+        explicacion: "Correcto — un cartucho agrietado libera tóner en polvo, que se acumula cerca del equipo.",
+      },
+      {
+        id: "ventilacion",
+        texto: "Falta de mantenimiento del ventilador",
+        esCorrecta: false,
+        explicacion: "Un ventilador sucio afecta la temperatura del equipo, pero no genera polvo negro visible en el suelo.",
+      },
+      {
+        id: "humedad",
+        texto: "Humedad ambiental",
+        esCorrecta: false,
+        explicacion: "La humedad no produce residuo negro en polvo — ese patrón es típico de tóner, no de humedad.",
+      },
+    ],
   },
 ];
 
@@ -157,14 +258,14 @@ export const itemsNivel4: ItemChecklistNivel4[] = [
   {
     id: "limpiar_vago",
     textoVisible: "Limpiar el escritorio cada cierto tiempo",
-    posicionInicial: [-1.8, 0.9, 0.2],
+    posicionInicial: [-1.6, 0.9, 0.2],
     zonaCorrecta: "descartar",
     explicacion: "Demasiado vago — 'cada cierto tiempo' no es medible, cada persona lo interpretaría distinto.",
   },
   {
     id: "limpiar_claro",
     textoVisible: "Limpiar con paño húmedo al finalizar el turno",
-    posicionInicial: [-0.9, 0.9, -0.2],
+    posicionInicial: [-0.8, 0.9, -0.2],
     zonaCorrecta: "checklist",
     explicacion: "Claro y medible — cualquiera puede seguir esta instrucción sin ambigüedad.",
   },
@@ -178,14 +279,14 @@ export const itemsNivel4: ItemChecklistNivel4[] = [
   {
     id: "archivar_claro",
     textoVisible: "Archivar en carpeta por proyecto, ordenado por fecha",
-    posicionInicial: [0.9, 0.9, -0.1],
+    posicionInicial: [0.8, 0.9, -0.1],
     zonaCorrecta: "checklist",
     explicacion: "Instrucción específica y replicable por cualquier persona nueva en el puesto.",
   },
   {
     id: "correo_personal",
     textoVisible: "Revisar el correo personal",
-    posicionInicial: [1.8, 0.9, 0.2],
+    posicionInicial: [1.6, 0.9, 0.2],
     zonaCorrecta: "descartar",
     explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo.",
   },

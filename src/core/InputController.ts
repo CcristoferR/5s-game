@@ -2,7 +2,8 @@ import { Mesh, PointerDragBehavior, Vector3, Observable } from "@babylonjs/core"
 
 export interface ResultadoSoltar {
   mesh: Mesh;
-  movioSuficiente: boolean; // false = fue un click/tap sin arrastre real, no una decisión
+  movioSuficiente: boolean;
+  distancia: number; // distancia recorrida en el arrastre — usada en el Nivel 2 para medir "eficiencia de ubicación"
 }
 
 const DISTANCIA_MINIMA_ARRASTRE = 0.3;
@@ -32,7 +33,7 @@ export function hacerArrastrable(mesh: Mesh, alturaFija: number): { onSoltar: Ob
       new Vector3(posicionAlAgarrar.x, 0, posicionAlAgarrar.z),
       new Vector3(mesh.position.x, 0, mesh.position.z)
     );
-    onSoltar.notifyObservers({ mesh, movioSuficiente: distancia >= DISTANCIA_MINIMA_ARRASTRE });
+    onSoltar.notifyObservers({ mesh, movioSuficiente: distancia >= DISTANCIA_MINIMA_ARRASTRE, distancia });
   });
 
   mesh.addBehavior(comportamiento);
