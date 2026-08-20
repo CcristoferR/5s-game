@@ -43,7 +43,7 @@ export function mostrarInformeAuditoria(gui: AdvancedDynamicTexture, filas: Fila
 
     const fondoFila = new Rectangle(`filaInforme_${fila.datos.id}`);
     fondoFila.width = "530px";
-    fondoFila.height = "72px";
+    fondoFila.height = "92px";
     fondoFila.thickness = 0;
     fondoFila.cornerRadius = 8;
     fondoFila.background = acerto ? "rgba(30, 100, 50, 0.5)" : "rgba(110, 30, 30, 0.5)";
@@ -52,10 +52,10 @@ export function mostrarInformeAuditoria(gui: AdvancedDynamicTexture, filas: Fila
 
     const textoFila = new TextBlock(
       `textoFila_${fila.datos.id}`,
-      `${acerto ? "✅" : "❌"} ${fila.datos.descripcionControl}\n${fila.datos.explicacion}`
+      `${acerto ? "✅" : "❌"} ${fila.datos.descripcionControl}  (calificación real: ${fila.datos.calificacion}/5)\n${fila.datos.explicacion}`
     );
     textoFila.color = "white";
-    textoFila.fontSize = 13;
+    textoFila.fontSize = 12;
     textoFila.textWrapping = true;
     textoFila.paddingLeft = "10px";
     textoFila.paddingRight = "10px";

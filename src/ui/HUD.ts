@@ -15,9 +15,11 @@ export class HUD {
   private textoFeedback: TextBlock;
   private fondoOverlay: Rectangle;
   private pantallaFinal: Rectangle;
+  private cabeceraFinal: Rectangle;
   private textoTituloFinal: TextBlock;
   private textoStatsFinal: TextBlock;
   private botonVolverMenu: Button;
+  private botonReintentar: Button;
 
   constructor(scene: Scene) {
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI("hudPrincipal", true, scene);
@@ -109,15 +111,15 @@ export class HUD {
     this.pantallaFinal.zIndex = 51;
     this.gui.addControl(this.pantallaFinal);
 
-    const cabecera = new Rectangle("cabeceraFinal");
-    cabecera.width = "460px";
-    cabecera.height = "70px";
-    cabecera.thickness = 0;
-    cabecera.cornerRadius = 18;
-    cabecera.background = "#2e7d46";
-    cabecera.top = "0px";
-    cabecera.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.pantallaFinal.addControl(cabecera);
+    this.cabeceraFinal = new Rectangle("cabeceraFinal");
+    this.cabeceraFinal.width = "460px";
+    this.cabeceraFinal.height = "70px";
+    this.cabeceraFinal.thickness = 0;
+    this.cabeceraFinal.cornerRadius = 18;
+    this.cabeceraFinal.background = "#2e7d46";
+    this.cabeceraFinal.top = "0px";
+    this.cabeceraFinal.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.pantallaFinal.addControl(this.cabeceraFinal);
 
     this.textoTituloFinal = new TextBlock("tituloFinal", "");
     this.textoTituloFinal.color = "white";
@@ -144,6 +146,21 @@ export class HUD {
     this.botonVolverMenu.top = "-20px";
     this.botonVolverMenu.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.pantallaFinal.addControl(this.botonVolverMenu);
+
+    // Solo se muestra cuando el jugador reprueba la auditoría del
+    // Nivel 5 (ver mostrarResultadoAuditoria) — en el resto de los
+    // niveles queda oculto y mostrarResultadoFinal no lo toca.
+    this.botonReintentar = Button.CreateSimpleButton("btnReintentarAuditoria", "🔁 Reintentar auditoría");
+    this.botonReintentar.width = "210px";
+    this.botonReintentar.height = "46px";
+    this.botonReintentar.color = "white";
+    this.botonReintentar.cornerRadius = 10;
+    this.botonReintentar.thickness = 0;
+    this.botonReintentar.background = "#a1552e";
+    this.botonReintentar.top = "-20px";
+    this.botonReintentar.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    this.botonReintentar.isVisible = false;
+    this.pantallaFinal.addControl(this.botonReintentar);
   }
 
   actualizarPuntaje(puntaje: number): void {
@@ -184,6 +201,54 @@ export class HUD {
       this.fondoOverlay.isVisible = false;
       this.pantallaFinal.isVisible = false;
       onVolverMenu();
+    });
+  }
+
+  // Pantalla de resultado propia del Nivel 5: a diferencia de
+  // mostrarResultadoFinal (que siempre "celebra"), acá el resultado
+  // depende de si el jugador aprobó la auditoría o no. Si reprobó, se
+  // muestra un botón para reintentar en vez de dar el nivel por
+  // completado — así el certificado deja de aparecer "haga lo que haga".
+  mostrarResultadoAuditoria(
+    aprobado: boolean,
+    puntosBase: number,
+    tasaAcierto: number,
+    promedioCalificacion: number,
+    segundosTotales: number,
+    onVolverMenu: () => void,
+    onReintentar: () => void
+  ): void {
+    const tasaPct = Math.round(tasaAcierto * 100);
+
+    this.cabeceraFinal.background = aprobado ? "#2e7d46" : "#8a3a2e";
+    this.textoTituloFinal.text = aprobado ? "🎉  Auditoría aprobada" : "⚠️  Auditoría no aprobada";
+    this.textoStatsFinal.text =
+      `Aciertos de auditoría: ${tasaPct}%\n` +
+      `Calificación real del área: ${promedioCalificacion.toFixed(1)}/5\n` +
+      `Puntos ganados: ${puntosBase}  (${segundosTotales}s)\n\n` +
+      (aprobado
+        ? "Nivel 5 completado — certificado disponible en el menú."
+        : "No alcanzaste el mínimo de aciertos para aprobar. Podés reintentar la auditoría.");
+
+    this.fondoOverlay.isVisible = true;
+    this.pantallaFinal.isVisible = true;
+
+    this.botonReintentar.isVisible = !aprobado;
+    this.botonVolverMenu.left = aprobado ? "0px" : "-115px";
+    this.botonReintentar.left = "115px";
+
+    this.botonVolverMenu.onPointerUpObservable.clear();
+    this.botonVolverMenu.onPointerUpObservable.add(() => {
+      this.fondoOverlay.isVisible = false;
+      this.pantallaFinal.isVisible = false;
+      onVolverMenu();
+    });
+
+    this.botonReintentar.onPointerUpObservable.clear();
+    this.botonReintentar.onPointerUpObservable.add(() => {
+      this.fondoOverlay.isVisible = false;
+      this.pantallaFinal.isVisible = false;
+      onReintentar();
     });
   }
 }

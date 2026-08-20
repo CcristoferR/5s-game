@@ -9,7 +9,7 @@ import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/Check
 import { crearZonaSenal } from "../entities/SignageZone";
 import { crearNPCWorker } from "../entities/NPCWorker";
 import { crearAmbienteOficina } from "../entities/OfficeAmbience";
-import { GameManager } from "../core/GameManager";
+import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
 const posicionesZonas: Record<ZonaChecklist, number> = {
@@ -97,7 +97,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // en su propia zona del cuarto (z=3.0 spawn / z=4.2 zonas), lejos del
   // checklist, para que no se vean encimadas. ---
   const senales = senalesNivel4.map((datos) => crearObjetoInteractable(scene, datos, crearFormaSenal));
-  const zonasSenal = zonasSenalNivel4.map((z) => crearZonaSenal(scene, gui, z.id, z.posicionX, Z_ZONA_SENAL, z.descripcion));
+  zonasSenalNivel4.forEach((z) => crearZonaSenal(scene, gui, z.id, z.posicionX, Z_ZONA_SENAL, z.descripcion));
 
   // Etiqueta con el nombre del color sobre cada ficha — así se distingue
   // sin dudas del checklist numerado, aunque estén en el mismo cuadro.
@@ -296,6 +296,30 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           : `Incorrecto — esta zona requería el color ${colorEsperado}.`,
       };
     });
+
+    // Se guarda el estándar que el jugador construyó (aciertos Y errores
+    // incluidos) para que el Nivel 5 audite exactamente esto — sin esto,
+    // el Nivel 5 no tiene forma de saber "el checklist que él mismo
+    // ayudó a construir en el Nivel 4".
+    const checklistConstruido: ItemChecklistConstruido[] = itemsNivel4
+      .filter((datos) => colocacionItems.get(datos.id) === "checklist")
+      .map((datos) => ({
+        id: datos.id,
+        texto: datos.textoVisible,
+        esValido: datos.zonaCorrecta === "checklist",
+      }));
+
+    const senalizacionConstruida: SenalizacionConstruida[] = zonasSenalNivel4.map((zona) => {
+      const senalId = [...colocacionSenales.entries()].find(([, zonaId]) => zonaId === zona.id)?.[0] ?? "";
+      return {
+        zonaId: zona.id,
+        zonaDescripcion: zona.descripcion,
+        colorElegidoId: senalId,
+        esCorrecta: senalId === zona.colorCorrectoId,
+      };
+    });
+
+    gameManager.guardarEstandarNivel4({ checklist: checklistConstruido, senalizacion: senalizacionConstruida });
 
     const todasLasFilas = [...filasChecklist, ...filasSenales];
     const totalCorrectos = todasLasFilas.filter((f) => f.correcto).length;

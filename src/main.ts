@@ -56,6 +56,14 @@ function volverAlMenu(): void {
   mostrarMenu();
 }
 
+// Reinicia la escena y vuelve a cargar el mismo nivel (usado por el
+// botón "Reintentar auditoría" cuando el jugador reprueba el Nivel 5).
+function reintentarNivel(numeroNivel: number): void {
+  sceneManager.scene.dispose();
+  sceneManager = new SceneManager(engine);
+  cargarNivel(numeroNivel);
+}
+
 function cargarNivel(numeroNivel: number): void {
   gameManager.reiniciarNivel();
   gameManager.onPuntajeCambiado.clear();
@@ -82,7 +90,7 @@ function cargarNivel(numeroNivel: number): void {
     zonas.forEach((z) => sceneManager.shadowGenerator.addShadowCaster(z));
     senales.forEach((s) => sceneManager.shadowGenerator.addShadowCaster(s.mesh));
   } else if (numeroNivel === 5) {
-    const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado, () => reintentarNivel(5));
     puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));
   }
 

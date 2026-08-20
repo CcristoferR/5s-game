@@ -156,6 +156,14 @@ export const zonasSenalNivel4: ZonaSenalNivel4[] = [
 ];
 
 // Datos del Nivel 5 (Shitsuke / Disciplina) — modo auditoría.
+//
+// A diferencia de los otros niveles, los puntos de control YA NO son una
+// lista fija: se generan en tiempo real a partir del estándar que el
+// propio jugador construyó en el Nivel 4 (ver core/AuditGenerator.ts y
+// core/GameManager.ts), y las desviaciones se sortean en cada intento.
+// Acá solo queda el tipo de dato y un set de respaldo, por si el jugador
+// llegara a este nivel sin datos guardados del Nivel 4 en esta sesión
+// (no debería pasar en el flujo normal, pero evita que el nivel se rompa).
 export type TipoEvidencia = "tarjetaVencida" | "manchaVisible" | "objetoFueraDeLugar" | "sinProblema";
 
 export interface PuntoControlNivel5 {
@@ -164,13 +172,17 @@ export interface PuntoControlNivel5 {
   descripcionControl: string;
   tieneDesviacion: boolean;
   tipoEvidencia: TipoEvidencia;
+  // Calificación real del punto de control en escala 1-5, como en un
+  // checklist de auditoría de industria: 1-2 = incumple, 4-5 = cumple.
+  // Es independiente de si el jugador acierta o no al marcarlo.
+  calificacion: number;
   explicacion: string;
 }
 
-export const puntosControlNivel5: PuntoControlNivel5[] = [
-  { id: "p1", posicion: [-4, 0.4], descripcionControl: "Ubicación del teléfono según estándar", tieneDesviacion: false, tipoEvidencia: "sinProblema", explicacion: "El teléfono está en su lugar asignado — sin desviación." },
-  { id: "p2", posicion: [-2, -0.3], descripcionControl: "Vigencia de la tarjeta roja del área", tieneDesviacion: true, tipoEvidencia: "tarjetaVencida", explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse." },
-  { id: "p3", posicion: [0, 0.5], descripcionControl: "Estado de limpieza del área de trabajo", tieneDesviacion: true, tipoEvidencia: "manchaVisible", explicacion: "Apareció una mancha nueva desde la última auditoría." },
-  { id: "p4", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", explicacion: "La carpeta está archivada correctamente según el estándar." },
-  { id: "p5", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", explicacion: "Un objeto quedó fuera de su casilla asignada." },
+export const puntosControlRespaldoNivel5: PuntoControlNivel5[] = [
+  { id: "resp_p1", posicion: [-4, 0.4], descripcionControl: "Ubicación del teléfono según estándar", tieneDesviacion: false, tipoEvidencia: "sinProblema", calificacion: 5, explicacion: "El teléfono está en su lugar asignado — sin desviación." },
+  { id: "resp_p2", posicion: [-2, -0.3], descripcionControl: "Vigencia de la tarjeta roja del área", tieneDesviacion: true, tipoEvidencia: "tarjetaVencida", calificacion: 1, explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse." },
+  { id: "resp_p3", posicion: [0, 0.5], descripcionControl: "Estado de limpieza del área de trabajo", tieneDesviacion: true, tipoEvidencia: "manchaVisible", calificacion: 2, explicacion: "Apareció una mancha nueva desde la última auditoría." },
+  { id: "resp_p4", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", calificacion: 4, explicacion: "La carpeta está archivada correctamente según el estándar." },
+  { id: "resp_p5", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", calificacion: 2, explicacion: "Un objeto quedó fuera de su casilla asignada." },
 ];

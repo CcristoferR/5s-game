@@ -1,6 +1,10 @@
 // Genera el certificado como imagen usando Canvas 2D (nativo del
 // navegador, sin librerías nuevas) y ofrece descargarlo o compartirlo.
-export function generarCertificado(): string {
+// Solo se llega a esta pantalla si el Nivel 5 fue aprobado (ver
+// GameManager/MainMenu), así que "datosAuditoria" siempre debería venir
+// con datos reales — el parámetro es opcional solo como red de
+// seguridad para no romper el render si algo llegó a fallar antes.
+export function generarCertificado(datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number }): string {
   const canvas = document.createElement("canvas");
   canvas.width = 1000;
   canvas.height = 700;
@@ -35,6 +39,17 @@ export function generarCertificado(): string {
   ctx.font = "18px system-ui, sans-serif";
   ctx.fillStyle = "#555";
   ctx.fillText(`Fecha: ${fecha}`, canvas.width / 2, 460);
+
+  if (datosAuditoria) {
+    const tasaPct = Math.round(datosAuditoria.tasaAcierto * 100);
+    ctx.font = "bold 20px system-ui, sans-serif";
+    ctx.fillStyle = "#2e7d46";
+    ctx.fillText(
+      `Auditoría final (Nivel 5): ${tasaPct}% de aciertos — calificación ${datosAuditoria.promedioCalificacion.toFixed(1)}/5`,
+      canvas.width / 2,
+      495
+    );
+  }
 
   ctx.beginPath();
   ctx.arc(canvas.width / 2, 560, 50, 0, Math.PI * 2);

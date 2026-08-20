@@ -1,15 +1,33 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
 import { Button, TextBlock, Control } from "@babylonjs/gui";
-import { puntosControlNivel5 } from "../data/levelConfig";
+import { generarPuntosControlNivel5 } from "../core/AuditGenerator";
 import { crearPuntoControl } from "../entities/AuditPoint";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
 import { crearAmbienteOficina } from "../entities/OfficeAmbience";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
-const tiempoLimiteSegundos = 40;
+// ~9 segundos por punto de control, con un piso de 35s. La cantidad de
+// puntos varía según cuántos ítems dejó el jugador en el checklist del
+// Nivel 4 (más la señalización), así que el tiempo se adapta en vez de
+// quedar fijo en 40s como antes.
+const SEGUNDOS_POR_PUNTO = 9;
+const TIEMPO_MINIMO_SEGUNDOS = 35;
 
-export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
+// Umbral de aprobación de la auditoría: hay que detectar correctamente al
+// menos el 70% de los puntos de control para aprobar — igual que en una
+// auditoría real, no basta con "haber jugado el nivel". Este umbral es
+// lo que decide si se llama a onCompletado() (y por lo tanto si se
+// desbloquea el certificado).
+const UMBRAL_APROBACION = 0.7;
+
+export function cargarNivel5(
+  scene: Scene,
+  hud: HUD,
+  onVolverMenu: () => void,
+  onCompletado: () => void,
+  onReintentar: () => void
+) {
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
 
@@ -31,30 +49,40 @@ export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   escritorio.material = matEscritorio;
   escritorio.receiveShadows = true;
 
+  // Los puntos de control se generan a partir del estándar que el
+  // jugador construyó en el Nivel 4 (checklist + señalización), con
+  // desviaciones sorteadas de nuevo en cada intento — así cumple lo que
+  // pide la guía: "desviaciones introducidas aleatoriamente" sobre "el
+  // checklist que él mismo ayudó a construir en el Nivel 4".
+  const datosControl = generarPuntosControlNivel5(gameManager.getEstandarNivel4());
+  const tiempoLimiteSegundos = Math.max(TIEMPO_MINIMO_SEGUNDOS, datosControl.length * SEGUNDOS_POR_PUNTO);
+
   const instruccion = new TextBlock(
     "instruccionNivel5",
-    "🔍 Revisa cada estación de control. Haz click en la esfera si detectas un problema (click de nuevo para desmarcar)."
+    `🔍 Estás auditando el estándar que TÚ definiste en el Nivel 4. Click en la esfera si detectas un problema (click de nuevo para desmarcar). Necesitas ${Math.round(
+      UMBRAL_APROBACION * 100
+    )}% de aciertos para aprobar la auditoría.`
   );
   instruccion.color = "white";
-  instruccion.fontSize = 15;
+  instruccion.fontSize = 14;
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
-  instruccion.width = "520px";
+  instruccion.width = "560px";
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
 
-  const contador = new TextBlock("contadorNivel5", "Marcados: 0/5");
+  const contador = new TextBlock("contadorNivel5", `Marcados: 0/${datosControl.length}`);
   contador.color = "white";
   contador.fontSize = 15;
   contador.outlineWidth = 3;
   contador.outlineColor = "rgba(0,0,0,0.6)";
-  contador.top = "110px";
+  contador.top = "150px";
   contador.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(contador);
 
-  const puntos = puntosControlNivel5.map((datos) =>
+  const puntos = datosControl.map((datos) =>
     crearPuntoControl(scene, gui, datos.id, datos.posicion[0], datos.posicion[1], datos.descripcionControl, datos.tipoEvidencia)
   );
 
@@ -103,20 +131,39 @@ export function cargarNivel5(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     instruccion.isVisible = false;
     contador.isVisible = false;
 
-    let puntosBase = 0;
-    const filas = puntosControlNivel5.map((datos, i) => {
+    let aciertos = 0;
+    let sumaCalificaciones = 0;
+    const filas = datosControl.map((datos, i) => {
       const marcadoPorJugador = puntos[i].estaMarcado();
       const correcto = marcadoPorJugador === datos.tieneDesviacion;
-      puntosBase += correcto ? 5 : 1;
+      if (correcto) aciertos++;
+      sumaCalificaciones += datos.calificacion;
       return { datos, marcadoPorJugador };
     });
 
+    const tasaAcierto = aciertos / datosControl.length;
+    const promedioCalificacion = sumaCalificaciones / datosControl.length;
+    const aprobado = tasaAcierto >= UMBRAL_APROBACION;
+
+    // El puntaje del minijuego premia la detección correcta del jugador
+    // — no depende de si el área "salió buena o mala" (eso es al azar),
+    // sino de qué tan buen auditor fue.
+    const puntosBase = aciertos * 10;
     gameManager.sumarPuntos(puntosBase);
+    gameManager.registrarResultadoAuditoriaN5({ promedioCalificacion, tasaAcierto, aprobado });
+
+    // El Nivel 5 (y por lo tanto el 100% de madurez y el certificado)
+    // solo se marca como completado si el jugador APRUEBA la auditoría.
+    // Antes esto se llamaba siempre, sin importar el resultado — por eso
+    // el certificado salía pasara lo que pasara.
+    if (aprobado) {
+      onCompletado();
+    }
+
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
 
     mostrarInformeAuditoria(gui, filas, () => {
-      onCompletado();
-      hud.mostrarResultadoFinal("Nivel 5 (Auditoría)", puntosBase, 0, segundosTotales, onVolverMenu);
+      hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar);
     });
   }
 
