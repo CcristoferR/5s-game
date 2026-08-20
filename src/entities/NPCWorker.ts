@@ -3,12 +3,9 @@ import { Scene, MeshBuilder, StandardMaterial, Color3, Mesh, Vector3, Animation 
 export interface NPCWorkerResult {
   mesh: Mesh;
   caminarHacia: (destino: Vector3, duracionSegundos: number, alTerminar?: () => void) => void;
+  reaccionar: (exito: boolean) => void;
 }
 
-// NPC placeholder simple (una cápsula, sin articulaciones) que "prueba"
-// el estándar caminando hacia el checklist terminado. Intencionalmente
-// básico — el desafío del nivel es la claridad del checklist, no el
-// personaje en sí.
 export function crearNPCWorker(scene: Scene): NPCWorkerResult {
   const mesh = MeshBuilder.CreateCapsule("npcWorker", { height: 1.2, radius: 0.22 }, scene);
   mesh.position.set(-4, 0.6, 1.2);
@@ -31,5 +28,31 @@ export function crearNPCWorker(scene: Scene): NPCWorkerResult {
     scene.beginAnimation(mesh, 0, fps * duracionSegundos, false, 1, alTerminar);
   }
 
-  return { mesh, caminarHacia };
+  // Reacción visual tras la prueba: un pequeño salto de alegría si el
+  // estándar era claro, o un temblor de confusión si era ambiguo — le da
+  // consecuencia real a "si el estándar es ambiguo, el NPC falla".
+  function reaccionar(exito: boolean): void {
+    let t = 0;
+    const rotBase = mesh.rotation.y;
+
+    const obs = scene.onBeforeRenderObservable.add(() => {
+      t += scene.getEngine().getDeltaTime() / 1000;
+
+      if (exito) {
+        mesh.scaling.y = 1 + Math.max(0, Math.sin(t * 10)) * 0.18;
+        if (t > 0.6) {
+          mesh.scaling.y = 1;
+          scene.onBeforeRenderObservable.remove(obs);
+        }
+      } else {
+        mesh.rotation.y = rotBase + Math.sin(t * 14) * 0.35;
+        if (t > 0.7) {
+          mesh.rotation.y = rotBase;
+          scene.onBeforeRenderObservable.remove(obs);
+        }
+      }
+    });
+  }
+
+  return { mesh, caminarHacia, reaccionar };
 }

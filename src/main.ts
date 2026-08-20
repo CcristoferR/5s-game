@@ -77,9 +77,10 @@ function cargarNivel(numeroNivel: number): void {
     maquina.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
     impresora.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
   } else if (numeroNivel === 4) {
-    const { items, zonas } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { items, zonas, senales } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
     items.forEach((item) => sceneManager.shadowGenerator.addShadowCaster(item.mesh));
     zonas.forEach((z) => sceneManager.shadowGenerator.addShadowCaster(z));
+    senales.forEach((s) => sceneManager.shadowGenerator.addShadowCaster(s.mesh));
   } else if (numeroNivel === 5) {
     const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado);
     puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));
