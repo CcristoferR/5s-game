@@ -3,7 +3,7 @@ import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, Control } from "@
 import { objetosNivel1, type ZonaClasificacion } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearDropZone } from "../entities/DropZone";
-import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { cargarGaraje } from "../entities/Garaje";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
@@ -24,15 +24,22 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
 
-  crearAmbienteOficina(scene);
+  // ESCENARIO: el garaje real entregado por Bitplay reemplaza a la oficina
+  // que antes se generaba por código. La carga es asíncrona: los objetos del
+  // nivel se crean igual y el garaje aparece un instante después.
+  //
+  // A propósito NO se le pasa el shadowGenerator: el garaje tiene techo, y
+  // si el techo proyectara la sombra de la luz direccional dejaría todo el
+  // interior a oscuras. La luz de adentro se resuelve en iluminarInterior.
+void cargarGaraje(scene).catch((error) => console.error("[nivel1] garaje:", error));
+  iluminarInterior(scene);
 
-  const suelo = MeshBuilder.CreateGround("suelo", { width: 10, height: 10 }, scene);
-  const matSuelo = new PBRMaterial("matSuelo", scene);
-  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
-  matSuelo.roughness = 0.45;
-  matSuelo.metallic = 0.05;
-  suelo.material = matSuelo;
-  suelo.receiveShadows = true;
+  // Suelo invisible al ras del piso del garaje. No se ve, pero sigue
+  // llamándose "suelo" porque main.ts lo busca por ese nombre para decirle
+  // a WebXR sobre qué superficie se puede teletransportar.
+  const suelo = MeshBuilder.CreateGround("suelo", { width: 12, height: 19 }, scene);
+  suelo.position.y = -0.02;
+  suelo.isVisible = false;
 
   // Escritorio ampliado: ahora aloja 10 objetos en dos filas, acercándose
   // a lo que pide la guía ("decenas de objetos"), no solo 4-5 sueltos.
@@ -67,14 +74,6 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let objetosResueltos = 0;
   const conteoZonas: Record<ZonaClasificacion, number> = { necesario: 0, dudoso: 0, descartar: 0 };
 
-  // Se registra el resultado del PRIMER intento de cada objeto (aunque
-  // el nivel deje reintentar después de un error) — esto es lo que
-  // permite mostrar al final un "% clasificado correctamente al primer
-  // intento" real, tal como pide la guía ("% de objetos correctamente
-  // clasificados"), sin tener que bloquear los reintentos que ya tiene
-  // el nivel.
-  const primerIntentoPorObjeto = new Map<string, boolean>();
-
   objetos.forEach((objeto) => {
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente) return;
@@ -85,10 +84,6 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         )[0];
 
       const esCorrecto = zonaMasCercana === objeto.datos.zonaCorrecta;
-
-      if (!primerIntentoPorObjeto.has(objeto.datos.id)) {
-        primerIntentoPorObjeto.set(objeto.datos.id, esCorrecto);
-      }
 
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
@@ -107,15 +102,9 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
           // Resumen de la decisión tomada — refuerza el objetivo pedagógico
           // del nivel (criterio, no intuición) antes de pasar al puntaje.
-          // Incluye el % que pide la guía de verdad: objetos que quedaron
-          // bien clasificados ya en el primer intento (no cuenta los que
-          // se corrigieron después de un error).
-          const aciertosPrimerIntento = [...primerIntentoPorObjeto.values()].filter(Boolean).length;
-          const pctPrimerIntento = Math.round((aciertosPrimerIntento / objetos.length) * 100);
-
           hud.mostrarFeedback(
             true,
-            `¡Clasificación completa! Necesario: ${conteoZonas.necesario} · Dudoso: ${conteoZonas.dudoso} · Descartar: ${conteoZonas.descartar}\n📊 ${pctPrimerIntento}% clasificado correctamente al primer intento (${aciertosPrimerIntento}/${objetos.length})`
+            `¡Clasificación completa! Necesario: ${conteoZonas.necesario} · Dudoso: ${conteoZonas.dudoso} · Descartar: ${conteoZonas.descartar}`
           );
 
           setTimeout(() => {
@@ -129,6 +118,27 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   });
 
   return { objetos, zonas: [zonaNecesario, zonaDudoso, zonaDescartar] };
+}
+
+// Luz interior del garaje: la escena base está iluminada para un espacio
+// abierto, pero acá hay techo y las ventanas son chicas. Dos focos cenitales
+// sobre la zona de juego y más relleno ambiental evitan que el jugador
+// tenga que trabajar a oscuras.
+function iluminarInterior(scene: Scene): void {
+  const relleno = scene.getLightByName("luzRelleno");
+  if (relleno) {
+    relleno.intensity = 0.75;
+  }
+
+  const focoMesa = new PointLight("luzGarajeMesa", new Vector3(0, 4.2, -0.5), scene);
+  focoMesa.diffuse = new Color3(1, 0.96, 0.88);
+  focoMesa.intensity = 0.9;
+  focoMesa.range = 14;
+
+  const focoZonas = new PointLight("luzGarajeZonas", new Vector3(0, 4.2, 2.2), scene);
+  focoZonas.diffuse = new Color3(0.95, 0.96, 1);
+  focoZonas.intensity = 0.7;
+  focoZonas.range = 14;
 }
 
 // Lámpara de mesa: un punto de luz cálido y localizado sobre los objetos

@@ -14,7 +14,15 @@ import { mostrarRankingNivel5 } from "./ui/RankingScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, undefined, true);
-engine.setHardwareScalingLevel(1);
+
+// NITIDEZ: el buffer de render se dibuja a la densidad real de la pantalla.
+// Con setHardwareScalingLevel(1) el juego se renderizaba a resolución CSS y
+// el navegador lo estiraba hasta los píxeles físicos — de ahí el aspecto
+// borroso del texto y de la escena en pantallas con escalado de Windows.
+// El tope de 2 evita que un monitor 4K a 300% pida un buffer enorme.
+// Si el framerate baja mucho dentro de los niveles, cambiar el 2 por 1.5.
+const densidad = Math.min(window.devicePixelRatio || 1, 2);
+engine.setHardwareScalingLevel(1 / densidad);
 
 let sceneManager = new SceneManager(engine);
 const gameManager = GameManager.getInstance();
@@ -50,6 +58,8 @@ function mostrarMenu(): void {
     () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu())
   );
   setupXR(sceneManager.scene, []);
+  // TEMPORAL: control de cámara para poder inspeccionar el garaje a mano.
+  sceneManager.scene.activeCamera?.attachControl(canvas, true);
 }
 
 function volverAlMenu(): void {
