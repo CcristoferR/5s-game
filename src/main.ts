@@ -10,6 +10,7 @@ import { cargarNivel5 } from "./levels/Level5_Shitsuke";
 import { HUD } from "./ui/HUD";
 import { mostrarMenuPrincipal } from "./ui/MainMenu";
 import { mostrarCertificado } from "./ui/CertificateScreen";
+import { mostrarRankingNivel5 } from "./ui/RankingScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, undefined, true);
@@ -45,7 +46,8 @@ function mostrarMenu(): void {
     niveles,
     gameManager.getPorcentajeMadurez(),
     (numeroNivel) => cargarNivel(numeroNivel),
-    () => mostrarCertificado(sceneManager.scene, () => mostrarMenu())
+    () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
+    () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu())
   );
   setupXR(sceneManager.scene, []);
 }

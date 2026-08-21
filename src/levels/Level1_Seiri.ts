@@ -67,6 +67,14 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let objetosResueltos = 0;
   const conteoZonas: Record<ZonaClasificacion, number> = { necesario: 0, dudoso: 0, descartar: 0 };
 
+  // Se registra el resultado del PRIMER intento de cada objeto (aunque
+  // el nivel deje reintentar después de un error) — esto es lo que
+  // permite mostrar al final un "% clasificado correctamente al primer
+  // intento" real, tal como pide la guía ("% de objetos correctamente
+  // clasificados"), sin tener que bloquear los reintentos que ya tiene
+  // el nivel.
+  const primerIntentoPorObjeto = new Map<string, boolean>();
+
   objetos.forEach((objeto) => {
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente) return;
@@ -77,6 +85,10 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         )[0];
 
       const esCorrecto = zonaMasCercana === objeto.datos.zonaCorrecta;
+
+      if (!primerIntentoPorObjeto.has(objeto.datos.id)) {
+        primerIntentoPorObjeto.set(objeto.datos.id, esCorrecto);
+      }
 
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
@@ -95,9 +107,15 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
           // Resumen de la decisión tomada — refuerza el objetivo pedagógico
           // del nivel (criterio, no intuición) antes de pasar al puntaje.
+          // Incluye el % que pide la guía de verdad: objetos que quedaron
+          // bien clasificados ya en el primer intento (no cuenta los que
+          // se corrigieron después de un error).
+          const aciertosPrimerIntento = [...primerIntentoPorObjeto.values()].filter(Boolean).length;
+          const pctPrimerIntento = Math.round((aciertosPrimerIntento / objetos.length) * 100);
+
           hud.mostrarFeedback(
             true,
-            `¡Clasificación completa! Necesario: ${conteoZonas.necesario} · Dudoso: ${conteoZonas.dudoso} · Descartar: ${conteoZonas.descartar}`
+            `¡Clasificación completa! Necesario: ${conteoZonas.necesario} · Dudoso: ${conteoZonas.dudoso} · Descartar: ${conteoZonas.descartar}\n📊 ${pctPrimerIntento}% clasificado correctamente al primer intento (${aciertosPrimerIntento}/${objetos.length})`
           );
 
           setTimeout(() => {

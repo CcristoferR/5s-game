@@ -228,7 +228,7 @@ export class HUD {
       `Puntos ganados: ${puntosBase}  (${segundosTotales}s)\n\n` +
       (aprobado
         ? "Nivel 5 completado — certificado disponible en el menú."
-        : "No alcanzaste el mínimo de aciertos para aprobar. Podés reintentar la auditoría.");
+        : "No alcanzaste el mínimo de aciertos para aprobar. Puedes reintentar la auditoría.");
 
     this.fondoOverlay.isVisible = true;
     this.pantallaFinal.isVisible = true;

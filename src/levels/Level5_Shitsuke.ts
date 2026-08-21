@@ -5,6 +5,7 @@ import { crearPuntoControl } from "../entities/AuditPoint";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
 import { crearAmbienteOficina } from "../entities/OfficeAmbience";
 import { GameManager } from "../core/GameManager";
+import { guardarResultadoNivel5 } from "../core/RankingStorage";
 import { HUD } from "../ui/HUD";
 
 // ~9 segundos por punto de control, con un piso de 35s. La cantidad de
@@ -161,6 +162,10 @@ export function cargarNivel5(
     }
 
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
+
+    // Se guarda CUALQUIER intento (apruebes o no) — así el ranking
+    // también sirve para ver tu propia mejora entre reintentos.
+    guardarResultadoNivel5({ tasaAcierto, promedioCalificacion, segundos: segundosTotales });
 
     mostrarInformeAuditoria(gui, filas, () => {
       hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar);
