@@ -91,7 +91,7 @@ camara.wheelDeltaPercentage = 0.02;
     // Red de seguridad por si el garaje todavía no terminó de cargar y no hay
     // contra qué colisionar: mide la posición de la cámara contra el volumen
     // del galpón y, si se pasa,
-    // le recorta el radio en esa misma proporción. El resultado es que podés
+    // le recorta el radio en esa misma proporción. El resultado es que puedes
     // alejarte bastante mirando a lo largo del garaje, y al girar hacia un lado
     // la cámara se acerca sola en vez de salirse.
     const MURO_X = 5.8;

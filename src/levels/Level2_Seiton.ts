@@ -1,11 +1,13 @@
-import { Scene, MeshBuilder } from "@babylonjs/core";
+import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
 import { objetosNivel2, slotsNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
+import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel2 } from "../entities/Level2Shapes";
+import { moverMalla } from "../core/Animacion";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
@@ -35,8 +37,33 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // arranca con 7 objetos repartidos en dos filas.
   crearBancoDeTrabajo(scene, { nombre: "escritorioN2", ancho: 4.8, fondo: 1.5, z: -0.5 });
 
-  const objetos = objetosNivel2.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel2));
+  // Geometría de las estaciones, tomada de ShelfSlot: la tabla está centrada en
+  // z = 1.8 y el panel vertical se levanta detrás, en z = 2.35.
+  const Z_ESTACION = 1.8;
+  const ALTURA_REPISA = 0.945;
+
+  // Recinto de arrastre.
+  //
+  // El tope en z frena las herramientas justo delante del panel de las
+  // estaciones. Sin esto el arrastre es un plano infinito y la herramienta
+  // atraviesa el panel de lado a lado, como si el mueble no existiera. Los
+  // topes en x evitan que un objeto termine dentro de una pared del garaje,
+  // desde donde ya no se puede recuperar.
+  const limitesArrastre = { xMin: -4.3, xMax: 4.3, zMin: -1.7, zMax: Z_ESTACION + 0.42 };
+
+  const objetos = objetosNivel2.map((datos) =>
+    crearObjetoInteractable(scene, datos, crearFormaNivel2, limitesArrastre)
+  );
   const slots = slotsNivel2.map((s) => crearShelfSlot(scene, gui, s.id, s.posicionX, s.descripcion));
+
+  // Nombre y resalte al pasar el cursor, igual que en el Nivel 1. Acá importa
+  // incluso más: el jugador no decide QUÉ es cada objeto sino DÓNDE va, y para
+  // eso necesita identificarlo sin dudar.
+  habilitarEtiquetasAlPasar(
+    scene,
+    gui,
+    objetos.map((objeto) => ({ mesh: objeto.mesh, texto: objeto.datos.nombreVisible }))
+  );
 
   // APERTURA DEL NIVEL
   //
@@ -70,6 +97,17 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let objetosResueltos = 0;
   let distanciaTotalRecorrida = 0;
 
+  // Cuántas herramientas ya se guardaron en cada estación.
+  //
+  // Hay más objetos que estaciones (siete en cuatro), así que a varias les
+  // toca más de uno. Sin llevar la cuenta, el segundo se encajaría exactamente
+  // encima del primero y parecería que desapareció.
+  const guardadosPorSlot = new Map<string, number>();
+
+  /** Punto exacto de la repisa donde se acomoda la herramienta. */
+  const lugarEnEstacion = (posicionX: number, yaGuardados: number): Vector3 =>
+    new Vector3(posicionX, ALTURA_REPISA, Z_ESTACION + (yaGuardados === 0 ? -0.2 : 0.22));
+
   objetos.forEach((objeto) => {
     objeto.onSoltar.add(({ mesh, movioSuficiente, distancia }) => {
       if (!movioSuficiente) return;
@@ -89,6 +127,14 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
         // hija volvia a habilitar el arrastre de un objeto ya resuelto.
         objeto.fijar();
+
+        // Encaje animado en la silueta, igual que en el Nivel 1: la herramienta
+        // se acomoda sola en su lugar en vez de quedar donde cayó. Es el gesto
+        // que enseña el nivel — un lugar para cada cosa, y cada cosa en su lugar.
+        const yaGuardados = guardadosPorSlot.get(slotMasCercano.id) ?? 0;
+        guardadosPorSlot.set(slotMasCercano.id, yaGuardados + 1);
+        moverMalla(scene, mesh, lugarEnEstacion(slotMasCercano.posicionX, yaGuardados), 300);
+
         objetosResueltos++;
 
         if (objetosResueltos === objetos.length) {
@@ -119,7 +165,13 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         // ("ubicar mal genera fricción visual").
         mesh.scaling.setAll(0.85);
         setTimeout(() => mesh.scaling.setAll(1.1), 90);
-        setTimeout(() => mesh.scaling.setAll(1), 180);
+        setTimeout(() => {
+          mesh.scaling.setAll(1);
+          // Después del rebote vuelve a su sitio en el banco. Antes se quedaba
+          // apoyado sobre la estación equivocada, y a los pocos errores las
+          // repisas mostraban herramientas que en realidad no estaban guardadas.
+          moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
+        }, 180);
       }
     });
   });

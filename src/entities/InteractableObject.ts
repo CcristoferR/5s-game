@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3, Mesh, Observable } from "@babylonjs/core";
-import { hacerArrastrable, type ResultadoSoltar } from "../core/InputController";
+import { hacerArrastrable, type ResultadoSoltar, type LimitesArrastre } from "../core/InputController";
 
 export interface DatosObjetoBase {
   id: string;
@@ -27,7 +27,8 @@ export interface ObjetoInteractableResult<T extends DatosObjetoBase> {
 export function crearObjetoInteractable<T extends DatosObjetoBase>(
   scene: Scene,
   datos: T,
-  crearMalla?: (scene: Scene, datos: T) => Mesh
+  crearMalla?: (scene: Scene, datos: T) => Mesh,
+  limites?: LimitesArrastre
 ): ObjetoInteractableResult<T> {
   let mesh: Mesh;
 
@@ -43,7 +44,7 @@ export function crearObjetoInteractable<T extends DatosObjetoBase>(
   mesh.position.set(...datos.posicionInicial);
   mesh.metadata = datos;
 
-  const { onSoltar, onAgarrar, comportamiento } = hacerArrastrable(mesh, datos.posicionInicial[1]);
+  const { onSoltar, onAgarrar, comportamiento } = hacerArrastrable(mesh, datos.posicionInicial[1], limites);
 
   const fijar = (): void => {
     mesh.removeBehavior(comportamiento);

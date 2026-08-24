@@ -248,15 +248,15 @@ export const briefingsNiveles: Record<number, BriefingNivel> = {
     fase: "Seiketsu",
     traduccion: "Estandarizar",
     contexto:
-      "El puesto quedó ordenado, limpio y con la fuga reparada. El problema es que todo eso vive en tu cabeza: mañana entra un operario nuevo a tu turno y vos no vas a estar para explicarle.",
-    pregunta: "¿Qué instrucciones y qué señales dejás para que cualquiera lo mantenga igual sin vos?",
+      "El puesto quedó ordenado, limpio y con la fuga reparada. El problema es que todo eso vive en tu cabeza: mañana entra un operario nuevo a tu turno y tú no vas a estar para explicarle.",
+    pregunta: "¿Qué instrucciones y qué señales dejas para que cualquiera lo mantenga igual sin ti?",
     color: "#9a91b8",
   },
   5: {
     fase: "Shitsuke",
     traduccion: "Disciplina",
     contexto:
-      "Pasaron varias semanas desde que dejaste el estándar por escrito. Hoy llega una auditoría sorpresa y te toca recorrer el puesto aplicando el mismo checklist que vos construiste, contra reloj.",
+      "Pasaron varias semanas desde que dejaste el estándar por escrito. Hoy llega una auditoría sorpresa y te toca recorrer el puesto aplicando el mismo checklist que tú construiste, contra reloj.",
     pregunta: "¿El estándar se sostuvo en el tiempo, o hay desviaciones que nadie corrigió?",
     color: "#b98d7e",
   },

@@ -8,9 +8,25 @@ export interface ResultadoSoltar {
 
 const DISTANCIA_MINIMA_ARRASTRE = 0.3;
 
+/**
+ * Recinto dentro del cual puede moverse un objeto arrastrado.
+ *
+ * Sin limites el arrastre es un plano infinito: el objeto atraviesa paredes,
+ * tableros y muebles, porque nada lo detiene. El caso mas visible es el panel
+ * vertical de las estaciones del Nivel 2 — la herramienta lo cruzaba de lado a
+ * lado como si no existiera.
+ */
+export interface LimitesArrastre {
+  xMin: number;
+  xMax: number;
+  zMin: number;
+  zMax: number;
+}
+
 export function hacerArrastrable(
   mesh: Mesh,
-  alturaFija: number
+  alturaFija: number,
+  limites?: LimitesArrastre
 ): { onSoltar: Observable<ResultadoSoltar>; onAgarrar: Observable<Mesh>; comportamiento: PointerDragBehavior } {
   const comportamiento = new PointerDragBehavior({ dragPlaneNormal: Vector3.Up() });
   comportamiento.useObjectOrientationForDragging = false;
@@ -28,6 +44,11 @@ export function hacerArrastrable(
 
   comportamiento.onDragObservable.add(() => {
     mesh.position.y = alturaFija;
+
+    if (limites) {
+      mesh.position.x = Math.min(limites.xMax, Math.max(limites.xMin, mesh.position.x));
+      mesh.position.z = Math.min(limites.zMax, Math.max(limites.zMin, mesh.position.z));
+    }
   });
 
   comportamiento.onDragEndObservable.add(() => {
