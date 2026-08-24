@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, DynamicTexture, StandardMaterial, Color3, Mesh, Vector3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, DynamicTexture, StandardMaterial, Texture, Color3, Mesh, Vector3 } from "@babylonjs/core";
 
 /**
  * Cartel con texto pintado DENTRO de la escena 3D.
@@ -35,7 +35,11 @@ export interface OpcionesRotulo {
   lineasMax?: number;
 }
 
-const RESOLUCION = 256; // píxeles de textura por metro de cartel
+// Píxeles de textura por metro de cartel. A 256 la textura tenía menos
+// píxeles de los que el cartel ocupa en pantalla cuando la cámara se acerca
+// a su límite (4,5 m), y el texto se veía estirado y pixelado. A 512 sobra
+// resolución en todo el rango de zoom.
+const RESOLUCION = 512;
 
 export function crearRotulo3D(
   scene: Scene,
@@ -60,6 +64,10 @@ export function crearRotulo3D(
     true
   );
   textura.hasAlpha = true;
+  // Filtrado trilineal + anisotrópico: sin esto el texto se deshace en cuanto
+  // el cartel se ve en ángulo, que es lo normal al orbitar por el garaje.
+  textura.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+  textura.anisotropicFilteringLevel = 8;
 
   const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
   ctx.clearRect(0, 0, anchoPx, altoPx);
@@ -85,7 +93,7 @@ export function crearRotulo3D(
   const anchoUtil = anchoPx - margen * 4;
   const altoUtil = altoPx - margen * 3;
 
-  let cuerpo = Math.round((altoPx * 0.56) / lineasMax);
+  let cuerpo = Math.round((altoPx * 0.62) / lineasMax);
   let renglones: string[] = [texto];
 
   while (cuerpo > 8) {

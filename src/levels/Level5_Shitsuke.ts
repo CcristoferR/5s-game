@@ -1,9 +1,10 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
+import { Scene, MeshBuilder } from "@babylonjs/core";
 import { Button, TextBlock, Control } from "@babylonjs/gui";
 import { generarPuntosControlNivel5 } from "../core/AuditGenerator";
 import { crearPuntoControl } from "../entities/AuditPoint";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
-import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager } from "../core/GameManager";
 import { guardarResultadoNivel5 } from "../core/RankingStorage";
 import { HUD } from "../ui/HUD";
@@ -32,23 +33,31 @@ export function cargarNivel5(
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
 
-  crearAmbienteOficina(scene);
+  // Mismo escenario que los cuatro niveles anteriores: el garaje de Bitplay.
+  // En este nivel importa especialmente, porque la auditoría consiste en
+  // recorrer el espacio que el jugador transformó — tiene que ser el mismo.
+  void cargarGaraje(scene).catch((error) => console.error("[nivel5] garaje:", error));
 
-  const suelo = MeshBuilder.CreateGround("sueloN5", { width: 12, height: 12 }, scene);
-  const matSuelo = new PBRMaterial("matSueloN5", scene);
-  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
-  matSuelo.roughness = 0.45;
-  matSuelo.metallic = 0.05;
-  suelo.material = matSuelo;
-  suelo.receiveShadows = true;
+  // Tres focos repartidos a lo largo del recorrido de auditoría: los puntos
+  // de control se distribuyen por todo el garaje y ninguno puede quedar en
+  // penumbra, o el jugador pierde tiempo buscando en vez de inspeccionando.
+  iluminarInteriorGaraje(scene, [
+    { z: -1.2, intensidad: 0.9 },
+    { z: 0.8, intensidad: 0.85 },
+    { z: 2.6, intensidad: 0.8 },
+  ]);
 
-  const escritorio = MeshBuilder.CreateBox("escritorioN5", { width: 3, height: 0.1, depth: 1.4 }, scene);
-  escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new PBRMaterial("matEscritorioN5", scene);
-  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
-  matEscritorio.roughness = 0.5;
-  escritorio.material = matEscritorio;
-  escritorio.receiveShadows = true;
+  // Suelo invisible al ras del piso del garaje. Conserva el nombre "sueloN5"
+  // porque main.ts lo busca así para indicarle a WebXR dónde se puede
+  // teletransportar el jugador.
+  const suelo = MeshBuilder.CreateGround("sueloN5", { width: 12, height: 19 }, scene);
+  suelo.position.y = -0.02;
+  suelo.isVisible = false;
+
+  // El mismo banco de trabajo de los otros niveles, en vez de una caja suelta:
+  // el jugador está auditando el puesto que ordenó antes, así que tiene que
+  // reconocerlo.
+  crearBancoDeTrabajo(scene, { nombre: "escritorioN5", ancho: 3, fondo: 1.4, z: -0.5 });
 
   // Los puntos de control se generan a partir del estándar que el
   // jugador construyó en el Nivel 4 (checklist + señalización), con

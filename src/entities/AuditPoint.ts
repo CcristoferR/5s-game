@@ -1,5 +1,6 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh, Observable } from "@babylonjs/core";
-import { AdvancedDynamicTexture, TextBlock } from "@babylonjs/gui";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh, Observable, Vector3 } from "@babylonjs/core";
+import type { AdvancedDynamicTexture } from "@babylonjs/gui";
+import { crearRotulo3D } from "./Rotulo3D";
 import type { TipoEvidencia } from "../data/levelConfig";
 
 export interface AuditPointResult {
@@ -13,7 +14,7 @@ const ALTURA_PEDESTAL = 0.5;
 
 export function crearPuntoControl(
   scene: Scene,
-  gui: AdvancedDynamicTexture,
+  _gui: AdvancedDynamicTexture,
   id: string,
   x: number,
   z: number,
@@ -21,7 +22,7 @@ export function crearPuntoControl(
   tipoEvidencia: TipoEvidencia
 ): AuditPointResult {
   const pedestal = crearPedestal(scene, id, x, z);
-  const evidencia = crearEvidencia(scene, gui, id, x, z, tipoEvidencia);
+  const evidencia = crearEvidencia(scene, id, x, z, tipoEvidencia);
 
   const mesh = MeshBuilder.CreateSphere(`punto_${id}`, { diameter: 0.28 }, scene);
   mesh.position.set(x, ALTURA_PEDESTAL + 0.8, z);
@@ -36,17 +37,18 @@ export function crearPuntoControl(
   mat.metallic = 0.4;
   mesh.material = mat;
 
-  const etiqueta = new TextBlock(`etiquetaPunto_${id}`, descripcion);
-  etiqueta.color = "white";
-  etiqueta.fontSize = 12;
-  etiqueta.textWrapping = true;
-  etiqueta.width = "140px";
-  etiqueta.height = "40px";
-  etiqueta.outlineWidth = 4;
-  etiqueta.outlineColor = "rgba(0,0,0,0.85)";
-  gui.addControl(etiqueta);
-  etiqueta.linkWithMesh(mesh);
-  etiqueta.linkOffsetY = -55;
+  // Rótulo sobre un cartel propio, encima del punto de control. Antes era
+  // texto 2D anclado: con varios puntos repartidos por el garaje, las
+  // descripciones se apilaban en el centro de la pantalla y no se sabía
+  // cuál pertenecía a cuál.
+  crearRotulo3D(scene, `punto_${id}`, descripcion, new Vector3(x, ALTURA_PEDESTAL + 1.28, z), {
+    ancho: 1.25,
+    alto: 0.34,
+    lineasMax: 3,
+    colorFondo: "#1d2227",
+    colorBorde: "rgba(255,255,255,0.3)",
+    mirarCamara: true,
+  });
 
   let marcado = false;
   const onCambio = new Observable<boolean>();
@@ -79,7 +81,7 @@ function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
   return pedestal;
 }
 
-function crearEvidencia(scene: Scene, gui: AdvancedDynamicTexture, id: string, x: number, z: number, tipo: TipoEvidencia): Mesh[] {
+function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: TipoEvidencia): Mesh[] {
   const y = ALTURA_PEDESTAL + 0.01;
   const creados: Mesh[] = [];
 
@@ -99,16 +101,15 @@ function crearEvidencia(scene: Scene, gui: AdvancedDynamicTexture, id: string, x
     tarjeta.material = mat;
     creados.push(tarjeta);
 
-    const fecha = new TextBlock(`fechaTarjeta_${id}`, "⚠ Vence: 15/06");
-    fecha.color = "white";
-    fecha.fontSize = 14;
-    fecha.outlineWidth = 3;
-    fecha.outlineColor = "rgba(0,0,0,0.8)";
-    fecha.width = "140px";
-    fecha.height = "24px";
-    gui.addControl(fecha);
-    fecha.linkWithMesh(tarjeta);
-    fecha.linkOffsetY = 30;
+    // La fecha vencida es la pista de la desviación: va pintada sobre la
+    // propia tarjeta roja, como estaría en una tarjeta de verdad.
+    crearRotulo3D(scene, `fechaTarjeta_${id}`, "VENCE 15/06", new Vector3(0, -0.16, -0.012), {
+      ancho: 0.34,
+      alto: 0.11,
+      colorFondo: "#5c0f0f",
+      colorBorde: "rgba(255,200,200,0.55)",
+      padre: tarjeta,
+    });
   } else if (tipo === "manchaVisible") {
     const mat = new PBRMaterial(`matManchaAudit_${id}`, scene);
     mat.albedoColor = new Color3(0.08, 0.06, 0.04);
