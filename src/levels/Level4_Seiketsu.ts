@@ -2,8 +2,8 @@ import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/cor
 import {
   AdvancedDynamicTexture, TextBlock, Control, Rectangle, Button, ScrollViewer, StackPanel,
 } from "@babylonjs/gui";
-import { itemsNivel4, senalesNivel4, zonasSenalNivel4, type ZonaChecklist, briefingsNiveles } from "../data/levelConfig";
-import { mostrarBriefingNivel } from "../ui/BriefingPanel";
+import { itemsNivel4, senalesNivel4, zonasSenalNivel4, type ZonaChecklist, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearFormaNivel4, crearFormaSenal } from "../entities/Level4Shapes";
 import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/ChecklistZones";
@@ -203,9 +203,13 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     corriendoTiempo = true;
   }
 
-  mostrarBriefingNivel(gui, 4, briefingsNiveles[4], () => {
-    mostrarMicroLeccionEstandar(gui, arrancarNivel);
-  });
+  mostrarAperturaNivel(
+    scene,
+    4,
+    briefingsNiveles[4],
+    microLeccionesNiveles[4],
+    arrancarNivel
+  );
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -377,55 +381,6 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   return { items, zonas: [tableroChecklist, papeleraDescartar], senales };
 }
-
-// El callback avisa cuando el jugador cierra la lección: recién ahí
-// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
-function mostrarMicroLeccionEstandar(gui: AdvancedDynamicTexture, onCerrar: () => void): void {
-  const panel = new Rectangle("microLeccionEstandar");
-  panel.width = "480px";
-  panel.height = "240px";
-  panel.cornerRadius = 14;
-  panel.thickness = 1;
-  panel.color = "rgba(255,255,255,0.2)";
-  panel.background = "rgba(18, 20, 24, 0.95)";
-  panel.zIndex = 25;
-  gui.addControl(panel);
-
-  const titulo = new TextBlock("tituloMicroLeccionN4", "🎯 Estandarizar = hacerlo replicable");
-  titulo.color = "white";
-  titulo.fontSize = 18;
-  titulo.top = "-85px";
-  titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(titulo);
-
-  const texto = new TextBlock(
-    "textoMicroLeccionN4",
-    "Un buen estándar (checklist + señalética de color) debe ser tan claro que cualquiera pueda seguirlo sin ayuda. En este nivel, un NPC pondrá a prueba tu estándar — si es ambiguo, fallará."
-  );
-  texto.color = "rgba(255,255,255,0.9)";
-  texto.fontSize = 14;
-  texto.textWrapping = true;
-  texto.width = "430px";
-  texto.top = "5px";
-  texto.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(texto);
-
-  const boton = Button.CreateSimpleButton("btnCerrarMicroLeccionN4", "Entendido");
-  boton.width = "160px";
-  boton.height = "42px";
-  boton.color = "white";
-  boton.cornerRadius = 8;
-  boton.thickness = 0;
-  boton.background = "#2e7d46";
-  boton.top = "-16px";
-  boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-  boton.onPointerUpObservable.add(() => {
-    panel.isVisible = false;
-    onCerrar();
-  });
-  panel.addControl(boton);
-}
-
 function mostrarInformeEstandar(
   gui: AdvancedDynamicTexture,
   filas: FilaInformeEstandar[],

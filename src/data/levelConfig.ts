@@ -209,7 +209,13 @@ export interface BriefingNivel {
   contexto: string;
   /** La decision concreta que tiene que resolver jugando. */
   pregunta: string;
-  /** Color de acento de la fase, en hexadecimal CSS. */
+  /**
+   * Color de acento de la fase, en hexadecimal CSS.
+   *
+   * Deliberadamente desaturados: el color solo sirve para identificar en que
+   * fase esta el jugador, y se usa en dosis chicas (un punto, un rotulo, el
+   * boton). Con tonos saturados la tarjeta competia con su propio texto.
+   */
   color: string;
 }
 
@@ -220,7 +226,7 @@ export const briefingsNiveles: Record<number, BriefingNivel> = {
     contexto:
       "Es tu primer turno a cargo del taller. Quien estuvo antes dejó el banco cubierto de cosas: herramientas, elementos de protección, papeles, chatarra. Nadie te supo decir qué se sigue usando y qué lleva meses sin tocarse.",
     pregunta: "¿Qué se queda, qué queda en observación con tarjeta roja y qué se va del puesto?",
-    color: "#4ec27a",
+    color: "#7fb495",
   },
   2: {
     fase: "Seiton",
@@ -228,7 +234,7 @@ export const briefingsNiveles: Record<number, BriefingNivel> = {
     contexto:
       "Sobre el banco quedó solo lo necesario, pero sigue siendo un montón sin lugar asignado. Cada búsqueda cuesta minutos y, si al final del turno falta una herramienta, nadie se da cuenta hasta el día siguiente.",
     pregunta: "¿Dónde va cada cosa para que cualquiera la encuentre — y note su ausencia — sin preguntarle a nadie?",
-    color: "#4aa3d8",
+    color: "#7ea3ba",
   },
   3: {
     fase: "Seiso",
@@ -236,7 +242,7 @@ export const briefingsNiveles: Record<number, BriefingNivel> = {
     contexto:
       "Con el puesto despejado y cada cosa en su lugar quedan a la vista manchas que antes tapaba el desorden: aceite en el piso junto al equipo y un polvo negro debajo de la impresora.",
     pregunta: "¿Alcanza con limpiarlas, o hay algo que las sigue produciendo?",
-    color: "#d8a24a",
+    color: "#bda079",
   },
   4: {
     fase: "Seiketsu",
@@ -244,7 +250,7 @@ export const briefingsNiveles: Record<number, BriefingNivel> = {
     contexto:
       "El puesto quedó ordenado, limpio y con la fuga reparada. El problema es que todo eso vive en tu cabeza: mañana entra un operario nuevo a tu turno y vos no vas a estar para explicarle.",
     pregunta: "¿Qué instrucciones y qué señales dejás para que cualquiera lo mantenga igual sin vos?",
-    color: "#a97ad8",
+    color: "#9a91b8",
   },
   5: {
     fase: "Shitsuke",
@@ -252,6 +258,44 @@ export const briefingsNiveles: Record<number, BriefingNivel> = {
     contexto:
       "Pasaron varias semanas desde que dejaste el estándar por escrito. Hoy llega una auditoría sorpresa y te toca recorrer el puesto aplicando el mismo checklist que vos construiste, contra reloj.",
     pregunta: "¿El estándar se sostuvo en el tiempo, o hay desviaciones que nadie corrigió?",
-    color: "#d8674a",
+    color: "#b98d7e",
+  },
+};
+
+// Segundo paso de la apertura: el concepto de 5S que el nivel pone en juego.
+//
+// Va DESPUES del contexto y la pregunta, a proposito. Primero el jugador se
+// ubica en la situacion y entiende que tiene que decidir; recien ahi se le da
+// la herramienta conceptual con la que va a decidir. Al reves seria teoria
+// suelta, sin un problema al que aplicarla.
+//
+// El Nivel 5 no lleva: a esa altura el jugador ya recorrio las cuatro fases y
+// lo que le toca es aplicar el estandar que el mismo construyo, no aprender un
+// concepto nuevo.
+export interface MicroLeccionNivel {
+  titulo: string;
+  texto: string;
+}
+
+export const microLeccionesNiveles: Record<number, MicroLeccionNivel> = {
+  1: {
+    titulo: "¿Qué es una tarjeta roja?",
+    texto:
+      "En la metodología 5S, la zona 'Dudoso' representa objetos que reciben una tarjeta roja física: quedan marcados para revisión, en vez de decidir su destino a la ligera.",
+  },
+  2: {
+    titulo: "¿Qué es un shadow board?",
+    texto:
+      "Es un tablero con el contorno de cada herramienta pintado — así cualquiera nota de inmediato si algo falta o está fuera de su lugar, sin tener que leer nada.",
+  },
+  3: {
+    titulo: "Limpieza como inspección",
+    texto:
+      "En 5S, limpiar no es solo dejar todo brillante: es una forma de inspección. Cada mancha es una pista. Este nivel usa el método de los '5 porqués' — preguntarse repetidamente 'por qué' hasta llegar a la causa real, no al síntoma.",
+  },
+  4: {
+    titulo: "Estandarizar es hacerlo replicable",
+    texto:
+      "Un buen estándar — checklist más señalética de color — tiene que ser tan claro que cualquiera pueda seguirlo sin ayuda. Acá un operario va a poner el tuyo a prueba: si es ambiguo, fallará.",
   },
 };

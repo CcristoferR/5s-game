@@ -1,7 +1,7 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
-import { Rectangle, TextBlock, Button, Control, AdvancedDynamicTexture } from "@babylonjs/gui";
-import { incidentesNivel3, briefingsNiveles } from "../data/levelConfig";
-import { mostrarBriefingNivel } from "../ui/BriefingPanel";
+import { TextBlock, Control, AdvancedDynamicTexture } from "@babylonjs/gui";
+import { incidentesNivel3, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearMancha } from "../entities/Stain";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
 import { crearImpresoraConToner } from "../entities/PrinterMachine";
@@ -95,9 +95,13 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     corriendoTiempo = true;
   }
 
-  mostrarBriefingNivel(gui, 3, briefingsNiveles[3], () => {
-    mostrarMicroLeccionDetective(gui, arrancarNivel);
-  });
+  mostrarAperturaNivel(
+    scene,
+    3,
+    briefingsNiveles[3],
+    microLeccionesNiveles[3],
+    arrancarNivel
+  );
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -245,52 +249,4 @@ function crearLamparaDeTrabajo(scene: Scene): void {
   luz.diffuse = new Color3(1, 0.85, 0.55);
   luz.intensity = 0.4;
   luz.range = 4;
-}
-
-// El callback avisa cuando el jugador cierra la lección: recién ahí
-// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
-function mostrarMicroLeccionDetective(gui: AdvancedDynamicTexture, onCerrar: () => void): void {
-  const panel = new Rectangle("microLeccionDetective");
-  panel.width = "480px";
-  panel.height = "240px";
-  panel.cornerRadius = 14;
-  panel.thickness = 1;
-  panel.color = "rgba(255,255,255,0.2)";
-  panel.background = "rgba(18, 20, 24, 0.95)";
-  panel.zIndex = 25;
-  gui.addControl(panel);
-
-  const titulo = new TextBlock("tituloMicroLeccionN3", "🔍 Limpieza como inspección");
-  titulo.color = "white";
-  titulo.fontSize = 19;
-  titulo.top = "-80px";
-  titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(titulo);
-
-  const texto = new TextBlock(
-    "textoMicroLeccionN3",
-    "En 5S, limpiar no es solo dejar todo brillante — es una forma de inspección. Cada mancha es una pista. Este nivel usa el método de los '5 porqués': preguntarte repetidamente 'por qué' hasta llegar a la causa real, no solo al síntoma."
-  );
-  texto.color = "rgba(255,255,255,0.9)";
-  texto.fontSize = 14;
-  texto.textWrapping = true;
-  texto.width = "420px";
-  texto.top = "10px";
-  texto.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(texto);
-
-  const boton = Button.CreateSimpleButton("btnCerrarMicroLeccionN3", "Entendido");
-  boton.width = "160px";
-  boton.height = "42px";
-  boton.color = "white";
-  boton.cornerRadius = 8;
-  boton.thickness = 0;
-  boton.background = "#2e7d46";
-  boton.top = "-16px";
-  boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-  boton.onPointerUpObservable.add(() => {
-    panel.isVisible = false;
-    onCerrar();
-  });
-  panel.addControl(boton);
 }

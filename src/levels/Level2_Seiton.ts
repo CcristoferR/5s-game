@@ -1,7 +1,6 @@
 import { Scene, MeshBuilder } from "@babylonjs/core";
-import { Rectangle, TextBlock, Button, Control } from "@babylonjs/gui";
-import { objetosNivel2, slotsNivel2, briefingsNiveles } from "../data/levelConfig";
-import { mostrarBriefingNivel } from "../ui/BriefingPanel";
+import { objetosNivel2, slotsNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -54,9 +53,13 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     corriendoTiempo = true;
   }
 
-  mostrarBriefingNivel(gui, 2, briefingsNiveles[2], () => {
-    mostrarMicroLeccionShadowBoard(gui, arrancarNivel);
-  });
+  mostrarAperturaNivel(
+    scene,
+    2,
+    briefingsNiveles[2],
+    microLeccionesNiveles[2],
+    arrancarNivel
+  );
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -123,50 +126,3 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
 // Micro-lección: explica qué es un "shadow board" antes de jugar — el
 // mismo tratamiento que le dimos a la tarjeta roja en el Nivel 1.
-// El callback avisa cuando el jugador cierra la lección: recién ahí
-// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
-function mostrarMicroLeccionShadowBoard(gui: import("@babylonjs/gui").AdvancedDynamicTexture, onCerrar: () => void): void {
-  const panel = new Rectangle("microLeccionShadowBoard");
-  panel.width = "460px";
-  panel.height = "220px";
-  panel.cornerRadius = 14;
-  panel.thickness = 1;
-  panel.color = "rgba(255,255,255,0.2)";
-  panel.background = "rgba(18, 20, 24, 0.95)";
-  panel.zIndex = 25;
-  gui.addControl(panel);
-
-  const titulo = new TextBlock("tituloMicroLeccionN2", "🖼️ ¿Qué es un shadow board?");
-  titulo.color = "white";
-  titulo.fontSize = 19;
-  titulo.top = "-70px";
-  titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(titulo);
-
-  const texto = new TextBlock(
-    "textoMicroLeccionN2",
-    "Es un tablero con el contorno de cada herramienta pintado — así cualquiera nota de inmediato si algo falta o está fuera de su lugar, sin tener que leer nada."
-  );
-  texto.color = "rgba(255,255,255,0.9)";
-  texto.fontSize = 14;
-  texto.textWrapping = true;
-  texto.width = "400px";
-  texto.top = "0px";
-  texto.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(texto);
-
-  const boton = Button.CreateSimpleButton("btnCerrarMicroLeccionN2", "Entendido");
-  boton.width = "160px";
-  boton.height = "42px";
-  boton.color = "white";
-  boton.cornerRadius = 8;
-  boton.thickness = 0;
-  boton.background = "#2e7d46";
-  boton.top = "-16px";
-  boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-  boton.onPointerUpObservable.add(() => {
-    panel.isVisible = false;
-    onCerrar();
-  });
-  panel.addControl(boton);
-}

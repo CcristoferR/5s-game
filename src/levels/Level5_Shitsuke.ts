@@ -8,7 +8,7 @@ import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager } from "../core/GameManager";
 import { guardarResultadoNivel5 } from "../core/RankingStorage";
 import { briefingsNiveles } from "../data/levelConfig";
-import { mostrarBriefingNivel } from "../ui/BriefingPanel";
+import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { HUD } from "../ui/HUD";
 
 // ~9 segundos por punto de control, con un piso de 35s. La cantidad de
@@ -129,7 +129,9 @@ export function cargarNivel5(
   // El reloj muestra el tiempo completo mientras el jugador lee la apertura.
   hud.actualizarTiempoRestante(tiempoLimiteSegundos);
 
-  mostrarBriefingNivel(gui, 5, briefingsNiveles[5], () => {
+  // Sin micro-lección: a esta altura el jugador ya recorrió las cuatro fases,
+  // y lo que le toca es aplicar el estándar que él mismo construyó.
+  mostrarAperturaNivel(gui, 5, briefingsNiveles[5], null, () => {
     inicioNivel = performance.now();
     corriendoTiempo = true;
   });

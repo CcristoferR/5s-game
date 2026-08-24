@@ -1,7 +1,6 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
-import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, Control } from "@babylonjs/gui";
-import { objetosNivel1, type ZonaClasificacion, briefingsNiveles } from "../data/levelConfig";
-import { mostrarBriefingNivel } from "../ui/BriefingPanel";
+import { objetosNivel1, type ZonaClasificacion, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -75,9 +74,13 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     corriendoTiempo = true;
   }
 
-  mostrarBriefingNivel(gui, 1, briefingsNiveles[1], () => {
-    mostrarMicroLeccionTarjetaRoja(gui, arrancarNivel);
-  });
+  mostrarAperturaNivel(
+    scene,
+    1,
+    briefingsNiveles[1],
+    microLeccionesNiveles[1],
+    arrancarNivel
+  );
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -194,50 +197,3 @@ function crearSenalTarjetaRoja(scene: Scene, x: number): void {
 // Micro-lección de la guía: explica qué es una tarjeta roja (red tag)
 // antes de empezar a clasificar, para que "Dudoso" tenga sentido real y
 // no sea solo una tercera categoría genérica.
-// El callback avisa cuando el jugador cierra la lección: recién ahí
-// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
-function mostrarMicroLeccionTarjetaRoja(gui: AdvancedDynamicTexture, onCerrar: () => void): void {
-  const panel = new Rectangle("microLeccionTarjetaRoja");
-  panel.width = "460px";
-  panel.height = "220px";
-  panel.cornerRadius = 14;
-  panel.thickness = 1;
-  panel.color = "rgba(255,255,255,0.2)";
-  panel.background = "rgba(18, 20, 24, 0.95)";
-  panel.zIndex = 25;
-  gui.addControl(panel);
-
-  const titulo = new TextBlock("tituloMicroLeccion", "🏷️ ¿Qué es una tarjeta roja?");
-  titulo.color = "white";
-  titulo.fontSize = 19;
-  titulo.top = "-70px";
-  titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(titulo);
-
-  const texto = new TextBlock(
-    "textoMicroLeccion",
-    "En la metodología 5S, la zona 'Dudoso' representa objetos que reciben una tarjeta roja física: quedan marcados para revisión, en vez de decidir su destino a la ligera."
-  );
-  texto.color = "rgba(255,255,255,0.9)";
-  texto.fontSize = 14;
-  texto.textWrapping = true;
-  texto.width = "400px";
-  texto.top = "0px";
-  texto.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-  panel.addControl(texto);
-
-  const boton = Button.CreateSimpleButton("btnCerrarMicroLeccion", "Entendido");
-  boton.width = "160px";
-  boton.height = "42px";
-  boton.color = "white";
-  boton.cornerRadius = 8;
-  boton.thickness = 0;
-  boton.background = "#2e7d46";
-  boton.top = "-16px";
-  boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-  boton.onPointerUpObservable.add(() => {
-    panel.isVisible = false;
-    onCerrar();
-  });
-  panel.addControl(boton);
-}
