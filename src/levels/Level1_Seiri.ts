@@ -1,6 +1,7 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, Control } from "@babylonjs/gui";
-import { objetosNivel1, type ZonaClasificacion } from "../data/levelConfig";
+import { objetosNivel1, type ZonaClasificacion, briefingsNiveles } from "../data/levelConfig";
+import { mostrarBriefingNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -59,10 +60,24 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15), gui, etiquetasZonas.dudoso);
   const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2), gui, etiquetasZonas.descartar);
 
-  mostrarMicroLeccionTarjetaRoja(gui);
+  // APERTURA DEL NIVEL
+  //
+  // Primero se plantea la situación y la decisión a resolver, después el
+  // concepto de la fase, y recién al cerrar todo eso empieza a correr el
+  // nivel. Por eso el cronómetro arranca en false y se reinicia dentro de
+  // arrancarNivel: si contara desde la carga, el tiempo de lectura entraría
+  // en el puntaje y leer el contexto saldría caro.
+  let inicioNivel = performance.now();
+  let corriendoTiempo = false;
 
-  const inicioNivel = performance.now();
-  let corriendoTiempo = true;
+  function arrancarNivel(): void {
+    inicioNivel = performance.now();
+    corriendoTiempo = true;
+  }
+
+  mostrarBriefingNivel(gui, 1, briefingsNiveles[1], () => {
+    mostrarMicroLeccionTarjetaRoja(gui, arrancarNivel);
+  });
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -179,7 +194,9 @@ function crearSenalTarjetaRoja(scene: Scene, x: number): void {
 // Micro-lección de la guía: explica qué es una tarjeta roja (red tag)
 // antes de empezar a clasificar, para que "Dudoso" tenga sentido real y
 // no sea solo una tercera categoría genérica.
-function mostrarMicroLeccionTarjetaRoja(gui: AdvancedDynamicTexture): void {
+// El callback avisa cuando el jugador cierra la lección: recién ahí
+// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
+function mostrarMicroLeccionTarjetaRoja(gui: AdvancedDynamicTexture, onCerrar: () => void): void {
   const panel = new Rectangle("microLeccionTarjetaRoja");
   panel.width = "460px";
   panel.height = "220px";
@@ -220,6 +237,7 @@ function mostrarMicroLeccionTarjetaRoja(gui: AdvancedDynamicTexture): void {
   boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   boton.onPointerUpObservable.add(() => {
     panel.isVisible = false;
+    onCerrar();
   });
   panel.addControl(boton);
 }

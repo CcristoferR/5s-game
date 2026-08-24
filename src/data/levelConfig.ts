@@ -186,3 +186,72 @@ export const puntosControlRespaldoNivel5: PuntoControlNivel5[] = [
   { id: "resp_p4", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", calificacion: 4, explicacion: "La carpeta está archivada correctamente según el estándar." },
   { id: "resp_p5", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", calificacion: 2, explicacion: "Un objeto quedó fuera de su casilla asignada." },
 ];
+
+// ---------------------------------------------------------------------------
+// Apertura de cada nivel: contexto y pregunta
+// ---------------------------------------------------------------------------
+//
+// Antes de la parte interactiva, cada nivel plantea la SITUACION en la que esta
+// el jugador y la DECISION que tiene que tomar. La idea es que no llegue a
+// arrastrar objetos sin saber por que lo hace: el objetivo pedagogico del
+// proyecto es que practique la toma de decision dentro de cada fase, no que
+// memorice los nombres de las 5S.
+//
+// Los cinco contextos estan encadenados a proposito: son el mismo puesto de
+// trabajo a lo largo del tiempo, y cada uno arranca donde termino el anterior.
+// Leidos seguidos cuentan la historia completa de la transformacion.
+export interface BriefingNivel {
+  /** Termino japones de la fase. */
+  fase: string;
+  /** Traduccion al castellano. */
+  traduccion: string;
+  /** La situacion: donde esta parado el jugador y como llego hasta ahi. */
+  contexto: string;
+  /** La decision concreta que tiene que resolver jugando. */
+  pregunta: string;
+  /** Color de acento de la fase, en hexadecimal CSS. */
+  color: string;
+}
+
+export const briefingsNiveles: Record<number, BriefingNivel> = {
+  1: {
+    fase: "Seiri",
+    traduccion: "Clasificar",
+    contexto:
+      "Es tu primer turno a cargo del taller. Quien estuvo antes dejó el banco cubierto de cosas: herramientas, elementos de protección, papeles, chatarra. Nadie te supo decir qué se sigue usando y qué lleva meses sin tocarse.",
+    pregunta: "¿Qué se queda, qué queda en observación con tarjeta roja y qué se va del puesto?",
+    color: "#4ec27a",
+  },
+  2: {
+    fase: "Seiton",
+    traduccion: "Ordenar",
+    contexto:
+      "Sobre el banco quedó solo lo necesario, pero sigue siendo un montón sin lugar asignado. Cada búsqueda cuesta minutos y, si al final del turno falta una herramienta, nadie se da cuenta hasta el día siguiente.",
+    pregunta: "¿Dónde va cada cosa para que cualquiera la encuentre — y note su ausencia — sin preguntarle a nadie?",
+    color: "#4aa3d8",
+  },
+  3: {
+    fase: "Seiso",
+    traduccion: "Limpiar",
+    contexto:
+      "Con el puesto despejado y cada cosa en su lugar quedan a la vista manchas que antes tapaba el desorden: aceite en el piso junto al equipo y un polvo negro debajo de la impresora.",
+    pregunta: "¿Alcanza con limpiarlas, o hay algo que las sigue produciendo?",
+    color: "#d8a24a",
+  },
+  4: {
+    fase: "Seiketsu",
+    traduccion: "Estandarizar",
+    contexto:
+      "El puesto quedó ordenado, limpio y con la fuga reparada. El problema es que todo eso vive en tu cabeza: mañana entra un operario nuevo a tu turno y vos no vas a estar para explicarle.",
+    pregunta: "¿Qué instrucciones y qué señales dejás para que cualquiera lo mantenga igual sin vos?",
+    color: "#a97ad8",
+  },
+  5: {
+    fase: "Shitsuke",
+    traduccion: "Disciplina",
+    contexto:
+      "Pasaron varias semanas desde que dejaste el estándar por escrito. Hoy llega una auditoría sorpresa y te toca recorrer el puesto aplicando el mismo checklist que vos construiste, contra reloj.",
+    pregunta: "¿El estándar se sostuvo en el tiempo, o hay desviaciones que nadie corrigió?",
+    color: "#d8674a",
+  },
+};

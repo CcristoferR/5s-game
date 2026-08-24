@@ -7,6 +7,8 @@ import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager } from "../core/GameManager";
 import { guardarResultadoNivel5 } from "../core/RankingStorage";
+import { briefingsNiveles } from "../data/levelConfig";
+import { mostrarBriefingNivel } from "../ui/BriefingPanel";
 import { HUD } from "../ui/HUD";
 
 // ~9 segundos por punto de control, con un piso de 35s. La cantidad de
@@ -115,9 +117,22 @@ export function cargarNivel5(
   botonFinalizar.top = "-24px";
   gui.addControl(botonFinalizar);
 
-  const inicioNivel = performance.now();
-  let corriendoTiempo = true;
+  // APERTURA DEL NIVEL
+  //
+  // Acá el arranque diferido no es un detalle: este nivel es contra reloj, y si
+  // la cuenta regresiva corriera mientras el jugador lee el contexto, empezaría
+  // la auditoría con tiempo ya perdido.
+  let inicioNivel = performance.now();
+  let corriendoTiempo = false;
   let finalizado = false;
+
+  // El reloj muestra el tiempo completo mientras el jugador lee la apertura.
+  hud.actualizarTiempoRestante(tiempoLimiteSegundos);
+
+  mostrarBriefingNivel(gui, 5, briefingsNiveles[5], () => {
+    inicioNivel = performance.now();
+    corriendoTiempo = true;
+  });
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;

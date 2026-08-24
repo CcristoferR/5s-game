@@ -1,6 +1,7 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
 import { Rectangle, TextBlock, Button, Control, AdvancedDynamicTexture } from "@babylonjs/gui";
-import { incidentesNivel3 } from "../data/levelConfig";
+import { incidentesNivel3, briefingsNiveles } from "../data/levelConfig";
+import { mostrarBriefingNivel } from "../ui/BriefingPanel";
 import { crearMancha } from "../entities/Stain";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
 import { crearImpresoraConToner } from "../entities/PrinterMachine";
@@ -79,10 +80,24 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   progreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(progreso);
 
-  mostrarMicroLeccionDetective(gui);
+  // APERTURA DEL NIVEL
+  //
+  // Primero se plantea la situación y la decisión a resolver, después el
+  // concepto de la fase, y recién al cerrar todo eso empieza a correr el
+  // nivel. Por eso el cronómetro arranca en false y se reinicia dentro de
+  // arrancarNivel: si contara desde la carga, el tiempo de lectura entraría
+  // en el puntaje y leer el contexto saldría caro.
+  let inicioNivel = performance.now();
+  let corriendoTiempo = false;
 
-  const inicioNivel = performance.now();
-  let corriendoTiempo = true;
+  function arrancarNivel(): void {
+    inicioNivel = performance.now();
+    corriendoTiempo = true;
+  }
+
+  mostrarBriefingNivel(gui, 3, briefingsNiveles[3], () => {
+    mostrarMicroLeccionDetective(gui, arrancarNivel);
+  });
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -232,7 +247,9 @@ function crearLamparaDeTrabajo(scene: Scene): void {
   luz.range = 4;
 }
 
-function mostrarMicroLeccionDetective(gui: AdvancedDynamicTexture): void {
+// El callback avisa cuando el jugador cierra la lección: recién ahí
+// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
+function mostrarMicroLeccionDetective(gui: AdvancedDynamicTexture, onCerrar: () => void): void {
   const panel = new Rectangle("microLeccionDetective");
   panel.width = "480px";
   panel.height = "240px";
@@ -273,6 +290,7 @@ function mostrarMicroLeccionDetective(gui: AdvancedDynamicTexture): void {
   boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   boton.onPointerUpObservable.add(() => {
     panel.isVisible = false;
+    onCerrar();
   });
   panel.addControl(boton);
 }

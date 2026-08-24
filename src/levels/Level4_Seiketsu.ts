@@ -2,7 +2,8 @@ import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/cor
 import {
   AdvancedDynamicTexture, TextBlock, Control, Rectangle, Button, ScrollViewer, StackPanel,
 } from "@babylonjs/gui";
-import { itemsNivel4, senalesNivel4, zonasSenalNivel4, type ZonaChecklist } from "../data/levelConfig";
+import { itemsNivel4, senalesNivel4, zonasSenalNivel4, type ZonaChecklist, briefingsNiveles } from "../data/levelConfig";
+import { mostrarBriefingNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearFormaNivel4, crearFormaSenal } from "../entities/Level4Shapes";
 import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/ChecklistZones";
@@ -119,8 +120,6 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     rotulo.parent = senal.mesh;
   });
 
-  mostrarMicroLeccionEstandar(gui);
-
   const instruccion = new TextBlock(
     "instruccionNivel4",
     "📋🎨 Coloca las 5 tarjetas (checklist/descartar) al frente, y las 3 señales de color en el fondo. El resultado se revela al probar el estándar."
@@ -189,8 +188,24 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   etiquetaNpc.linkWithMesh(npc.mesh);
   etiquetaNpc.linkOffsetY = -55;
 
-  const inicioNivel = performance.now();
-  let corriendoTiempo = true;
+  // APERTURA DEL NIVEL
+  //
+  // Primero se plantea la situación y la decisión a resolver, después el
+  // concepto de la fase, y recién al cerrar todo eso empieza a correr el
+  // nivel. Por eso el cronómetro arranca en false y se reinicia dentro de
+  // arrancarNivel: si contara desde la carga, el tiempo de lectura entraría
+  // en el puntaje y leer el contexto saldría caro.
+  let inicioNivel = performance.now();
+  let corriendoTiempo = false;
+
+  function arrancarNivel(): void {
+    inicioNivel = performance.now();
+    corriendoTiempo = true;
+  }
+
+  mostrarBriefingNivel(gui, 4, briefingsNiveles[4], () => {
+    mostrarMicroLeccionEstandar(gui, arrancarNivel);
+  });
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -363,7 +378,9 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   return { items, zonas: [tableroChecklist, papeleraDescartar], senales };
 }
 
-function mostrarMicroLeccionEstandar(gui: AdvancedDynamicTexture): void {
+// El callback avisa cuando el jugador cierra la lección: recién ahí
+// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
+function mostrarMicroLeccionEstandar(gui: AdvancedDynamicTexture, onCerrar: () => void): void {
   const panel = new Rectangle("microLeccionEstandar");
   panel.width = "480px";
   panel.height = "240px";
@@ -404,6 +421,7 @@ function mostrarMicroLeccionEstandar(gui: AdvancedDynamicTexture): void {
   boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   boton.onPointerUpObservable.add(() => {
     panel.isVisible = false;
+    onCerrar();
   });
   panel.addControl(boton);
 }

@@ -1,6 +1,7 @@
 import { Scene, MeshBuilder } from "@babylonjs/core";
 import { Rectangle, TextBlock, Button, Control } from "@babylonjs/gui";
-import { objetosNivel2, slotsNivel2 } from "../data/levelConfig";
+import { objetosNivel2, slotsNivel2, briefingsNiveles } from "../data/levelConfig";
+import { mostrarBriefingNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -38,10 +39,24 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const objetos = objetosNivel2.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel2));
   const slots = slotsNivel2.map((s) => crearShelfSlot(scene, gui, s.id, s.posicionX, s.descripcion));
 
-  mostrarMicroLeccionShadowBoard(gui);
+  // APERTURA DEL NIVEL
+  //
+  // Primero se plantea la situación y la decisión a resolver, después el
+  // concepto de la fase, y recién al cerrar todo eso empieza a correr el
+  // nivel. Por eso el cronómetro arranca en false y se reinicia dentro de
+  // arrancarNivel: si contara desde la carga, el tiempo de lectura entraría
+  // en el puntaje y leer el contexto saldría caro.
+  let inicioNivel = performance.now();
+  let corriendoTiempo = false;
 
-  const inicioNivel = performance.now();
-  let corriendoTiempo = true;
+  function arrancarNivel(): void {
+    inicioNivel = performance.now();
+    corriendoTiempo = true;
+  }
+
+  mostrarBriefingNivel(gui, 2, briefingsNiveles[2], () => {
+    mostrarMicroLeccionShadowBoard(gui, arrancarNivel);
+  });
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
@@ -108,7 +123,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
 // Micro-lección: explica qué es un "shadow board" antes de jugar — el
 // mismo tratamiento que le dimos a la tarjeta roja en el Nivel 1.
-function mostrarMicroLeccionShadowBoard(gui: import("@babylonjs/gui").AdvancedDynamicTexture): void {
+// El callback avisa cuando el jugador cierra la lección: recién ahí
+// arranca el nivel y su cronómetro, para que leer no cueste tiempo.
+function mostrarMicroLeccionShadowBoard(gui: import("@babylonjs/gui").AdvancedDynamicTexture, onCerrar: () => void): void {
   const panel = new Rectangle("microLeccionShadowBoard");
   panel.width = "460px";
   panel.height = "220px";
@@ -149,6 +166,7 @@ function mostrarMicroLeccionShadowBoard(gui: import("@babylonjs/gui").AdvancedDy
   boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   boton.onPointerUpObservable.add(() => {
     panel.isVisible = false;
+    onCerrar();
   });
   panel.addControl(boton);
 }
