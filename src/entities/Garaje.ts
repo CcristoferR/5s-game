@@ -18,8 +18,6 @@ export interface OpcionesGaraje {
   escala?: number;
   /** Si se pasa, todas las mallas del garaje reciben sombra de los objetos. */
   shadowGenerator?: ShadowGenerator | null;
-  /** Activa colisiones contra paredes y pilares (para cuando la cámara camine). */
-  colisiones?: boolean;
   /** Imprime en consola las dimensiones y los nombres de las mallas. */
   diagnostico?: boolean;
 }
@@ -95,9 +93,11 @@ export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}):
     malla.isPickable = false;
     malla.receiveShadows = true;
 
-    if (opciones.colisiones) {
-      malla.checkCollisions = true;
-    }
+    // Siempre sólido para la cámara: es lo que impide que al orbitar se
+    // atraviesen las paredes y los pilares y se termine mirando el garaje
+    // desde afuera. Babylon lo resuelve por geometría real, no por una
+    // caja aproximada.
+    malla.checkCollisions = true;
 
     if (opciones.shadowGenerator && malla instanceof Mesh) {
       opciones.shadowGenerator.addShadowCaster(malla, false);

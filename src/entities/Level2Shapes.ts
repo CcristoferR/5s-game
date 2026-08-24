@@ -147,29 +147,63 @@ function crearTazaLapices(scene: Scene, id: string): Mesh {
 }
 
 function crearLlavero(scene: Scene, id: string): Mesh {
+  // Llavero apoyado en la mesa: aro tumbado y tres llaves abiertas en abanico
+  // a su lado. Antes el aro era un toro de 1,2 cm de grosor y las llaves
+  // colgaban 9 cm por debajo — o sea dentro del tablero, invisibles. Quedaba
+  // un aro finito casi imposible de agarrar con el puntero.
+  //
+  // Ahora todo se fusiona en UNA sola malla: al arrastrar hay que poder tomar
+  // el objeto por cualquier parte, y las piezas sueltas como hijas no las
+  // detecta el arrastre, solo la malla raíz.
   const matAnillo = new PBRMaterial(`matAnillo_${id}`, scene);
-  matAnillo.albedoColor = new Color3(0.6, 0.6, 0.63);
-  matAnillo.roughness = 0.25;
-  matAnillo.metallic = 0.8;
-
-  const anillo = MeshBuilder.CreateTorus(`anillo_${id}`, { diameter: 0.1, thickness: 0.012 }, scene);
-  const fusion = Mesh.MergeMeshes([anillo], true, true, undefined, false, true)!;
-  fusion.name = id;
-  fusion.material = matAnillo;
+  matAnillo.albedoColor = new Color3(0.62, 0.63, 0.66);
+  matAnillo.roughness = 0.22;
+  matAnillo.metallic = 0.85;
 
   const matLlave = new PBRMaterial(`matLlave_${id}`, scene);
-  matLlave.albedoColor = new Color3(0.7, 0.68, 0.5);
+  matLlave.albedoColor = new Color3(0.72, 0.68, 0.46);
   matLlave.roughness = 0.3;
   matLlave.metallic = 0.75;
 
-  [-0.02, 0.02, 0.06].forEach((offset, i) => {
-    const llave = MeshBuilder.CreateBox(`llave_${id}_${i}`, { width: 0.02, height: 0.14, depth: 0.005 }, scene);
-    llave.position.set(offset, -0.09, 0);
-    llave.rotation.z = offset * 2;
-    llave.parent = fusion;
-    llave.material = matLlave;
+  const partes: Mesh[] = [];
+
+  // Aro más grueso y algo más grande: es la parte que el jugador ve primero.
+  const GROSOR = 0.02;
+  const anillo = MeshBuilder.CreateTorus(
+    `anillo_${id}`,
+    { diameter: 0.14, thickness: GROSOR, tessellation: 24 },
+    scene
+  );
+  anillo.position.y = GROSOR / 2;
+  anillo.material = matAnillo;
+  partes.push(anillo);
+
+  // Tres llaves tumbadas sobre la mesa, abiertas en abanico desde el aro.
+  const ALTO_LLAVE = 0.006;
+  [-0.34, 0, 0.34].forEach((giro, i) => {
+    const paleton = MeshBuilder.CreateBox(
+      `llave_${id}_${i}`,
+      { width: 0.024, height: ALTO_LLAVE, depth: 0.15 },
+      scene
+    );
+    paleton.position.set(Math.sin(giro) * 0.1, ALTO_LLAVE / 2, 0.075 + Math.cos(giro) * 0.06);
+    paleton.rotation.y = giro;
+    paleton.material = matLlave;
+    partes.push(paleton);
+
+    // Cabeza redonda de cada llave, para que no se lean como tres palitos.
+    const cabeza = MeshBuilder.CreateCylinder(
+      `cabezaLlave_${id}_${i}`,
+      { diameter: 0.034, height: ALTO_LLAVE, tessellation: 16 },
+      scene
+    );
+    cabeza.position.set(Math.sin(giro) * 0.052, ALTO_LLAVE / 2, 0.022 + Math.cos(giro) * 0.028);
+    cabeza.material = matLlave;
+    partes.push(cabeza);
   });
 
+  const fusion = Mesh.MergeMeshes(partes, true, true, undefined, false, true)!;
+  fusion.name = id;
   return fusion;
 }
 

@@ -64,10 +64,17 @@ export class SceneManager {
     camara.lowerRadiusLimit = 3.6;
     camara.upperRadiusLimit = 9.5;
     camara.lowerBetaLimit = 0.25;
-    camara.upperBetaLimit = 1.45;
-    camara.wheelDeltaPercentage = 0.02;
+camara.upperBetaLimit = 1.52;    
+camara.wheelDeltaPercentage = 0.02;
     camara.panningSensibility = 0; // el botón derecho no desplaza el centro
     camara.minZ = 0.1;
+
+    // Colisiones: la cámara se frena contra las paredes, los pilares y el
+    // portón del garaje en vez de atravesarlos. El radio de colisión de
+    // medio metro la detiene un poco antes de tocar la superficie, así no
+    // se ve el muro pixelado a un centímetro de la lente.
+    camara.checkCollisions = true;
+    camara.collisionRadius = new Vector3(0.5, 0.5, 0.5);
 
     const lienzo = this.scene.getEngine().getRenderingCanvas();
     if (lienzo) {
@@ -81,14 +88,16 @@ export class SceneManager {
     // esté mirando la cámara. Girando hacia un costado con radio 9 se atraviesa
     // la pared lateral y se termina viendo el garaje desde afuera.
     //
-    // Esto mide la posición real de la cámara contra las paredes y, si se pasa,
+    // Red de seguridad por si el garaje todavía no terminó de cargar y no hay
+    // contra qué colisionar: mide la posición de la cámara contra el volumen
+    // del galpón y, si se pasa,
     // le recorta el radio en esa misma proporción. El resultado es que podés
     // alejarte bastante mirando a lo largo del garaje, y al girar hacia un lado
     // la cámara se acerca sola en vez de salirse.
-    const MURO_X = 5.4;
-    const MURO_Z_ATRAS = -8.8;
-    const MURO_Z_FRENTE = 8.4;
-    const TECHO = 8.2;
+    const MURO_X = 5.8;
+    const MURO_Z_ATRAS = -9.2;
+    const MURO_Z_FRENTE = 9.2;
+    const TECHO = 8.6;
 
     this.scene.onBeforeRenderObservable.add(() => {
       const posicion = camara.position;
