@@ -8,7 +8,10 @@ export interface ResultadoSoltar {
 
 const DISTANCIA_MINIMA_ARRASTRE = 0.3;
 
-export function hacerArrastrable(mesh: Mesh, alturaFija: number): { onSoltar: Observable<ResultadoSoltar>; onAgarrar: Observable<Mesh> } {
+export function hacerArrastrable(
+  mesh: Mesh,
+  alturaFija: number
+): { onSoltar: Observable<ResultadoSoltar>; onAgarrar: Observable<Mesh>; comportamiento: PointerDragBehavior } {
   const comportamiento = new PointerDragBehavior({ dragPlaneNormal: Vector3.Up() });
   comportamiento.useObjectOrientationForDragging = false;
 
@@ -38,5 +41,9 @@ export function hacerArrastrable(mesh: Mesh, alturaFija: number): { onSoltar: Ob
 
   mesh.addBehavior(comportamiento);
 
-  return { onSoltar, onAgarrar };
+  // Se devuelve el comportamiento para poder desmontarlo cuando el objeto queda
+  // fijado. No alcanza con marcarlo no seleccionable: PointerDragBehavior acepta
+  // el clic sobre cualquier descendiente, asi que una pieza hija todavia
+  // seleccionable vuelve a habilitar el arrastre.
+  return { onSoltar, onAgarrar, comportamiento };
 }

@@ -2,6 +2,8 @@ import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@b
 import { objetosNivel1, type ZonaClasificacion, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
+import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
+import { moverMalla } from "../core/Animacion";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
@@ -55,6 +57,18 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const objetos = objetosNivel1.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel1));
 
+  // Al pasar el cursor por un objeto se muestra su nombre y se lo resalta.
+  //
+  // Es información necesaria para jugar, no un adorno: el nivel pide clasificar
+  // diez objetos, y por buena que sea la forma, alguien que juega por primera
+  // vez no puede saber si una caja marrón es 'caja sin etiqueta' o 'chatarra'.
+  // Sin el nombre, la decisión se vuelve adivinanza.
+  habilitarEtiquetasAlPasar(
+    scene,
+    gui,
+    objetos.map((objeto) => ({ mesh: objeto.mesh, texto: objeto.datos.nombreVisible }))
+  );
+
   const zonaNecesario = crearDropZone(scene, "necesario", posicionesZonas.necesario, new Color3(0.2, 0.7, 0.3), gui, etiquetasZonas.necesario);
   const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15), gui, etiquetasZonas.dudoso);
   const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2), gui, etiquetasZonas.descartar);
@@ -91,6 +105,27 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let objetosResueltos = 0;
   const conteoZonas: Record<ZonaClasificacion, number> = { necesario: 0, dudoso: 0, descartar: 0 };
 
+  // Z de las zonas de piso y medio lado util, definidos en DropZone.
+  const Z_ZONA = 2.4;
+  const MEDIO_LADO_UTIL = 0.62;
+
+  /**
+   * Lugar donde se apoya el objeto dentro de su zona.
+   *
+   * Los objetos se acomodan en una grilla en vez de quedar donde cayeron: una
+   * zona con cinco objetos amontonados y superpuestos no se lee como un area
+   * clasificada, que es justo lo que el nivel quiere ensenar a construir.
+   */
+  const lugarEnZona = (zona: ZonaClasificacion, indice: number): Vector3 => {
+    const columna = indice % 3;
+    const fila = Math.floor(indice / 3);
+    return new Vector3(
+      posicionesZonas[zona] + (columna - 1) * MEDIO_LADO_UTIL,
+      0.012,
+      Z_ZONA + (fila - 0.5) * MEDIO_LADO_UTIL
+    );
+  };
+
   objetos.forEach((objeto) => {
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente) return;
@@ -105,7 +140,13 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
         hud.mostrarFeedback(true, objeto.datos.explicacion);
-        mesh.isPickable = false;
+
+        // Se fija ANTES de moverlo: mientras viaja a su lugar el objeto ya no
+        // debe poder agarrarse, o el jugador lo vuelve a soltar en otra zona y
+        // se cuenta dos veces.
+        objeto.fijar();
+        moverMalla(scene, mesh, lugarEnZona(zonaMasCercana, conteoZonas[objeto.datos.zonaCorrecta]), 320);
+
         objetosResueltos++;
         conteoZonas[objeto.datos.zonaCorrecta]++;
 
@@ -130,6 +171,11 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         }
       } else {
         hud.mostrarFeedback(false, objeto.datos.explicacion);
+
+        // Vuelve a su lugar en el banco. Antes se quedaba flotando sobre la
+        // zona equivocada a la altura del tablero, y con cada error la escena
+        // acumulaba objetos suspendidos en el aire.
+        moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
       }
     });
   });

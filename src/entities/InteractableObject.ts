@@ -11,6 +11,17 @@ export interface ObjetoInteractableResult<T extends DatosObjetoBase> {
   datos: T;
   onSoltar: Observable<ResultadoSoltar>;
   onAgarrar: Observable<Mesh>;
+  /**
+   * Deja el objeto quieto para siempre: ya no se puede agarrar ni volver a
+   * clasificar.
+   *
+   * Marcar isPickable = false en la malla raiz NO alcanza. Los objetos llevan
+   * piezas hijas con materiales propios, y PointerDragBehavior acepta el clic
+   * sobre cualquier descendiente: bastaba con hacer clic en una de esas piezas
+   * para volver a arrastrar un objeto ya clasificado, sumar puntos de nuevo y
+   * terminar el nivel antes de tiempo.
+   */
+  fijar: () => void;
 }
 
 export function crearObjetoInteractable<T extends DatosObjetoBase>(
@@ -32,7 +43,15 @@ export function crearObjetoInteractable<T extends DatosObjetoBase>(
   mesh.position.set(...datos.posicionInicial);
   mesh.metadata = datos;
 
-  const { onSoltar, onAgarrar } = hacerArrastrable(mesh, datos.posicionInicial[1]);
+  const { onSoltar, onAgarrar, comportamiento } = hacerArrastrable(mesh, datos.posicionInicial[1]);
 
-  return { mesh, datos, onSoltar, onAgarrar };
+  const fijar = (): void => {
+    mesh.removeBehavior(comportamiento);
+    mesh.isPickable = false;
+    mesh.getChildMeshes().forEach((hijo) => {
+      hijo.isPickable = false;
+    });
+  };
+
+  return { mesh, datos, onSoltar, onAgarrar, fijar };
 }

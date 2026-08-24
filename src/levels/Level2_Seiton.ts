@@ -85,7 +85,10 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
         hud.mostrarFeedback(true, objeto.datos.explicacion);
-        mesh.isPickable = false;
+        // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
+        // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
+        // hija volvia a habilitar el arrastre de un objeto ya resuelto.
+        objeto.fijar();
         objetosResueltos++;
 
         if (objetosResueltos === objetos.length) {

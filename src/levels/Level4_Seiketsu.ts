@@ -249,7 +249,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         )[0];
 
       colocacionItems.set(item.datos.id, zonaMasCercana);
-      mesh.isPickable = false;
+      // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
+      // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
+      // hija volvia a habilitar el arrastre de un objeto ya colocado.
+      item.fijar();
 
       // "Click" real: la tarjeta salta a un lugar ordenado junto a su
       // zona, en vez de quedarse donde se soltó al azar.
@@ -277,7 +280,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       );
 
       colocacionSenales.set(senal.datos.id, zonaMasCercana.id);
-      mesh.isPickable = false;
+      // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
+      // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
+      // hija volvia a habilitar el arrastre de un objeto ya colocado.
+      senal.fijar();
 
       // "Click" real: la ficha encaja exactamente en el centro del
       // círculo punteado, como una pieza de shadow board de verdad.
