@@ -15,14 +15,19 @@ import { mostrarRankingNivel5 } from "./ui/RankingScreen";
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, undefined, true);
 
-// NITIDEZ: el buffer de render se dibuja a la densidad real de la pantalla.
-// Con setHardwareScalingLevel(1) el juego se renderizaba a resolución CSS y
-// el navegador lo estiraba hasta los píxeles físicos — de ahí el aspecto
-// borroso del texto y de la escena en pantallas con escalado de Windows.
-// El tope de 2 evita que un monitor 4K a 300% pida un buffer enorme.
-// Si el framerate baja mucho dentro de los niveles, cambiar el 2 por 1.5.
-const densidad = Math.min(window.devicePixelRatio || 1, 2);
-engine.setHardwareScalingLevel(1 / densidad);
+// El buffer de render va 1:1 con el tamanio del canvas.
+//
+// Aca hubo un setHardwareScalingLevel(1 / devicePixelRatio) para ganar
+// nitidez. El costo fue que el buffer pasaba a medir el doble que el canvas,
+// y con eso la conversion de coordenadas del puntero hacia la GUI dejaba de
+// coincidir: el menu se dibujaba en un lado y respondia en otro — el mouse
+// sobre una fila y el clic entrando a la fila de abajo. Ademas explicaba por
+// que al abrir las devtools o el modo celular (que cambian el
+// devicePixelRatio) el comportamiento cambiaba.
+//
+// La nitidez de la interfaz se resuelve por el lado de la GUI (idealWidth /
+// idealHeight en MainMenu), que no toca la geometria del puntero.
+engine.setHardwareScalingLevel(1);
 
 let sceneManager = new SceneManager(engine);
 const gameManager = GameManager.getInstance();
@@ -57,9 +62,18 @@ function mostrarMenu(): void {
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
     () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu())
   );
-  setupXR(sceneManager.scene, []);
-  // TEMPORAL: control de cámara para poder inspeccionar el garaje a mano.
-  sceneManager.scene.activeCamera?.attachControl(canvas, true);
+  // OJO: aca NO va attachControl ni setupXR.
+  //
+  // La camara ya queda enganchada al canvas dentro de SceneManager. Si se
+  // la engancha una segunda vez, cada clic sobre el menu lo captura el
+  // control de camara, y Babylon descarta el evento POINTERUP para la GUI
+  // cuando el puntero quedo capturado. Como TODOS los botones del menu
+  // reaccionan a POINTERUP, el resultado es un menu que se ve perfecto pero
+  // en el que no responde absolutamente nada.
+  //
+  // setupXR tampoco corresponde: en el menu no hay piso ni escena que
+  // recorrer, y monta otra capa que interviene los punteros. El modo XR se
+  // arma al entrar a cada nivel, que es donde tiene sentido.
 }
 
 function volverAlMenu(): void {

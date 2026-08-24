@@ -53,6 +53,11 @@ export function mostrarCertificado(scene: Scene, onCerrar: () => void): void {
   botonCerrar.top = "230px";
   botonCerrar.onPointerUpObservable.add(() => {
     fondo.isVisible = false;
+    // Liberar la capa GUI, no solo ocultarla. Una capa oculta sigue
+    // registrada en la escena y sigue interceptando los clics del menú
+    // que se muestra después. Se libera en el siguiente tick para no
+    // destruirla dentro de su propio evento de puntero.
+    setTimeout(() => gui.dispose(), 0);
     onCerrar();
   });
   fondo.addControl(botonCerrar);

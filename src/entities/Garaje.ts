@@ -6,6 +6,8 @@ import {
   AbstractMesh,
   Mesh,
   ShadowGenerator,
+  PointLight,
+  Color3,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 
@@ -68,10 +70,19 @@ export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}):
 
   const { minimo, maximo } = medirConjunto(mallas);
 
-  // Centrado en X/Z y piso al ras de y = 0.
+  // Altura a la que hay que bajar el garaje para que se pueda caminar sobre el
+  // piso. OJO: no es minimo.y. La losa de concreto tiene espesor propio (en el
+  // modelo de Bitplay son 23 cm), asi que alinear el FONDO de la losa con y = 0
+  // deja la superficie pisable a 0.23 m de altura. Todo el resto del juego
+  // asume que el suelo es y = 0, y con ese desfase las zonas de colores del
+  // Nivel 1 (que solo levantan 5 cm) quedaban literalmente enterradas dentro
+  // del concreto: se veian las etiquetas flotando y ningun rectangulo.
+  const alturaPiso = detectarSuperficieDelPiso(mallas, minimo, maximo);
+
+  // Centrado en X/Z y superficie pisable exactamente en y = 0.
   raiz.position.x -= (minimo.x + maximo.x) / 2;
   raiz.position.z -= (minimo.z + maximo.z) / 2;
-  raiz.position.y -= minimo.y;
+  raiz.position.y -= alturaPiso;
   raiz.computeWorldMatrix(true);
 
   const ancho = maximo.x - minimo.x;
@@ -115,6 +126,50 @@ export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}):
   };
 }
 
+/**
+ * Devuelve la altura de la cara superior del piso.
+ *
+ * Busca la losa: la malla que cubre buena parte de la planta del edificio y
+ * que ademas arranca cerca del punto mas bajo del modelo (asi no confunde el
+ * techo ni el entrepiso, que tienen una huella parecida pero estan arriba).
+ * Se queda con su cara de arriba.
+ *
+ * Es una heuristica por geometria a proposito: los nombres de malla que exporta
+ * Maya son "Mesh.012", "Mesh.093"... no dicen nada, y cambian en cada
+ * reexportacion. Midiendo, esto sigue funcionando si maniana llega otra version
+ * del garaje.
+ */
+function detectarSuperficieDelPiso(mallas: AbstractMesh[], minimo: Vector3, maximo: Vector3): number {
+  const areaPlanta = (maximo.x - minimo.x) * (maximo.z - minimo.z);
+  const alturaTotal = maximo.y - minimo.y;
+  const techoDeBusqueda = minimo.y + alturaTotal * 0.12;
+
+  let mejorArea = 0;
+  let alturaSuperior: number | null = null;
+
+  mallas.forEach((malla) => {
+    const caja = malla.getBoundingInfo().boundingBox;
+    const min = caja.minimumWorld;
+    const max = caja.maximumWorld;
+
+    // Tiene que empezar abajo del todo: descarta techo y entrepisos.
+    if (min.y > techoDeBusqueda) return;
+
+    const area = (max.x - min.x) * (max.z - min.z);
+    // Y tiene que ser una superficie amplia, no un pilar ni una rampa suelta.
+    if (area < areaPlanta * 0.35) return;
+
+    if (area > mejorArea) {
+      mejorArea = area;
+      alturaSuperior = max.y;
+    }
+  });
+
+  // Sin losa reconocible se vuelve al comportamiento anterior, que al menos
+  // deja el modelo apoyado en vez de hundido.
+  return alturaSuperior ?? minimo.y;
+}
+
 /** Caja que envuelve a todas las mallas juntas, en coordenadas de mundo. */
 function medirConjunto(mallas: AbstractMesh[]): { minimo: Vector3; maximo: Vector3 } {
   const minimo = new Vector3(Infinity, Infinity, Infinity);
@@ -129,4 +184,37 @@ function medirConjunto(mallas: AbstractMesh[]): { minimo: Vector3; maximo: Vecto
   });
 
   return { minimo, maximo };
+}
+
+/** Un foco de techo del garaje, centrado en X y ubicado sobre una zona de juego. */
+export interface FocoGaraje {
+  /** Profundidad (Z) sobre la que cuelga el foco. */
+  z: number;
+  intensidad?: number;
+  /** Temperatura de color. Por defecto una luz calida de taller. */
+  tinte?: Color3;
+}
+
+/**
+ * Ilumina el interior del garaje.
+ *
+ * Hace falta porque el garaje TIENE TECHO: la luz direccional de la escena
+ * queda afuera y el interior, por si solo, es una cueva. Se sube el relleno
+ * ambiental y se cuelgan focos sobre las zonas donde el jugador trabaja.
+ *
+ * Vive aca y no dentro de cada nivel para que todos los niveles compartan la
+ * misma receta de iluminacion y el escenario se vea igual en los cinco.
+ */
+export function iluminarInteriorGaraje(scene: Scene, focos: FocoGaraje[]): void {
+  const relleno = scene.getLightByName("luzRelleno");
+  if (relleno) {
+    relleno.intensity = 0.75;
+  }
+
+  focos.forEach((foco, i) => {
+    const luz = new PointLight(`luzGaraje_${i}`, new Vector3(0, 4.2, foco.z), scene);
+    luz.diffuse = foco.tinte ?? new Color3(1, 0.96, 0.88);
+    luz.intensity = foco.intensidad ?? 0.85;
+    luz.range = 14;
+  });
 }

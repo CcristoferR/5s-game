@@ -175,6 +175,9 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
     }
     borrarRankingNivel5();
     fondo.isVisible = false;
+    // Se libera esta capa antes de volver a abrir el ranking; si no,
+    // cada borrado dejaba una capa muerta encima de la anterior.
+    setTimeout(() => gui.dispose(), 0);
     mostrarRankingNivel5(scene, onCerrar);
   });
 
@@ -190,6 +193,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
   botonCerrar.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   botonCerrar.onPointerUpObservable.add(() => {
     fondo.isVisible = false;
+    setTimeout(() => gui.dispose(), 0);
     onCerrar();
   });
   panel.addControl(botonCerrar);

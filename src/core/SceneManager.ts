@@ -49,16 +49,20 @@ export class SceneManager {
     const camara = new ArcRotateCamera(
       "camPrincipal",
       -Math.PI / 2, // alpha: mirando desde el frente
-      1.05,         // beta: algo elevada, para ver la mesa desde arriba
-      9,            // radio: distancia al centro de la escena
-      new Vector3(0, 0.9, 0.6), // punto medio entre la mesa y las zonas
+      1.12,         // beta: algo elevada, para ver la mesa desde arriba
+      7.6,          // radio: distancia al centro de la escena
+      new Vector3(0, 0.75, 0.9), // punto medio entre el banco y las zonas
       this.scene
     );
 
     // Límites: sin esto la cámara se mete bajo el piso o se aleja fuera del
     // garaje, y el jugador se pierde sin saber cómo volver.
-    camara.lowerRadiusLimit = 4.5;
-    camara.upperRadiusLimit = 11;
+    // El garaje es MUCHO mas grande que la oficina que habia antes (12 x 19 m
+    // contra 12 x 14). Con el tope de alejamiento viejo la zona de juego
+    // quedaba diminuta en medio de una nave vacia; recortarlo mantiene el banco
+    // y las zonas ocupando la pantalla, sin perder la sensacion de galpon.
+    camara.lowerRadiusLimit = 3.6;
+    camara.upperRadiusLimit = 9.5;
     camara.lowerBetaLimit = 0.25;
     camara.upperBetaLimit = 1.45;
     camara.wheelDeltaPercentage = 0.02;

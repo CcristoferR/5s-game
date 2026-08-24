@@ -1,9 +1,10 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
+import { Scene, MeshBuilder } from "@babylonjs/core";
 import { Rectangle, TextBlock, Button, Control } from "@babylonjs/gui";
 import { objetosNivel2, slotsNivel2 } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
-import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel2 } from "../entities/Level2Shapes";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
@@ -12,27 +13,27 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
 
-  crearAmbienteOficina(scene);
+  // ESCENARIO: el mismo garaje del Nivel 1, para que el jugador sienta que
+  // sigue trabajando en el espacio que empezó a ordenar y no en otro lugar.
+  // La carga es asíncrona: los objetos del nivel se crean igual y el garaje
+  // aparece un instante después.
+  //
+  // A propósito NO se le pasa el shadowGenerator: el garaje tiene techo, y si
+  // el techo proyectara la sombra de la luz direccional dejaría todo el
+  // interior a oscuras. La luz de adentro la resuelve iluminarInteriorGaraje.
+  void cargarGaraje(scene).catch((error) => console.error("[nivel2] garaje:", error));
+  iluminarInteriorGaraje(scene, [{ z: -0.5, intensidad: 0.9 }, { z: 1.8, intensidad: 0.75 }]);
 
-  const suelo = MeshBuilder.CreateGround("sueloN2", { width: 10, height: 10 }, scene);
-  const matSuelo = new PBRMaterial("matSueloN2", scene);
-  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
-  matSuelo.roughness = 0.45;
-  matSuelo.metallic = 0.05;
-  suelo.material = matSuelo;
-  suelo.receiveShadows = true;
+  // Suelo invisible al ras del piso del garaje. No se ve, pero sigue
+  // llamándose "sueloN2" porque main.ts lo busca por ese nombre para decirle
+  // a WebXR sobre qué superficie se puede teletransportar.
+  const suelo = MeshBuilder.CreateGround("sueloN2", { width: 12, height: 19 }, scene);
+  suelo.position.y = -0.02;
+  suelo.isVisible = false;
 
-  // Escritorio ampliado: ahora aloja 7 objetos en dos filas, más
-  // variedad que antes.
-  const escritorio = MeshBuilder.CreateBox("escritorioN2", { width: 4.4, height: 0.1, depth: 1.4 }, scene);
-  escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new PBRMaterial("matEscritorioN2", scene);
-  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
-  matEscritorio.roughness = 0.5;
-  escritorio.material = matEscritorio;
-  escritorio.receiveShadows = true;
-
-  crearLuzColgante(scene);
+  // Banco de trabajo compartido con el Nivel 1. Un poco más ancho acá porque
+  // arranca con 7 objetos repartidos en dos filas.
+  crearBancoDeTrabajo(scene, { nombre: "escritorioN2", ancho: 4.8, fondo: 1.5, z: -0.5 });
 
   const objetos = objetosNivel2.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel2));
   const slots = slotsNivel2.map((s) => crearShelfSlot(scene, gui, s.id, s.posicionX, s.descripcion));
@@ -103,33 +104,6 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   });
 
   return { objetos, slots };
-}
-
-// Luz colgante sobre el estante — un solo elemento nuevo, pero da
-// iluminación cálida y localizada justo donde ocurre la decisión del
-// jugador, igual que la lámpara de mesa del Nivel 1.
-function crearLuzColgante(scene: Scene): void {
-  const matCable = new PBRMaterial("matCableLuzColgante", scene);
-  matCable.albedoColor = new Color3(0.15, 0.15, 0.16);
-  matCable.roughness = 0.5;
-
-  const cable = MeshBuilder.CreateCylinder("cableLuzColgante", { diameter: 0.02, height: 1.6 }, scene);
-  cable.position.set(0, 4.0, 1.8);
-  cable.material = matCable;
-
-  const matPantalla = new PBRMaterial("matPantallaLuzColgante", scene);
-  matPantalla.albedoColor = new Color3(0.85, 0.8, 0.7);
-  matPantalla.emissiveColor = new Color3(0.55, 0.48, 0.3);
-  matPantalla.roughness = 0.5;
-
-  const pantalla = MeshBuilder.CreateCylinder("pantallaLuzColgante", { diameterTop: 0.35, diameterBottom: 0.12, height: 0.18 }, scene);
-  pantalla.position.set(0, 3.15, 1.8);
-  pantalla.material = matPantalla;
-
-  const luz = new PointLight("luzColgante", new Vector3(0, 3.05, 1.8), scene);
-  luz.diffuse = new Color3(1, 0.9, 0.65);
-  luz.intensity = 0.45;
-  luz.range = 5;
 }
 
 // Micro-lección: explica qué es un "shadow board" antes de jugar — el

@@ -43,7 +43,13 @@ export function crearMancha(
   const mesh = Mesh.MergeMeshes([nucleo, lobulo1, lobulo2], true, true, undefined, false, true)!;
   mesh.name = `mancha_${id}`;
   mesh.material = mat;
-  mesh.position.set(x, 0.911, z);
+  // Apoyada en el piso, apenas por encima para no pelearse con el con el suelo.
+  //
+  // Antes esta altura estaba fija en 0.911, que era la cara del escritorio: las
+  // manchas que no caian sobre el escritorio (las del equipo del fondo) quedaban
+  // flotando en el aire. Ademas los textos del nivel hablan de manchas EN EL
+  // SUELO, asi que el piso es el lugar que corresponde.
+  mesh.position.set(x, 0.012, z);
 
   const onLimpia = new Observable<void>();
   let clicksRestantes = clicks;

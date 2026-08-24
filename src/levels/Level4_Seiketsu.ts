@@ -8,7 +8,8 @@ import { crearFormaNivel4, crearFormaSenal } from "../entities/Level4Shapes";
 import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/ChecklistZones";
 import { crearZonaSenal } from "../entities/SignageZone";
 import { crearNPCWorker } from "../entities/NPCWorker";
-import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { crearRotulo3D } from "../entities/Rotulo3D";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
@@ -45,15 +46,24 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
 
-  crearAmbienteOficina(scene);
+  // Mismo escenario que los niveles 1 a 3: el garaje entregado por Bitplay.
+  // No se le pasa el shadowGenerator porque tiene techo y su sombra dejaría
+  // todo el interior a oscuras; la luz de adentro la pone iluminarInteriorGaraje.
+  void cargarGaraje(scene).catch((error) => console.error("[nivel4] garaje:", error));
 
-  const suelo = MeshBuilder.CreateGround("sueloN4", { width: 12, height: 12 }, scene);
-  const matSuelo = new PBRMaterial("matSueloN4", scene);
-  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
-  matSuelo.roughness = 0.45;
-  matSuelo.metallic = 0.05;
-  suelo.material = matSuelo;
-  suelo.receiveShadows = true;
+  // Dos focos: uno sobre el banco donde están las fichas y las señales, y otro
+  // sobre el tablero del checklist y la papelera del fondo.
+  iluminarInteriorGaraje(scene, [
+    { z: -0.6, intensidad: 0.9 },
+    { z: 1.6, intensidad: 0.8 },
+  ]);
+
+  // Suelo invisible al ras del piso del garaje. Se conserva el nombre
+  // "sueloN4" porque main.ts lo busca así para decirle a WebXR sobre qué
+  // superficie se puede teletransportar.
+  const suelo = MeshBuilder.CreateGround("sueloN4", { width: 12, height: 19 }, scene);
+  suelo.position.y = -0.02;
+  suelo.isVisible = false;
 
   const escritorio = MeshBuilder.CreateBox("escritorioN4", { width: 4.6, height: 0.1, depth: 1.4 }, scene);
   escritorio.position.set(0, 0.85, -0.5);
@@ -71,27 +81,24 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const tableroChecklist = crearTableroChecklist(scene, posicionesZonas.checklist);
   const papeleraDescartar = crearPapeleraDescartar(scene, posicionesZonas.descartar);
 
-  const etiquetaChecklist = new TextBlock("etiquetaZonaChecklist", "✅ CHECKLIST\n(instrucciones claras)");
-  etiquetaChecklist.color = "white";
-  etiquetaChecklist.fontSize = 16;
-  etiquetaChecklist.outlineWidth = 4;
-  etiquetaChecklist.outlineColor = "rgba(0,0,0,0.85)";
-  etiquetaChecklist.width = "160px";
-  etiquetaChecklist.height = "50px";
-  gui.addControl(etiquetaChecklist);
-  etiquetaChecklist.linkWithMesh(tableroChecklist);
-  etiquetaChecklist.linkOffsetY = -90;
+  // Rótulos pintados sobre carteles dentro de la escena. Antes eran texto 2D
+  // anclado a las mallas: al orbitar la cámara se juntaban en el centro de la
+  // pantalla y se leían a través de las paredes del garaje.
+  crearRotulo3D(
+    scene,
+    "zonaChecklist",
+    "CHECKLIST — instrucciones claras",
+    new Vector3(posicionesZonas.checklist, 1.92, 1.8),
+    { ancho: 1.5, alto: 0.36, lineasMax: 2, colorFondo: "#1c3a29", colorBorde: "rgba(120,220,160,0.5)" }
+  );
 
-  const etiquetaDescartar = new TextBlock("etiquetaZonaDescartar", "🗑️ DESCARTAR\n(ambiguas o irrelevantes)");
-  etiquetaDescartar.color = "white";
-  etiquetaDescartar.fontSize = 16;
-  etiquetaDescartar.outlineWidth = 4;
-  etiquetaDescartar.outlineColor = "rgba(0,0,0,0.85)";
-  etiquetaDescartar.width = "170px";
-  etiquetaDescartar.height = "50px";
-  gui.addControl(etiquetaDescartar);
-  etiquetaDescartar.linkWithMesh(papeleraDescartar);
-  etiquetaDescartar.linkOffsetY = -70;
+  crearRotulo3D(
+    scene,
+    "zonaDescartar",
+    "DESCARTAR — ambiguas o irrelevantes",
+    new Vector3(posicionesZonas.descartar, 1.12, 1.8),
+    { ancho: 1.5, alto: 0.36, lineasMax: 2, colorFondo: "#3a1f1c", colorBorde: "rgba(230,140,120,0.5)" }
+  );
 
   // --- Fase 2: señalética con códigos de color — ahora bien separada
   // en su propia zona del cuarto (z=3.0 spawn / z=4.2 zonas), lejos del
@@ -99,19 +106,17 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const senales = senalesNivel4.map((datos) => crearObjetoInteractable(scene, datos, crearFormaSenal));
   zonasSenalNivel4.forEach((z) => crearZonaSenal(scene, gui, z.id, z.posicionX, Z_ZONA_SENAL, z.descripcion));
 
-  // Etiqueta con el nombre del color sobre cada ficha — así se distingue
-  // sin dudas del checklist numerado, aunque estén en el mismo cuadro.
+  // Nombre del color sobre cada ficha, como cartelito colgado de la propia
+  // ficha: acompaña al objeto aunque el jugador lo arrastre.
   senales.forEach((senal) => {
-    const etiquetaFicha = new TextBlock(`etiquetaFicha_${senal.datos.id}`, senal.datos.nombreVisible);
-    etiquetaFicha.color = "white";
-    etiquetaFicha.fontSize = 13;
-    etiquetaFicha.outlineWidth = 3;
-    etiquetaFicha.outlineColor = "rgba(0,0,0,0.75)";
-    etiquetaFicha.width = "90px";
-    etiquetaFicha.height = "24px";
-    gui.addControl(etiquetaFicha);
-    etiquetaFicha.linkWithMesh(senal.mesh);
-    etiquetaFicha.linkOffsetY = -25;
+    const rotulo = crearRotulo3D(
+      scene,
+      `ficha_${senal.datos.id}`,
+      senal.datos.nombreVisible,
+      new Vector3(0, 0.26, 0),
+      { ancho: 0.6, alto: 0.16, colorFondo: "#1d2227", colorBorde: "rgba(255,255,255,0.3)", mirarCamara: true }
+    );
+    rotulo.parent = senal.mesh;
   });
 
   mostrarMicroLeccionEstandar(gui);

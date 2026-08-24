@@ -3,15 +3,19 @@ import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, Control } from "@
 import { objetosNivel1, type ZonaClasificacion } from "../data/levelConfig";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearDropZone } from "../entities/DropZone";
-import { cargarGaraje } from "../entities/Garaje";
+import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
+// Separacion entre zonas. Se abrio de 2 a 2.7 m porque las zonas ahora miden
+// 2.2 m de lado (antes 1.6): a la separacion vieja las demarcaciones quedaban
+// pegadas una con otra y no se leian como areas distintas.
 const posicionesZonas: Record<ZonaClasificacion, number> = {
-  necesario: -2,
+  necesario: -2.7,
   dudoso: 0,
-  descartar: 2,
+  descartar: 2.7,
 };
 
 const etiquetasZonas: Record<ZonaClasificacion, string> = {
@@ -30,9 +34,12 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   //
   // A propósito NO se le pasa el shadowGenerator: el garaje tiene techo, y
   // si el techo proyectara la sombra de la luz direccional dejaría todo el
-  // interior a oscuras. La luz de adentro se resuelve en iluminarInterior.
-void cargarGaraje(scene).catch((error) => console.error("[nivel1] garaje:", error));
-  iluminarInterior(scene);
+  // interior a oscuras. La luz de adentro la resuelve iluminarInteriorGaraje.
+  void cargarGaraje(scene).catch((error) => console.error("[nivel1] garaje:", error));
+  iluminarInteriorGaraje(scene, [
+    { z: -0.5, intensidad: 0.9 },
+    { z: 2.2, intensidad: 0.7, tinte: new Color3(0.95, 0.96, 1) },
+  ]);
 
   // Suelo invisible al ras del piso del garaje. No se ve, pero sigue
   // llamándose "suelo" porque main.ts lo busca por ese nombre para decirle
@@ -41,15 +48,7 @@ void cargarGaraje(scene).catch((error) => console.error("[nivel1] garaje:", erro
   suelo.position.y = -0.02;
   suelo.isVisible = false;
 
-  // Escritorio ampliado: ahora aloja 10 objetos en dos filas, acercándose
-  // a lo que pide la guía ("decenas de objetos"), no solo 4-5 sueltos.
-  const escritorio = MeshBuilder.CreateBox("escritorio", { width: 3.6, height: 0.1, depth: 1.4 }, scene);
-  escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new PBRMaterial("matEscritorio", scene);
-  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
-  matEscritorio.roughness = 0.5;
-  escritorio.material = matEscritorio;
-  escritorio.receiveShadows = true;
+  crearBancoDeTrabajo(scene);
 
   crearLamparaDeMesa(scene);
   crearSenalTarjetaRoja(scene, posicionesZonas.dudoso);
@@ -120,27 +119,6 @@ void cargarGaraje(scene).catch((error) => console.error("[nivel1] garaje:", erro
   return { objetos, zonas: [zonaNecesario, zonaDudoso, zonaDescartar] };
 }
 
-// Luz interior del garaje: la escena base está iluminada para un espacio
-// abierto, pero acá hay techo y las ventanas son chicas. Dos focos cenitales
-// sobre la zona de juego y más relleno ambiental evitan que el jugador
-// tenga que trabajar a oscuras.
-function iluminarInterior(scene: Scene): void {
-  const relleno = scene.getLightByName("luzRelleno");
-  if (relleno) {
-    relleno.intensity = 0.75;
-  }
-
-  const focoMesa = new PointLight("luzGarajeMesa", new Vector3(0, 4.2, -0.5), scene);
-  focoMesa.diffuse = new Color3(1, 0.96, 0.88);
-  focoMesa.intensity = 0.9;
-  focoMesa.range = 14;
-
-  const focoZonas = new PointLight("luzGarajeZonas", new Vector3(0, 4.2, 2.2), scene);
-  focoZonas.diffuse = new Color3(0.95, 0.96, 1);
-  focoZonas.intensity = 0.7;
-  focoZonas.range = 14;
-}
-
 // Lámpara de mesa: un punto de luz cálido y localizado sobre los objetos
 // — un solo elemento nuevo, pero con impacto real en la iluminación de
 // esa zona específica de la escena.
@@ -151,11 +129,11 @@ function crearLamparaDeMesa(scene: Scene): void {
   matBase.metallic = 0.5;
 
   const base = MeshBuilder.CreateCylinder("lamparaBase", { diameter: 0.14, height: 0.03 }, scene);
-  base.position.set(-1.9, 0.91, -0.85);
+  base.position.set(-1.75, 0.96, -0.9);
   base.material = matBase;
 
   const brazo = MeshBuilder.CreateCylinder("lamparaBrazo", { diameter: 0.02, height: 0.5 }, scene);
-  brazo.position.set(-1.9, 1.16, -0.85);
+  brazo.position.set(-1.75, 1.21, -0.9);
   brazo.material = matBase;
 
   const matPantalla = new PBRMaterial("matLamparaPantalla", scene);
@@ -164,11 +142,11 @@ function crearLamparaDeMesa(scene: Scene): void {
   matPantalla.roughness = 0.6;
 
   const pantalla = MeshBuilder.CreateCylinder("lamparaPantalla", { diameterTop: 0.03, diameterBottom: 0.16, height: 0.14 }, scene);
-  pantalla.position.set(-1.75, 1.35, -0.75);
+  pantalla.position.set(-1.6, 1.4, -0.8);
   pantalla.rotation.z = -0.5;
   pantalla.material = matPantalla;
 
-  const luz = new PointLight("luzLampara", new Vector3(-1.75, 1.3, -0.7), scene);
+  const luz = new PointLight("luzLampara", new Vector3(-1.6, 1.35, -0.75), scene);
   luz.diffuse = new Color3(1, 0.85, 0.6);
   luz.intensity = 0.35;
   luz.range = 4;
@@ -183,16 +161,16 @@ function crearSenalTarjetaRoja(scene: Scene, x: number): void {
   matPoste.roughness = 0.5;
   matPoste.metallic = 0.4;
 
-  const poste = MeshBuilder.CreateCylinder("posteTarjetaRoja", { diameter: 0.03, height: 0.5 }, scene);
-  poste.position.set(x, 0.25, 2.15);
+  const poste = MeshBuilder.CreateCylinder("posteTarjetaRoja", { diameter: 0.035, height: 0.7 }, scene);
+  poste.position.set(x - 1.45, 0.35, 2.4);
   poste.material = matPoste;
 
   const matTarjeta = new PBRMaterial("matTarjetaRoja", scene);
   matTarjeta.albedoColor = new Color3(0.78, 0.1, 0.1);
   matTarjeta.roughness = 0.35;
 
-  const tarjeta = MeshBuilder.CreatePlane("tarjetaRoja", { width: 0.18, height: 0.24 }, scene);
-  tarjeta.position.set(0, 0.17, 0.01);
+  const tarjeta = MeshBuilder.CreatePlane("tarjetaRoja", { width: 0.26, height: 0.34 }, scene);
+  tarjeta.position.set(0, 0.25, 0.015);
   tarjeta.rotation.y = 0.3;
   tarjeta.parent = poste;
   tarjeta.material = matTarjeta;

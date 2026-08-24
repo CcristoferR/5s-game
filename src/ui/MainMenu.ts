@@ -1,5 +1,5 @@
 import { Scene } from "@babylonjs/core";
-import { AdvancedDynamicTexture, TextBlock, StackPanel, Rectangle, Control, Image } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, TextBlock, StackPanel, Rectangle, Control, Image, Button } from "@babylonjs/gui";
 
 export interface NivelMenuInfo {
   numero: number;
@@ -82,7 +82,7 @@ export function mostrarMenuPrincipal(
   columna.addControl(crearCabecera());
   columna.addControl(separador("sepCabecera"));
 
-  const filas: Array<{ marco: Rectangle; zona: Rectangle; nivel: NivelMenuInfo }> = [];
+  const filas: Array<{ marco: Rectangle; zona: Button; nivel: NivelMenuInfo }> = [];
   niveles.forEach((nivel, i) => {
     const fila = crearFila(nivel);
     columna.addControl(fila.marco);
@@ -108,8 +108,24 @@ export function mostrarMenuPrincipal(
       scene.onBeforeRenderObservable.remove(observador);
       observador = null;
     }
-    panel.isVisible = false;
-    setTimeout(() => gui.dispose(), 0);
+
+    // Se oculta la interfaz COMPLETA, no solo el panel: el fondo es una imagen
+    // a pantalla completa agregada directamente a la GUI, asi que apagar unicamente
+    // el panel dejaba esa capa tapando el nivel.
+    gui.rootContainer.isVisible = false;
+    gui.rootContainer.isPointerBlocker = false;
+
+    // El dispose va diferido a proposito: esto corre dentro del despacho de un
+    // evento de puntero de esta misma textura, y destruirla en ese momento corta
+    // el recorrido interno de controles de Babylon.
+    setTimeout(() => {
+      try {
+        gui.dispose();
+      } catch {
+        /* la escena ya se recreo y se llevo esta textura: nada que liberar */
+      }
+    }, 0);
+
     despues();
   }
 
@@ -178,6 +194,7 @@ function crearFondo(): Image {
   imagen.width = "100%";
   imagen.height = "100%";
   imagen.stretch = Image.STRETCH_FILL;
+  imagen.isHitTestVisible = false;
   return imagen;
 }
 
@@ -273,6 +290,9 @@ function crearIcono(
   icono.width = tamano + "px";
   icono.height = tamano + "px";
   icono.stretch = Image.STRETCH_UNIFORM;
+  // Decorativo: si acepta el hit test, se queda el clic destinado a la fila
+  // o al boton que lo contiene (ver nota en crearFila).
+  icono.isHitTestVisible = false;
   return icono;
 }
 
@@ -335,7 +355,30 @@ function crearCabecera(): Rectangle {
 // Fila de nivel
 // ---------------------------------------------------------------------------
 
-function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } {
+// Button trae animaciones propias (baja la opacidad al pasar el mouse y
+// encoge el control al hacer clic). Se anulan para conservar exactamente el
+// aspecto disenado: el resaltado de las filas y de los botones lo manejan sus
+// propios handlers de hover mas abajo.
+function sinAnimacionesDeBoton(boton: Button): void {
+  boton.pointerEnterAnimation = () => {};
+  boton.pointerOutAnimation = () => {};
+  boton.pointerDownAnimation = () => {};
+  boton.pointerUpAnimation = () => {};
+}
+
+// IMPORTANTE — por que todos los hijos llevan isHitTestVisible = false:
+//
+// En Babylon GUI un contenedor le ofrece el clic primero a sus hijos, en orden
+// inverso, y si alguno lo acepta corta ahi: el contenedor NUNCA ejecuta sus
+// propios observables (ver Container._processPicking). TextBlock e Image
+// aceptan el hit test por defecto.
+//
+// Como el manejador del clic vive en 'zona' (el rectangulo de la fila) pero la
+// fila esta tapada casi entera por sus textos y su icono, sin esto el clic solo
+// funcionaba si caia en un hueco entre textos. De ahi que pareciera aleatorio y
+// que cambiara al abrir las devtools: al variar el tamanio, variaban los huecos.
+// Lo mismo aplica a los botones de la barra inferior (crearBotonPie).
+function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
   const separado = separarNombre(nivel.nombre);
   const estado = nivel.completado ? "completado" : nivel.desbloqueado ? "disponible" : "bloqueado";
 
@@ -345,7 +388,11 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
   marco.thickness = 0;
   marco.background = "transparent";
 
-  const zona = new Rectangle("fila_" + nivel.numero);
+  // Button en vez de Rectangle a proposito: Button sobrescribe _processPicking
+  // y ejecuta SIEMPRE sus propios observables cuando el punto cae dentro, sin
+  // cederle el evento a los hijos. Un Rectangle, en cambio, le ofrece el clic
+  // primero a cada hijo y se queda sin ejecutar nada si alguno lo acepta.
+  const zona = new Button("fila_" + nivel.numero);
   zona.width = ANCHO - 34 + "px";
   zona.height = ALTO_FILA - 10 + "px";
   zona.cornerRadius = 10;
@@ -353,6 +400,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
   zona.color = C.filaActivaBorde;
   zona.background = estado === "disponible" ? C.filaActiva : "transparent";
   zona.isPointerBlocker = nivel.desbloqueado;
+  sinAnimacionesDeBoton(zona);
   marco.addControl(zona);
 
   if (estado === "disponible") {
@@ -362,6 +410,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
     marca.cornerRadius = 2;
     marca.thickness = 0;
     marca.background = C.acento;
+    marca.isHitTestVisible = false;
     marca.left = "1px";
     marca.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     zona.addControl(marca);
@@ -378,6 +427,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
   numero.left = "22px";
   numero.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   numero.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  numero.isHitTestVisible = false;
   zona.addControl(numero);
 
   const termino = new TextBlock("terminoFila_" + nivel.numero, separado.termino.toUpperCase());
@@ -388,6 +438,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
   termino.left = "70px";
   termino.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   termino.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  termino.isHitTestVisible = false;
   zona.addControl(termino);
 
   const traduccion = new TextBlock("traduccionFila_" + nivel.numero, separado.traduccion);
@@ -397,6 +448,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
   traduccion.left = "272px";
   traduccion.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   traduccion.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  traduccion.isHitTestVisible = false;
   zona.addControl(traduccion);
 
   const etiqueta = estado === "completado" ? "Completado" : estado === "disponible" ? "Comenzar" : "Bloqueado";
@@ -410,6 +462,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Rectangle } 
   textoEstado.left = "-46px";
   textoEstado.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
   textoEstado.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+  textoEstado.isHitTestVisible = false;
   zona.addControl(textoEstado);
 
   const tipoIcono = estado === "completado" ? "check" : estado === "disponible" ? "flecha" : "candado";
@@ -514,8 +567,8 @@ function crearProgreso(completadas: number, totalFases: number): {
 
 function crearPie(certificadoListo: boolean): {
   barra: Rectangle;
-  ranking: Rectangle;
-  certificado: Rectangle | null;
+  ranking: Button;
+  certificado: Button | null;
 } {
   const barra = new Rectangle("barraPie");
   barra.width = ANCHO - 54 + "px";
@@ -527,7 +580,7 @@ function crearPie(certificadoListo: boolean): {
   ranking.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   barra.addControl(ranking);
 
-  let certificado: Rectangle | null = null;
+  let certificado: Button | null = null;
 
   if (certificadoListo) {
     certificado = crearBotonPie("botonCertificado", "Ver certificado", "sello", C.acento, 192);
@@ -553,8 +606,8 @@ function crearBotonPie(
   icono: "copa" | "sello",
   color: string,
   ancho: number
-): Rectangle {
-  const boton = new Rectangle(nombre);
+): Button {
+  const boton = new Button(nombre);
   boton.width = ancho + "px";
   boton.height = "38px";
   boton.cornerRadius = 8;
@@ -563,6 +616,7 @@ function crearBotonPie(
   boton.background = "transparent";
   boton.isPointerBlocker = true;
   boton.hoverCursor = "pointer";
+  sinAnimacionesDeBoton(boton);
 
   const grafico = crearIcono(nombre + "_icono", icono, color, 17);
   grafico.left = "15px";
@@ -574,6 +628,7 @@ function crearBotonPie(
   texto.fontSize = 14;
   texto.fontWeight = "600";
   texto.left = "15px";
+  texto.isHitTestVisible = false;
   boton.addControl(texto);
 
   boton.onPointerEnterObservable.add(() => {

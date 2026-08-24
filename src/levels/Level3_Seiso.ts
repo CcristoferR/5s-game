@@ -5,7 +5,8 @@ import { crearMancha } from "../entities/Stain";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
 import { crearImpresoraConToner } from "../entities/PrinterMachine";
 import { mostrarPanelOpciones } from "../ui/ChoicePanel";
-import { crearAmbienteOficina } from "../entities/OfficeAmbience";
+import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
@@ -13,26 +14,44 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
 
-  crearAmbienteOficina(scene);
+  // ESCENARIO: el mismo garaje de los niveles 1 y 2. Carga asíncrona: los
+  // elementos del nivel se crean igual y el garaje aparece un instante después.
+  //
+  // A propósito NO se le pasa el shadowGenerator: el garaje tiene techo, y si
+  // el techo proyectara la sombra de la luz direccional dejaría todo el
+  // interior a oscuras. La luz de adentro la resuelve iluminarInteriorGaraje.
+  void cargarGaraje(scene).catch((error) => console.error("[nivel3] garaje:", error));
+  // Tres focos, uno por cada zona que el jugador tiene que inspeccionar: el
+  // banco, el equipo con la fuga y la impresora del fondo. Sin el tercero, las
+  // manchas de tóner quedaban en penumbra y costaba encontrarlas.
+  iluminarInteriorGaraje(scene, [
+    { z: -0.5, intensidad: 0.85 },
+    { z: 0.4, intensidad: 0.8 },
+    { z: 1.9, intensidad: 0.8 },
+  ]);
 
-  const suelo = MeshBuilder.CreateGround("sueloN3", { width: 10, height: 10 }, scene);
-  const matSuelo = new PBRMaterial("matSueloN3", scene);
-  matSuelo.albedoColor = new Color3(0.55, 0.52, 0.46);
-  matSuelo.roughness = 0.45;
-  matSuelo.metallic = 0.05;
-  suelo.material = matSuelo;
-  suelo.receiveShadows = true;
+  // Suelo invisible al ras del piso del garaje. No se ve, pero sigue
+  // llamándose "sueloN3" porque main.ts lo busca por ese nombre para decirle
+  // a WebXR sobre qué superficie se puede teletransportar.
+  const suelo = MeshBuilder.CreateGround("sueloN3", { width: 12, height: 19 }, scene);
+  suelo.position.y = -0.02;
+  suelo.isVisible = false;
 
-  const escritorio = MeshBuilder.CreateBox("escritorioN3", { width: 3, height: 0.1, depth: 1.4 }, scene);
-  escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new PBRMaterial("matEscritorioN3", scene);
-  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
-  matEscritorio.roughness = 0.5;
-  escritorio.material = matEscritorio;
-  escritorio.receiveShadows = true;
+  // Banco angosto a propósito: acá el protagonista es el equipo con la fuga,
+  // no el banco, y hay que dejarle lugar libre al costado.
+  crearBancoDeTrabajo(scene, { nombre: "escritorioN3", ancho: 3, fondo: 1.4, z: -0.5 });
 
-  const maquina = crearMaquinaConFuga(scene, 2.0, -0.3);
+  // La máquina se corrió de x=2.0 a x=2.5: con el banco compartido (3 m de
+  // ancho) su carcasa quedaba encajada dentro del tablero.
+  const maquina = crearMaquinaConFuga(scene, 2.5, -0.3);
+
   const impresora = crearImpresoraConToner(scene, -3.2, 1.7);
+  // La impresora es un equipo de escritorio y estaba apoyada directamente
+  // sobre el piso del galpón. Se la sube a una mesa auxiliar, que además deja
+  // libre el piso de abajo — que es justo donde se acumula el tóner.
+  const ALTURA_MESA_IMPRESORA = 0.62;
+  impresora.position.y = ALTURA_MESA_IMPRESORA;
+  crearMesaAuxiliar(scene, -3.2, 1.7, ALTURA_MESA_IMPRESORA);
 
   crearLamparaDeTrabajo(scene);
 
@@ -145,6 +164,45 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   return { maquina, impresora };
 }
 
+// Mesa auxiliar donde se apoya la impresora.
+//
+// Cuatro patas metálicas y una tapa: lo justo para que el equipo tenga dónde
+// estar sin robarle protagonismo a las manchas, que son lo que el jugador
+// tiene que mirar.
+function crearMesaAuxiliar(scene: Scene, x: number, z: number, alturaTapa: number): void {
+  const ANCHO = 0.85;
+  const FONDO = 0.75;
+
+  const matTapa = new PBRMaterial("matTapaMesaAux", scene);
+  matTapa.albedoColor = new Color3(0.38, 0.26, 0.17);
+  matTapa.roughness = 0.62;
+
+  const tapa = MeshBuilder.CreateBox("tapaMesaAux", { width: ANCHO, height: 0.06, depth: FONDO }, scene);
+  tapa.position.set(x, alturaTapa - 0.03, z);
+  tapa.material = matTapa;
+  tapa.receiveShadows = true;
+
+  const matPata = new PBRMaterial("matPataMesaAux", scene);
+  matPata.albedoColor = new Color3(0.32, 0.34, 0.37);
+  matPata.roughness = 0.4;
+  matPata.metallic = 0.72;
+
+  const alturaPata = alturaTapa - 0.06;
+  const patas: [number, number][] = [
+    [-ANCHO / 2 + 0.08, -FONDO / 2 + 0.08],
+    [ANCHO / 2 - 0.08, -FONDO / 2 + 0.08],
+    [-ANCHO / 2 + 0.08, FONDO / 2 - 0.08],
+    [ANCHO / 2 - 0.08, FONDO / 2 - 0.08],
+  ];
+
+  patas.forEach(([px, pz], i) => {
+    const pata = MeshBuilder.CreateBox(`pataMesaAux_${i}`, { width: 0.06, height: alturaPata, depth: 0.06 }, scene);
+    pata.position.set(x + px, alturaPata / 2, z + pz);
+    pata.material = matPata;
+    pata.receiveShadows = true;
+  });
+}
+
 // Lámpara de trabajo (tipo pinza) sujeta cerca de la máquina — ilumina
 // de forma cálida y localizada la zona del primer incidente.
 function crearLamparaDeTrabajo(scene: Scene): void {
@@ -154,7 +212,7 @@ function crearLamparaDeTrabajo(scene: Scene): void {
   matMetal.metallic = 0.6;
 
   const brazo = MeshBuilder.CreateCylinder("brazoLamparaTrabajo", { diameter: 0.03, height: 0.7 }, scene);
-  brazo.position.set(2.4, 1.6, -0.5);
+  brazo.position.set(2.95, 1.6, -0.5);
   brazo.rotation.z = 0.4;
   brazo.material = matMetal;
 
@@ -164,11 +222,11 @@ function crearLamparaDeTrabajo(scene: Scene): void {
   matPantalla.roughness = 0.5;
 
   const pantalla = MeshBuilder.CreateCylinder("pantallaLamparaTrabajo", { diameterTop: 0.05, diameterBottom: 0.2, height: 0.16 }, scene);
-  pantalla.position.set(2.15, 1.3, -0.4);
+  pantalla.position.set(2.7, 1.3, -0.4);
   pantalla.rotation.z = -0.6;
   pantalla.material = matPantalla;
 
-  const luz = new PointLight("luzLamparaTrabajo", new Vector3(2.0, 1.25, -0.35), scene);
+  const luz = new PointLight("luzLamparaTrabajo", new Vector3(2.55, 1.25, -0.35), scene);
   luz.diffuse = new Color3(1, 0.85, 0.55);
   luz.intensity = 0.4;
   luz.range = 4;
