@@ -10,6 +10,7 @@ import {
   Color3,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
+import { crearExteriorGaraje, hacerVidriosTransparentes } from "./CieloExterior";
 
 export interface OpcionesGaraje {
   /** Ruta del .glb dentro de /public. Vite lo sirve desde la raíz. */
@@ -20,6 +21,14 @@ export interface OpcionesGaraje {
   shadowGenerator?: ShadowGenerator | null;
   /** Imprime en consola las dimensiones y los nombres de las mallas. */
   diagnostico?: boolean;
+  /**
+   * Monta cielo, sol y terreno alrededor del galpón, y vuelve transparentes
+   * los vidrios. Activado por defecto.
+   *
+   * Se resuelve acá y no en cada nivel para que los cinco compartan el mismo
+   * exterior sin repetir la llamada — y para que nadie se olvide de ponerla.
+   */
+  exterior?: boolean;
 }
 
 export interface GarajeCargado {
@@ -44,6 +53,12 @@ export interface GarajeCargado {
 export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}): Promise<GarajeCargado> {
   const ruta = opciones.ruta ?? "/models/garaje.glb";
   const escala = opciones.escala ?? 1;
+
+  // El exterior se arma antes de pedir el modelo: no depende de él y así el
+  // fondo blanco no llega a verse mientras el garaje termina de cargar.
+  if (opciones.exterior !== false) {
+    crearExteriorGaraje(scene);
+  }
 
   const resultado = await ImportMeshAsync(ruta, scene);
   const mallas = resultado.meshes.filter((m) => m.getTotalVertices() > 0);
@@ -82,6 +97,10 @@ export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}):
   raiz.position.z -= (minimo.z + maximo.z) / 2;
   raiz.position.y -= alturaPiso;
   raiz.computeWorldMatrix(true);
+
+  if (opciones.exterior !== false) {
+    hacerVidriosTransparentes(scene);
+  }
 
   const ancho = maximo.x - minimo.x;
   const alto = maximo.y - minimo.y;

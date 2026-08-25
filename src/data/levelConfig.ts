@@ -81,7 +81,7 @@ export const incidentesNivel3: IncidenteNivel3[] = [
     id: "incidente_aceite",
     nombreVisible: "Manchas junto a la máquina",
     manchas: [
-      { id: "m1", posicion: [1.95, -1.0], tipoVisual: "aceite" },
+      { id: "m1", posicion: [1.7, -0.3], tipoVisual: "aceite" },
       { id: "m2", posicion: [2.8, 0.45], tipoVisual: "aceite" },
       { id: "m3", posicion: [3.3, -0.7], tipoVisual: "aceite" },
     ],

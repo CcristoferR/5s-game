@@ -80,6 +80,9 @@ export function cargarNivel5(
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
+  // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
+  // queda centrado verticalmente, ignorando su propio 'top'.
+  instruccion.resizeToFit = true;
   instruccion.width = "560px";
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -131,7 +134,7 @@ export function cargarNivel5(
 
   // Sin micro-lección: a esta altura el jugador ya recorrió las cuatro fases,
   // y lo que le toca es aplicar el estándar que él mismo construyó.
-  mostrarAperturaNivel(gui, 5, briefingsNiveles[5], null, () => {
+  mostrarAperturaNivel(scene, 5, briefingsNiveles[5], null, () => {
     inicioNivel = performance.now();
     corriendoTiempo = true;
   });

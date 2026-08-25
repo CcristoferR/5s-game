@@ -129,6 +129,9 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
+  // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
+  // queda centrado verticalmente, ignorando su propio 'top'.
+  instruccion.resizeToFit = true;
   instruccion.width = "540px";
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;

@@ -8,6 +8,14 @@ import { crearImpresoraConToner } from "../entities/PrinterMachine";
 import { mostrarPanelOpciones } from "../ui/ChoicePanel";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
+import {
+  crearEstanteriaTaller,
+  crearTamboresAceite,
+  crearPalletConCajas,
+  crearCarroDeLimpieza,
+  crearSenalPisoMojado,
+  crearGoteoDeFuga,
+} from "../entities/WorkshopProps";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
@@ -56,6 +64,29 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   crearLamparaDeTrabajo(scene);
 
+  // AMBIENTACIÓN
+  //
+  // Un galpón de 12 x 19 m con tres muebles se siente abandonado, no en uso.
+  // La utilería llena el espacio y, sobre todo, hace verosímil la escena: los
+  // tambores explican de dónde sale el aceite, y el carro de limpieza hace que
+  // frotar el piso se lea como una tarea del puesto y no como un minijuego
+  // pegado encima.
+  //
+  // Todo va contra las paredes o fuera de la zona de juego. La zona ocupada es
+  // x entre -4 y 3.6, z entre -1.3 y 2.5 — ahí están el banco, el equipo, la
+  // impresora y las cinco manchas. Nada de esto es interactivo: un objeto
+  // decorativo que tape o imite una mancha juega en contra del ejercicio.
+  crearEstanteriaTaller(scene, 5.1, 3.4, -Math.PI / 2);
+  crearTamboresAceite(scene, 4.5, 0.4);
+  crearPalletConCajas(scene, -5.0, 4.6);
+  crearCarroDeLimpieza(scene, -1.5, 3.6, 0.5);
+  crearSenalPisoMojado(scene, 0.9, 1.9, -0.35);
+
+  // El goteo cae exactamente donde la junta de la máquina pierde aceite.
+  // Ese punto está en el costado izquierdo del equipo, y la primera mancha se
+  // colocó justo debajo: el jugador puede VER la causa, no deducirla.
+  crearGoteoDeFuga(scene, new Vector3(1.7, 0.2, -0.3));
+
   const instruccion = new TextBlock(
     "instruccionNivel3",
     "🔍 Modo detective: limpia cada mancha, luego identifica la causa de cada incidente"
@@ -65,6 +96,9 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
+  // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
+  // queda centrado verticalmente, ignorando su propio 'top'.
+  instruccion.resizeToFit = true;
   instruccion.width = "480px";
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
