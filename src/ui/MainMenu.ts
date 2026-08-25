@@ -61,7 +61,10 @@ export function mostrarMenuPrincipal(
 
   gui.addControl(crearFondo());
 
-  const completadas = niveles.filter((n) => n.completado).length;
+  // El tutorial (numero 0) aparece como una fila mas, pero NO es una de las
+  // cinco fases: no cuenta para el progreso ni agrega un segmento a la barra.
+  const fases = niveles.filter((n) => n.numero >= 1);
+  const completadas = fases.filter((n) => n.completado).length;
   const certificadoListo = porcentajeMadurez === 100;
 
   const panel = new Rectangle("panelMenu");
@@ -91,7 +94,7 @@ export function mostrarMenuPrincipal(
   });
 
   columna.addControl(separador("sepProgreso"));
-  const progreso = crearProgreso(completadas, niveles.length);
+  const progreso = crearProgreso(completadas, fases.length);
   columna.addControl(progreso.bloque);
 
   const pie = crearPie(certificadoListo);
@@ -420,7 +423,10 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
   const colorTermino = estado === "bloqueado" ? C.bloqueadoFuerte : C.titulo;
   const colorTraduccion = estado === "bloqueado" ? C.bloqueadoSuave : C.secundario;
 
-  const numero = new TextBlock("numeroFila_" + nivel.numero, "0" + nivel.numero);
+  const numero = new TextBlock(
+    "numeroFila_" + nivel.numero,
+    nivel.numero === 0 ? "\u25B8" : "0" + nivel.numero
+  );
   numero.color = colorNumero;
   numero.fontSize = 14;
   numero.width = "40px";

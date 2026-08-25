@@ -47,7 +47,9 @@ export class GameManager {
   nivelActual = 1;
   onPuntajeCambiado = new Observable<number>();
 
-  private nivelesDesbloqueados = new Set<number>([1]);
+  // El 0 es el tutorial: siempre disponible y rejugable, no forma parte de
+  // las cinco fases ni suma al porcentaje de madurez.
+  private nivelesDesbloqueados = new Set<number>([0, 1]);
   private nivelesCompletados = new Set<number>();
   private readonly totalNiveles = 5;
 
@@ -93,7 +95,8 @@ export class GameManager {
   // 100% (y el certificado, que depende de llegar al 100%) ya no se
   // obtiene solo por "jugar" el nivel, sino por auditar bien.
   getPorcentajeMadurez(): number {
-    return Math.round((this.nivelesCompletados.size / this.totalNiveles) * 100);
+    const fases = [...this.nivelesCompletados].filter((numero) => numero >= 1).length;
+    return Math.round((fases / this.totalNiveles) * 100);
   }
 
   guardarEstandarNivel4(estandar: EstandarNivel4): void {

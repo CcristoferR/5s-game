@@ -2,6 +2,7 @@ import { Engine, Mesh } from "@babylonjs/core";
 import { GameManager } from "./core/GameManager";
 import { SceneManager } from "./core/SceneManager";
 import { setupXR } from "./core/XRManager";
+import { cargarTutorial } from "./levels/Level0_Tutorial";
 import { cargarNivel1 } from "./levels/Level1_Seiri";
 import { cargarNivel2 } from "./levels/Level2_Seiton";
 import { cargarNivel3 } from "./levels/Level3_Seiso";
@@ -33,6 +34,7 @@ let sceneManager = new SceneManager(engine);
 const gameManager = GameManager.getInstance();
 
 const infoNiveles = [
+  { numero: 0, nombre: "Tutorial - Cómo se juega" },
   { numero: 1, nombre: "Seiri - Clasificar" },
   { numero: 2, nombre: "Seiton - Ordenar" },
   { numero: 3, nombre: "Seiso - Limpiar" },
@@ -41,6 +43,7 @@ const infoNiveles = [
 ];
 
 const sueloPorNivel: Record<number, string> = {
+  0: "sueloTutorial",
   1: "suelo",
   2: "sueloN2",
   3: "sueloN3",
@@ -99,7 +102,10 @@ function cargarNivel(numeroNivel: number): void {
 
   const onCompletado = () => gameManager.completarNivel(numeroNivel);
 
-  if (numeroNivel === 1) {
+  if (numeroNivel === 0) {
+    const { objetos } = cargarTutorial(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    objetos.forEach((obj) => sceneManager.shadowGenerator.addShadowCaster(obj.mesh));
+  } else if (numeroNivel === 1) {
     const { objetos } = cargarNivel1(sceneManager.scene, hud, volverAlMenu, onCompletado);
     objetos.forEach((obj) => sceneManager.shadowGenerator.addShadowCaster(obj.mesh));
   } else if (numeroNivel === 2) {
