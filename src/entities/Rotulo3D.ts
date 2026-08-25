@@ -33,13 +33,25 @@ export interface OpcionesRotulo {
   padre?: Mesh;
   /** Máximo de renglones. Con más de uno, el texto se reparte por palabras. */
   lineasMax?: number;
+  /**
+   * Altura mínima de las letras, EN METROS.
+   *
+   * Es el parámetro que decide si un cartel se puede leer o no desde la
+   * cámara del juego, y por eso manda sobre el alto del cartel: si el texto no
+   * entra, crece el cartel en vez de achicarse la letra.
+   *
+   * El valor por defecto sale de medir el rótulo de las zonas del Nivel 1, que
+   * es el que sí se lee sin acercarse. Los carteles que se veían borrosos
+   * tenían letras de 0,08 a 0,10 m — menos de la mitad.
+   */
+  alturaTextoMin?: number;
 }
 
 // Píxeles de textura por metro de cartel. A 256 la textura tenía menos
 // píxeles de los que el cartel ocupa en pantalla cuando la cámara se acerca
 // a su límite (4,5 m), y el texto se veía estirado y pixelado. A 512 sobra
 // resolución en todo el rango de zoom.
-const RESOLUCION = 512;
+const RESOLUCION = 640;
 
 export function crearRotulo3D(
   scene: Scene,
@@ -49,13 +61,42 @@ export function crearRotulo3D(
   opciones: OpcionesRotulo = {}
 ): Mesh {
   const ancho = opciones.ancho ?? 1.1;
-  const alto = opciones.alto ?? 0.3;
+  const altoMinimo = opciones.alto ?? 0.3;
+  const alturaTexto = opciones.alturaTextoMin ?? 0.19;
   const colorTexto = opciones.colorTexto ?? "#ffffff";
   const colorFondo = opciones.colorFondo ?? "#1d2227";
   const colorBorde = opciones.colorBorde ?? "rgba(255,255,255,0.35)";
+  const lineasMax = Math.max(1, opciones.lineasMax ?? 1);
 
   const anchoPx = Math.round(ancho * RESOLUCION);
-  const altoPx = Math.round(alto * RESOLUCION);
+
+  // PRIMERO se decide el tamaño de la letra y cuántos renglones ocupa; recién
+  // DESPUÉS se calcula el alto del cartel. Al revés — que era como estaba —
+  // el alto fijo obligaba a encoger la letra hasta que entrara, y con tres
+  // renglones en 34 cm terminaba midiendo 9 cm: ilegible salvo pegándose.
+  const regla = document.createElement("canvas").getContext("2d")!;
+  const margen = Math.round(alturaTexto * RESOLUCION * 0.3);
+  const anchoUtil = anchoPx - margen * 3;
+
+  let cuerpo = Math.round(alturaTexto * RESOLUCION);
+  let renglones: string[] = [texto];
+
+  // Solo se achica la letra si ni siquiera repartiendo en los renglones
+  // permitidos entra a lo ancho. Es el último recurso, no el primero.
+  while (cuerpo > 10) {
+    regla.font = `600 ${cuerpo}px system-ui, "Segoe UI", sans-serif`;
+    renglones = repartirEnRenglones(regla, texto, anchoUtil, lineasMax);
+    const entra = renglones.length <= lineasMax && renglones.every((linea) => regla.measureText(linea).width <= anchoUtil);
+    if (entra) break;
+    cuerpo -= 2;
+  }
+
+  const separacion = cuerpo * 1.24;
+  const altoPx = Math.max(
+    Math.round(altoMinimo * RESOLUCION),
+    Math.round(renglones.length * separacion + margen * 2.2)
+  );
+  const alto = altoPx / RESOLUCION;
 
   const textura = new DynamicTexture(
     `texturaRotulo_${nombre}`,
@@ -67,54 +108,32 @@ export function crearRotulo3D(
   // Filtrado trilineal + anisotrópico: sin esto el texto se deshace en cuanto
   // el cartel se ve en ángulo, que es lo normal al orbitar por el garaje.
   textura.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
-  textura.anisotropicFilteringLevel = 8;
+  textura.anisotropicFilteringLevel = 16;
 
   const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
   ctx.clearRect(0, 0, anchoPx, altoPx);
 
-  const margen = Math.round(altoPx * 0.08);
-
   if (colorFondo !== "transparent") {
-    trazarRectRedondo(ctx, margen, margen, anchoPx - margen * 2, altoPx - margen * 2, altoPx * 0.22);
+    trazarRectRedondo(ctx, margen * 0.5, margen * 0.5, anchoPx - margen, altoPx - margen, altoPx * 0.18);
     ctx.fillStyle = colorFondo;
     ctx.fill();
     if (colorBorde !== "transparent") {
-      ctx.lineWidth = Math.max(2, altoPx * 0.045);
+      ctx.lineWidth = Math.max(2, cuerpo * 0.09);
       ctx.strokeStyle = colorBorde;
       ctx.stroke();
     }
   }
 
-  // El texto se ajusta al espacio disponible en vez de recortarse: se arranca
-  // de un cuerpo generoso y se baja hasta que entra, repartiéndolo en
-  // renglones si hace falta. Así "DESCARTAR" y una descripción de cuarenta
-  // caracteres quedan las dos completas y legibles.
-  const lineasMax = Math.max(1, opciones.lineasMax ?? 1);
-  const anchoUtil = anchoPx - margen * 4;
-  const altoUtil = altoPx - margen * 3;
-
-  let cuerpo = Math.round((altoPx * 0.62) / lineasMax);
-  let renglones: string[] = [texto];
-
-  while (cuerpo > 8) {
-    ctx.font = `600 ${cuerpo}px system-ui, "Segoe UI", sans-serif`;
-    renglones = repartirEnRenglones(ctx, texto, anchoUtil, lineasMax);
-    const entraAncho = renglones.every((linea) => ctx.measureText(linea).width <= anchoUtil);
-    const entraAlto = renglones.length * cuerpo * 1.2 <= altoUtil;
-    if (entraAncho && entraAlto) break;
-    cuerpo -= 1;
-  }
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
+  ctx.font = `600 ${cuerpo}px system-ui, "Segoe UI", sans-serif`;
   // Contorno oscuro: mantiene el texto legible aunque el cartel quede contra
   // una pared clara o a contraluz de las ventanas del garaje.
   ctx.lineWidth = Math.max(3, cuerpo * 0.16);
   ctx.strokeStyle = "rgba(0,0,0,0.65)";
   ctx.lineJoin = "round";
 
-  const separacion = cuerpo * 1.2;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
   const yInicial = altoPx / 2 - ((renglones.length - 1) * separacion) / 2;
 
   renglones.forEach((linea, i) => {

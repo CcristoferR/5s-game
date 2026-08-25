@@ -37,7 +37,7 @@ export function crearZonaSenal(scene: Scene, _gui: AdvancedDynamicTexture, id: s
   // Rótulo sobre un cartel propio en vez de texto 2D anclado: con la cámara
   // orbital las descripciones de las cinco zonas se amontonaban en pantalla.
   crearRotulo3D(scene, `zonaSenal_${id}`, descripcion, new Vector3(x, 0.62, z), {
-    ancho: 0.98,
+    ancho: 1.7,
     alto: 0.3,
     lineasMax: 3,
     colorFondo: "#1d2227",

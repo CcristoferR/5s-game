@@ -90,7 +90,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     "zonaChecklist",
     "CHECKLIST — instrucciones claras",
     new Vector3(posicionesZonas.checklist, 1.92, 1.8),
-    { ancho: 1.5, alto: 0.36, lineasMax: 2, colorFondo: "#1c3a29", colorBorde: "rgba(120,220,160,0.5)" }
+    { ancho: 2.0, alto: 0.36, lineasMax: 2, colorFondo: "#1c3a29", colorBorde: "rgba(120,220,160,0.5)" }
   );
 
   crearRotulo3D(
@@ -98,7 +98,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     "zonaDescartar",
     "DESCARTAR — ambiguas o irrelevantes",
     new Vector3(posicionesZonas.descartar, 1.12, 1.8),
-    { ancho: 1.5, alto: 0.36, lineasMax: 2, colorFondo: "#3a1f1c", colorBorde: "rgba(230,140,120,0.5)" }
+    { ancho: 2.0, alto: 0.36, lineasMax: 2, colorFondo: "#3a1f1c", colorBorde: "rgba(230,140,120,0.5)" }
   );
 
   // --- Fase 2: señalética con códigos de color — ahora bien separada
@@ -115,7 +115,9 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       `ficha_${senal.datos.id}`,
       senal.datos.nombreVisible,
       new Vector3(0, 0.26, 0),
-      { ancho: 0.6, alto: 0.16, colorFondo: "#1d2227", colorBorde: "rgba(255,255,255,0.3)", mirarCamara: true }
+      // El cartelito de la ficha era de 0,6 x 0,16 m: la letra quedaba en 10 cm
+      // y había que pegarse a la pantalla para leer de qué color era cada una.
+      { ancho: 1.05, alto: 0.24, colorFondo: "#1d2227", colorBorde: "rgba(255,255,255,0.3)", mirarCamara: true }
     );
     rotulo.parent = senal.mesh;
   });

@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Observable, Vector3, PointerEventTypes } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Observable, Vector3, PointerEventTypes, Material } from "@babylonjs/core";
 
 export interface StainResult {
   mesh: Mesh;
@@ -58,6 +58,11 @@ function crearSiluetaMancha(scene: Scene, id: string, esPolvo: boolean): Dynamic
 
   tex.update();
   tex.hasAlpha = true;
+  // CLAVE: la silueta se dibuja en blanco sobre negro, y el canvas queda
+  // opaco en todo el cuadrado. Sin esto Babylon lee el canal alfa — opaco en
+  // todas partes — y la mancha aparece como un cuadrado perfecto en el piso.
+  // Con getAlphaFromRGB usa el brillo: negro = transparente, blanco = mancha.
+  tex.getAlphaFromRGB = true;
   return tex;
 }
 
@@ -91,6 +96,7 @@ export function crearMancha(
 
   const silueta = crearSiluetaMancha(scene, id, esPolvo);
   mat.opacityTexture = silueta;
+  mat.transparencyMode = Material.MATERIAL_ALPHABLEND;
 
   const alphaBase = esPolvo ? 0.78 : 0.92;
   mat.alpha = alphaBase;
@@ -103,17 +109,14 @@ export function crearMancha(
   mesh.rotation.y = Math.random() * Math.PI * 2;
 
   // --- Aviso de que se puede limpiar ---
-  const matAro = new PBRMaterial(`matAroMancha_${id}`, scene);
-  matAro.albedoColor = new Color3(0.55, 0.85, 0.95);
-  matAro.emissiveColor = new Color3(0.3, 0.6, 0.7);
-  matAro.roughness = 0.5;
-  matAro.alpha = 0;
-
-  const aro = MeshBuilder.CreateTorus(`aroMancha_${id}`, { diameter: radio * 2.5, thickness: 0.016, tessellation: 28 }, scene);
-  aro.position.set(x, 0.016, z);
-  aro.isPickable = false;
-  aro.material = matAro;
-
+  //
+  // Antes esto era un aro luminoso alrededor. Se veía como un círculo blanco
+  // pegado al piso: una figura geométrica perfecta al lado de una mancha
+  // irregular, que delataba el truco. Ahora el aviso es la mancha misma, que
+  // se aclara apenas al pasar el cursor — se entiende que responde, sin sumar
+  // ningún objeto que no existiría en un taller.
+  const emisionBase = esPolvo ? 0.03 : 0.02;
+  mat.emissiveColor = new Color3(emisionBase, emisionBase, emisionBase);
   let cursorEncima = false;
 
   const onLimpia = new Observable<void>();
@@ -143,28 +146,23 @@ export function crearMancha(
     if (clicksRestantes <= 0) {
       // Queda una marca de humedad que se evapora: sin eso la mancha se
       // esfuma de un cuadro al otro y el gesto de limpiar pierde su remate.
-      dejarRastroHumedo(scene, mesh.position, radio, esPolvo);
+      dejarRastroHumedo(scene, mesh.position, radio, esPolvo, silueta);
 
       mesh.dispose();
-      aro.dispose();
       scene.onPointerObservable.remove(escuchaPuntero);
       onLimpia.notifyObservers();
     }
   });
 
-  // Latido suave del aro cuando el cursor está encima.
-  const animacionAro = scene.onBeforeRenderObservable.add(() => {
-    if (aro.isDisposed()) {
-      scene.onBeforeRenderObservable.remove(animacionAro);
+  // Realce al pasar el cursor: la mancha levanta un punto su brillo propio.
+  const animacionRealce = scene.onBeforeRenderObservable.add(() => {
+    if (mesh.isDisposed()) {
+      scene.onBeforeRenderObservable.remove(animacionRealce);
       return;
     }
-    const objetivo = cursorEncima ? 0.75 : 0;
-    matAro.alpha += (objetivo - matAro.alpha) * 0.18;
-
-    if (matAro.alpha > 0.02) {
-      const latido = 1 + Math.sin(performance.now() / 260) * 0.045;
-      aro.scaling.setAll(latido);
-    }
+    const objetivo = cursorEncima ? emisionBase + 0.16 : emisionBase;
+    const actual = mat.emissiveColor.r + (objetivo - mat.emissiveColor.r) * 0.16;
+    mat.emissiveColor.set(actual, actual, actual);
   });
 
   return { mesh, onLimpia };
@@ -209,7 +207,7 @@ function lanzarSalpicaduras(scene: Scene, centro: Vector3, esPolvo: boolean): vo
 }
 
 /** Huella húmeda que se evapora tras terminar de limpiar. */
-function dejarRastroHumedo(scene: Scene, centro: Vector3, radio: number, esPolvo: boolean): void {
+function dejarRastroHumedo(scene: Scene, centro: Vector3, radio: number, esPolvo: boolean, silueta: DynamicTexture): void {
   const rastro = MeshBuilder.CreateGround(`rastroHumedo_${Date.now()}`, { width: radio * 2.2, height: radio * 2.2 }, scene);
   rastro.isPickable = false;
   rastro.position.copyFrom(centro);
@@ -218,6 +216,10 @@ function dejarRastroHumedo(scene: Scene, centro: Vector3, radio: number, esPolvo
   const mat = new PBRMaterial(`matRastro_${Date.now()}`, scene);
   mat.albedoColor = new Color3(0.62, 0.66, 0.68);
   mat.roughness = esPolvo ? 0.7 : 0.12;
+  // Reutiliza la silueta de la mancha que acaba de limpiarse: la huella tiene
+  // su misma forma, no un cuadrado.
+  mat.opacityTexture = silueta;
+  mat.transparencyMode = Material.MATERIAL_ALPHABLEND;
   mat.alpha = 0.35;
   rastro.material = mat;
 

@@ -110,7 +110,10 @@ export function crearShelfSlot(scene: Scene, _gui: AdvancedDynamicTexture, id: s
     descripcion,
     new Vector3(x, ALTURA_SUPERFICIE_BANCO + 1.16, Z_ESTACION + 0.5),
     {
-      ancho: ANCHO_TABLA + 0.04,
+      // Más ancho que la tabla a propósito: las estaciones están separadas
+      // 2,2 m, así que hay lugar de sobra, y con un cartel angosto la frase
+      // necesitaba tres renglones diminutos.
+      ancho: 1.9,
       alto: 0.34,
       lineasMax: 3, // las descripciones del nivel 2 son frases, no palabras
       colorFondo: "#20262c",

@@ -274,32 +274,136 @@ function crearManzanaVecina(scene: Scene): void {
 // Vegetación y postes
 // ---------------------------------------------------------------------------
 
-function crearArboles(scene: Scene): void {
-  const matTronco = pbr(scene, "matTroncoExterior", new Color3(0.3, 0.22, 0.15), 0.9);
-  const matCopa = pbr(scene, "matCopaExterior", new Color3(0.24, 0.34, 0.2), 0.9);
+// Huella del galpón: 12 m de ancho por 19 m de fondo, centrado en el origen.
+const MEDIO_ANCHO_GALPON = 6;
+const MEDIO_FONDO_GALPON = 9.5;
 
-  for (let i = 0; i < 10; i++) {
-    const angulo = (i / 10) * Math.PI * 2 + 0.9;
-    const distancia = 26 + (i % 4) * 4;
-    const x = Math.cos(angulo) * distancia;
-    const z = Math.sin(angulo) * distancia;
-    const altura = 3.4 + (i % 3) * 1.1;
+/** Empuja un punto hacia afuera si cayó dentro del galpón o demasiado cerca. */
+function afueraDelGalpon(x: number, z: number, margen: number): { x: number; z: number } {
+  const limiteX = MEDIO_ANCHO_GALPON + margen;
+  const limiteZ = MEDIO_FONDO_GALPON + margen;
 
-    const tronco = MeshBuilder.CreateCylinder(`troncoExt_${i}`, { diameter: 0.4, height: altura, tessellation: 6 }, scene);
-    tronco.position.set(x, altura / 2, z);
-    tronco.material = matTronco;
-    tronco.isPickable = false;
+  if (Math.abs(x) >= limiteX || Math.abs(z) >= limiteZ) return { x, z };
 
-    // Dos esferas achatadas y descentradas: a esta distancia leen como copa
-    // mejor que cualquier follaje detallado, y cuestan casi nada.
-    [0, 1].forEach((j) => {
-      const copa = MeshBuilder.CreateSphere(`copaExt_${i}_${j}`, { diameter: 2.6 + j * 0.7, segments: 8 }, scene);
-      copa.scaling.y = 0.72;
-      copa.position.set(x + (j - 0.5) * 0.7, altura + 0.5 + j * 0.5, z + (j - 0.5) * 0.5);
-      copa.material = matCopa;
-      copa.isPickable = false;
-    });
-  }
+  const sobraX = limiteX - Math.abs(x);
+  const sobraZ = limiteZ - Math.abs(z);
+  return sobraX < sobraZ
+    ? { x: Math.sign(x || 1) * limiteX, z }
+    : { x, z: Math.sign(z || 1) * limiteZ };
+}
+
+/**
+ * Árbol de vereda.
+ *
+ * POCOS Y BUENOS. Una versión anterior plantaba veinte árboles y una docena de
+ * arbustos alrededor del galpón: además de ser un bosque donde debería haber un
+ * patio industrial, la repetición de la misma esfera verde una y otra vez es
+ * exactamente lo que hace que una escena se vea de plástico. Quedaron cuatro,
+ * ubicados a mano frente a las ventanas, y cada uno recibe el detalle que antes
+ * se repartía entre veinte.
+ *
+ * Lo que hace que se lea como un árbol y no como un poste con bolas encima:
+ *
+ *   - el tronco se abre en dos ramas, así la copa tiene de dónde salir;
+ *   - la copa son siete masas de distinto tamaño en desorden, no una esfera;
+ *   - cada masa recibe una rotación propia, de modo que el ruido del sombreado
+ *     nunca se repite entre dos vecinas;
+ *   - hay tres verdes en juego, y las masas de arriba llevan el más claro
+ *     porque son las que reciben el sol.
+ */
+function crearArbol(
+  scene: Scene,
+  indice: number,
+  x: number,
+  z: number,
+  altura: number,
+  escalaCopa: number,
+  matTronco: PBRMaterial,
+  verdes: PBRMaterial[]
+): void {
+  const tronco = MeshBuilder.CreateCylinder(
+    `troncoExt_${indice}`,
+    { diameterTop: 0.22, diameterBottom: 0.46, height: altura, tessellation: 9 },
+    scene
+  );
+  tronco.position.set(x, altura / 2, z);
+  tronco.material = matTronco;
+  tronco.isPickable = false;
+
+  // Dos ramas que arrancan del tercio superior del tronco.
+  [-1, 1].forEach((lado, i) => {
+    const rama = MeshBuilder.CreateCylinder(
+      `ramaExt_${indice}_${i}`,
+      { diameterTop: 0.09, diameterBottom: 0.2, height: altura * 0.42, tessellation: 7 },
+      scene
+    );
+    rama.position.set(x + lado * altura * 0.11, altura * 0.86, z + (i === 0 ? 0.12 : -0.14));
+    rama.rotation.z = -lado * 0.5;
+    rama.rotation.x = (i === 0 ? 1 : -1) * 0.18;
+    rama.material = matTronco;
+    rama.isPickable = false;
+  });
+
+  // Copa: masas de distinto tamaño, desordenadas y con giro propio.
+  const masas: Array<[number, number, number, number, number]> = [
+    [0, 1.02, 0, 2.5, 2],
+    [0.82, 0.72, 0.3, 1.9, 1],
+    [-0.75, 0.8, -0.28, 2.05, 1],
+    [0.3, 0.55, -0.8, 1.75, 0],
+    [-0.36, 0.6, 0.78, 1.65, 0],
+    [0.5, 1.28, -0.2, 1.5, 2],
+    [-0.42, 1.2, 0.34, 1.4, 2],
+  ];
+
+  masas.forEach(([dx, dy, dz, diametro, indiceVerde], j) => {
+    const masa = MeshBuilder.CreateSphere(
+      `copaExt_${indice}_${j}`,
+      { diameter: diametro * escalaCopa, segments: 10 },
+      scene
+    );
+    masa.position.set(x + dx * escalaCopa, altura + dy * escalaCopa, z + dz * escalaCopa);
+    masa.scaling.set(1, 0.74, 1.05);
+    // Rotación propia por masa: sin esto el sombreado se repite idéntico entre
+    // esferas vecinas y el conjunto se lee como plástico.
+    masa.rotation.set(Math.random() * 0.6, Math.random() * Math.PI * 2, Math.random() * 0.5);
+    masa.material = verdes[indiceVerde];
+    masa.isPickable = false;
+  });
+}
+
+function crearVegetacion(scene: Scene): void {
+  const matTronco = pbr(scene, "matTroncoExterior", new Color3(0.29, 0.22, 0.16), 0.92);
+
+  // Tres verdes: sombra, medio y el que recibe el sol.
+  const verdes = [
+    pbr(scene, "matCopaOscura", new Color3(0.14, 0.24, 0.13), 0.94),
+    pbr(scene, "matCopaMedia", new Color3(0.2, 0.33, 0.17), 0.92),
+    pbr(scene, "matCopaClara", new Color3(0.29, 0.44, 0.22), 0.9),
+  ];
+
+  // Cuatro árboles, colocados a mano: uno frente a cada pared, a la distancia
+  // justa para entrar en el hueco de una ventana sin taparla entera.
+  const arboles: Array<[number, number, number, number]> = [
+    [-8.4, -2.6, 4.4, 1.05],
+    [8.6, 3.2, 4.0, 0.95],
+    [-3.6, -12.4, 4.7, 1.12],
+    [4.4, 12.6, 4.2, 1.0],
+  ];
+
+  arboles.forEach(([px, pz, altura, escala], i) => {
+    const { x, z } = afueraDelGalpon(px, pz, 2);
+    crearArbol(scene, i, x, z, altura, escala, matTronco, verdes);
+  });
+
+  // Césped al pie de las paredes largas. Angosto: es una vereda con pasto, no
+  // un parque, y su función es que el galpón no nazca directo del asfalto.
+  const matPasto = pbr(scene, "matPastoExterior", new Color3(0.24, 0.33, 0.2), 0.96);
+  [-1, 1].forEach((lado, i) => {
+    const cantero = MeshBuilder.CreateGround(`canteroExt_${i}`, { width: 2.6, height: 21 }, scene);
+    cantero.position.set(lado * 8.1, -0.045, 0);
+    cantero.material = matPasto;
+    cantero.isPickable = false;
+  });
 }
 
 function crearPostesDeLuz(scene: Scene): void {
@@ -369,7 +473,7 @@ export function crearExteriorGaraje(scene: Scene): { cielo: Mesh; patio: Mesh } 
   patio.receiveShadows = false;
 
   crearManzanaVecina(scene);
-  crearArboles(scene);
+  crearVegetacion(scene);
   crearPostesDeLuz(scene);
 
   return { cielo, patio };
