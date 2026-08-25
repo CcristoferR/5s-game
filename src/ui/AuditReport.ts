@@ -90,11 +90,18 @@ export function mostrarInformeAuditoria(
     const acerto = fila.marcadoPorJugador === fila.datos.tieneDesviacion;
     const color = acerto ? PALETA.acierto : PALETA.error;
 
-    // El alto de cada fila lo define su propio texto. Con alto fijo, las
-    // explicaciones largas quedaban cortadas por abajo.
+    // ALTO DE LA FILA
+    //
+    // Se calcula a partir del texto en vez de dejárselo a adaptHeightToChildren.
+    // Esa opción entra en dependencia circular acá: la fila le pregunta su alto
+    // a los hijos, y la franja de color se lo pregunta a la fila — el resultado
+    // es alto cero y el informe aparece completamente vacío.
+    const anchoTextoFila = ANCHO_CONTENIDO - 60;
+    const alto = altoDeFila(fila.datos.explicacion, anchoTextoFila);
+
     const marco = new Rectangle(`filaInforme_${fila.datos.id}`);
     marco.width = ANCHO_CONTENIDO + "px";
-    marco.adaptHeightToChildren = true;
+    marco.height = alto + "px";
     marco.thickness = 0;
     marco.cornerRadius = 10;
     marco.background = PALETA.tarjetaSuave;
@@ -105,7 +112,7 @@ export function mostrarInformeAuditoria(
     // resultado de un vistazo sin que el color compita con el texto.
     const franja = new Rectangle(`franjaInforme_${fila.datos.id}`);
     franja.width = "4px";
-    franja.height = "100%";
+    franja.height = alto - 10 + "px";
     franja.thickness = 0;
     franja.background = color;
     franja.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -114,17 +121,18 @@ export function mostrarInformeAuditoria(
 
     const columna = new StackPanel(`columnaInforme_${fila.datos.id}`);
     columna.isVertical = true;
-    columna.width = ANCHO_CONTENIDO - 44 + "px";
+    columna.width = anchoTextoFila + "px";
     columna.left = "22px";
+    columna.top = "14px";
     columna.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    columna.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     marco.addControl(columna);
 
-    columna.addControl(crearEspacio(`aireSupFila_${fila.datos.id}`, 14));
     columna.addControl(
       crearParrafo(
         `tituloFila_${fila.datos.id}`,
         fila.datos.descripcionControl,
-        ANCHO_CONTENIDO - 60,
+        anchoTextoFila,
         TEXTO.cuerpo,
         PALETA.titulo,
         "600"
@@ -134,8 +142,10 @@ export function mostrarInformeAuditoria(
     columna.addControl(
       crearParrafo(
         `estadoFila_${fila.datos.id}`,
-        `${acerto ? "Bien detectado" : "No detectado"} · calificación real ${fila.datos.calificacion}/5`,
-        ANCHO_CONTENIDO - 60,
+        acerto
+          ? `Lo detectaste bien · calificación real ${fila.datos.calificacion}/5`
+          : `Se te pasó · calificación real ${fila.datos.calificacion}/5`,
+        anchoTextoFila,
         TEXTO.menor,
         color,
         "600"
@@ -143,14 +153,8 @@ export function mostrarInformeAuditoria(
     );
     columna.addControl(crearEspacio(`aireExplFila_${fila.datos.id}`, 6));
     columna.addControl(
-      crearParrafo(
-        `explicacionFila_${fila.datos.id}`,
-        fila.datos.explicacion,
-        ANCHO_CONTENIDO - 60,
-        TEXTO.menor
-      )
+      crearParrafo(`explicacionFila_${fila.datos.id}`, fila.datos.explicacion, anchoTextoFila, TEXTO.menor)
     );
-    columna.addControl(crearEspacio(`aireInfFila_${fila.datos.id}`, 14));
   });
 
   // --- Pie ---
@@ -185,4 +189,24 @@ export function mostrarInformeAuditoria(
     linea.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     return linea;
   }
+}
+
+/**
+ * Alto que necesita una fila del informe, en píxeles.
+ *
+ * Estima cuántos renglones ocupa la explicación y suma el título, el estado y
+ * los márgenes. Es una estimación deliberadamente generosa: que sobren unos
+ * píxeles no se nota, pero que falten uno corta la última línea.
+ */
+function altoDeFila(explicacion: string, anchoDisponible: number): number {
+  // A 16 px, cada carácter ocupa alrededor de 8 px de ancho promedio.
+  const caracteresPorRenglon = Math.max(20, Math.floor(anchoDisponible / 8));
+  const renglones = Math.max(1, Math.ceil(explicacion.length / caracteresPorRenglon));
+
+  const ALTO_TITULO = 26;
+  const ALTO_ESTADO = 22;
+  const ALTO_RENGLON = 22;
+  const MARGENES = 46;
+
+  return ALTO_TITULO + ALTO_ESTADO + renglones * ALTO_RENGLON + MARGENES;
 }

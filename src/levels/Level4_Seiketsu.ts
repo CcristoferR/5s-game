@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
 import {
   AdvancedDynamicTexture, TextBlock, Control, Rectangle, Button, ScrollViewer, StackPanel,
 } from "@babylonjs/gui";
@@ -10,6 +10,7 @@ import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/Check
 import { crearZonaSenal } from "../entities/SignageZone";
 import { crearNPCWorker } from "../entities/NPCWorker";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearRotulo3D } from "../entities/Rotulo3D";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
@@ -68,13 +69,14 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   suelo.position.y = -0.02;
   suelo.isVisible = false;
 
-  const escritorio = MeshBuilder.CreateBox("escritorioN4", { width: 4.6, height: 0.1, depth: 1.4 }, scene);
-  escritorio.position.set(0, 0.85, -0.5);
-  const matEscritorio = new PBRMaterial("matEscritorioN4", scene);
-  matEscritorio.albedoColor = new Color3(0.4, 0.28, 0.18);
-  matEscritorio.roughness = 0.5;
-  escritorio.material = matEscritorio;
-  escritorio.receiveShadows = true;
+  // Banco de trabajo compartido con los niveles 1, 2 y 3.
+  //
+  // Antes este nivel armaba su propia mesa: una única caja a 0,85 m, sin patas
+  // ni estructura. Sobre el piso de concreto del garaje se veía flotando en el
+  // aire, y encima rompía la continuidad con el resto del juego — es el mismo
+  // puesto de trabajo a lo largo de las cinco fases, así que tiene que ser el
+  // mismo mueble.
+  crearBancoDeTrabajo(scene, { nombre: "escritorioN4", ancho: 4.6, fondo: 1.4, z: -0.5 });
 
   // --- Fase 1: tarjetas del checklist ---
   const items = itemsNivel4.map((datos, i) =>

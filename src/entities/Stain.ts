@@ -144,12 +144,17 @@ export function crearMancha(
     lanzarSalpicaduras(scene, mesh.position, esPolvo);
 
     if (clicksRestantes <= 0) {
-      // Queda una marca de humedad que se evapora: sin eso la mancha se
-      // esfuma de un cuadro al otro y el gesto de limpiar pierde su remate.
-      dejarRastroHumedo(scene, mesh.position, radio, esPolvo, silueta);
-
-      mesh.dispose();
+      // Remate de la limpieza.
+      //
+      // La mancha misma se encoge y se apaga, y suelta un último puñado de
+      // gotas. No se agrega ninguna malla nueva: antes quedaba una marca de
+      // humedad dibujada sobre un plano propio, y ese plano se veía como un
+      // cuadrado claro en el piso — una forma geométrica perfecta justo donde
+      // acababa de haber una mancha irregular.
+      mesh.isPickable = false;
       scene.onPointerObservable.remove(escuchaPuntero);
+      lanzarSalpicaduras(scene, mesh.position, esPolvo);
+      apagarMancha(scene, mesh, mat);
       onLimpia.notifyObservers();
     }
   });
@@ -206,38 +211,35 @@ function lanzarSalpicaduras(scene: Scene, centro: Vector3, esPolvo: boolean): vo
   }
 }
 
-/** Huella húmeda que se evapora tras terminar de limpiar. */
-function dejarRastroHumedo(scene: Scene, centro: Vector3, radio: number, esPolvo: boolean, silueta: DynamicTexture): void {
-  const rastro = MeshBuilder.CreateGround(`rastroHumedo_${Date.now()}`, { width: radio * 2.2, height: radio * 2.2 }, scene);
-  rastro.isPickable = false;
-  rastro.position.copyFrom(centro);
-  rastro.position.y = 0.013;
+/**
+ * Apaga la mancha: se encoge y se desvanece hasta desaparecer.
+ *
+ * Trabaja sobre la malla que ya existe, así que conserva la silueta irregular
+ * hasta el último cuadro. Cualquier plano nuevo, por más que se desvanezca,
+ * delata su forma rectangular mientras dura.
+ */
+function apagarMancha(scene: Scene, mesh: Mesh, mat: PBRMaterial): void {
+  const alphaInicial = mat.alpha;
+  const escalaInicial = mesh.scaling.x;
+  const inicio = performance.now();
 
-  const mat = new PBRMaterial(`matRastro_${Date.now()}`, scene);
-  mat.albedoColor = new Color3(0.62, 0.66, 0.68);
-  mat.roughness = esPolvo ? 0.7 : 0.12;
-  // Reutiliza la silueta de la mancha que acaba de limpiarse: la huella tiene
-  // su misma forma, no un cuadrado.
-  mat.opacityTexture = silueta;
-  mat.transparencyMode = Material.MATERIAL_ALPHABLEND;
-  mat.alpha = 0.35;
-  rastro.material = mat;
-
-  const nacimiento = performance.now();
   const observador = scene.onBeforeRenderObservable.add(() => {
-    if (rastro.isDisposed()) {
+    if (mesh.isDisposed()) {
       scene.onBeforeRenderObservable.remove(observador);
       return;
     }
 
-    const avance = (performance.now() - nacimiento) / 1100;
-    mat.alpha = 0.35 * (1 - avance);
-    rastro.scaling.setAll(1 + avance * 0.25);
+    const avance = Math.min(1, (performance.now() - inicio) / 420);
+    // Arranca despacio y se va rápido al final: se lee como una última pasada
+    // de trapo, no como un objeto que se apaga con un interruptor.
+    const suave = avance * avance;
+
+    mesh.scaling.setAll(escalaInicial * (1 - suave * 0.75));
+    mat.alpha = alphaInicial * (1 - suave);
 
     if (avance >= 1) {
       scene.onBeforeRenderObservable.remove(observador);
-      rastro.dispose();
-      mat.dispose();
+      mesh.dispose();
     }
   });
 }

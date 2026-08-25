@@ -119,12 +119,17 @@ export interface ItemChecklistNivel4 {
   explicacion: string;
 }
 
+// Las cinco tarjetas se reparten en dos filas DENTRO del tablero.
+//
+// El banco mide 4,6 x 1,4 m centrado en z = -0,5, así que su superficie va de
+// z = -1,20 a z = 0,20. Tres de estas tarjetas estaban en z = 0,2 y 0,3: justo
+// sobre el canto o directamente en el aire, más allá del borde delantero.
 export const itemsNivel4: ItemChecklistNivel4[] = [
-  { id: "limpiar_vago", textoVisible: "Limpiar el escritorio cada cierto tiempo", posicionInicial: [-1.6, 0.9, 0.2], zonaCorrecta: "descartar", explicacion: "Demasiado vago — 'cada cierto tiempo' no es medible, cada persona lo interpretaría distinto." },
-  { id: "limpiar_claro", textoVisible: "Limpiar con paño húmedo al finalizar el turno", posicionInicial: [-0.8, 0.9, -0.2], zonaCorrecta: "checklist", explicacion: "Claro y medible — cualquiera puede seguir esta instrucción sin ambigüedad." },
-  { id: "archivar_vago", textoVisible: "Guardar los documentos en algún lugar ordenado", posicionInicial: [0, 0.9, 0.3], zonaCorrecta: "descartar", explicacion: "No dice dónde ni cómo — deja la decisión al criterio de cada persona, eso no es un estándar." },
-  { id: "archivar_claro", textoVisible: "Archivar en carpeta por proyecto, ordenado por fecha", posicionInicial: [0.8, 0.9, -0.1], zonaCorrecta: "checklist", explicacion: "Instrucción específica y replicable por cualquier persona nueva en el puesto." },
-  { id: "correo_personal", textoVisible: "Revisar el correo personal", posicionInicial: [1.6, 0.9, 0.2], zonaCorrecta: "descartar", explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo." },
+  { id: "limpiar_vago", textoVisible: "Limpiar el escritorio cada cierto tiempo", posicionInicial: [-1.35, 0.945, -0.85], zonaCorrecta: "descartar", explicacion: "Demasiado vago — 'cada cierto tiempo' no es medible, cada persona lo interpretaría distinto." },
+  { id: "limpiar_claro", textoVisible: "Limpiar con paño húmedo al finalizar el turno", posicionInicial: [0, 0.945, -0.85], zonaCorrecta: "checklist", explicacion: "Claro y medible — cualquiera puede seguir esta instrucción sin ambigüedad." },
+  { id: "archivar_vago", textoVisible: "Guardar los documentos en algún lugar ordenado", posicionInicial: [1.35, 0.945, -0.85], zonaCorrecta: "descartar", explicacion: "No dice dónde ni cómo — deja la decisión al criterio de cada persona, eso no es un estándar." },
+  { id: "archivar_claro", textoVisible: "Archivar en carpeta por proyecto, ordenado por fecha", posicionInicial: [-0.68, 0.945, -0.3], zonaCorrecta: "checklist", explicacion: "Instrucción específica y replicable por cualquier persona nueva en el puesto." },
+  { id: "correo_personal", textoVisible: "Revisar el correo personal", posicionInicial: [0.68, 0.945, -0.3], zonaCorrecta: "descartar", explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo." },
 ];
 
 // Señalética / códigos de color del Nivel 4 — nueva mecánica que pide la
