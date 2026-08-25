@@ -1,5 +1,6 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel, Button } from "@babylonjs/gui";
+import { TEXTO, PALETA } from "./EstiloUI";
 
 // Capa de interfaz ÚNICA compartida por todo lo que pasa en el nivel:
 // marcador, feedback, resultado final — y también las etiquetas de zona
@@ -55,14 +56,14 @@ export class HUD {
 
     this.textoPuntaje = new TextBlock("puntaje", "🏆  Puntaje: 0");
     this.textoPuntaje.color = "white";
-    this.textoPuntaje.fontSize = 19;
+    this.textoPuntaje.fontSize = TEXTO.destacado;
     this.textoPuntaje.height = "38px";
     this.textoPuntaje.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     panelMarcador.addControl(this.textoPuntaje);
 
     this.textoTiempo = new TextBlock("tiempo", "⏱  Tiempo: 0s");
     this.textoTiempo.color = "rgba(255,255,255,0.85)";
-    this.textoTiempo.fontSize = 16;
+    this.textoTiempo.fontSize = TEXTO.cuerpo;
     this.textoTiempo.height = "30px";
     this.textoTiempo.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     panelMarcador.addControl(this.textoTiempo);
@@ -83,7 +84,7 @@ export class HUD {
 
     this.textoFeedback = new TextBlock("textoFeedback", "");
     this.textoFeedback.color = "white";
-    this.textoFeedback.fontSize = 15;
+    this.textoFeedback.fontSize = TEXTO.cuerpo;
     this.textoFeedback.textWrapping = true;
     this.textoFeedback.paddingLeft = "18px";
     this.textoFeedback.paddingRight = "18px";
@@ -123,15 +124,15 @@ export class HUD {
 
     this.textoTituloFinal = new TextBlock("tituloFinal", "");
     this.textoTituloFinal.color = "white";
-    this.textoTituloFinal.fontSize = 22;
+    this.textoTituloFinal.fontSize = TEXTO.titulo;
     this.textoTituloFinal.top = "0px";
     this.textoTituloFinal.height = "70px";
     this.textoTituloFinal.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.pantallaFinal.addControl(this.textoTituloFinal);
 
     this.textoStatsFinal = new TextBlock("statsFinal", "");
-    this.textoStatsFinal.color = "rgba(255,255,255,0.92)";
-    this.textoStatsFinal.fontSize = 18;
+    this.textoStatsFinal.color = PALETA.cuerpo;
+    this.textoStatsFinal.fontSize = TEXTO.cuerpo;
     this.textoStatsFinal.top = "20px";
     this.textoStatsFinal.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.pantallaFinal.addControl(this.textoStatsFinal);

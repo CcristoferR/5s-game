@@ -1,5 +1,6 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock, StackPanel, ScrollViewer, Button, Control } from "@babylonjs/gui";
+import { TEXTO } from "./EstiloUI";
 import { obtenerRankingNivel5, borrarRankingNivel5 } from "../core/RankingStorage";
 
 // Colores de podio para los primeros 3 puestos — el resto usa un gris
@@ -51,7 +52,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
 
   const titulo = new TextBlock("tituloRanking", "📊 Ranking — Nivel 5 (Auditoría)");
   titulo.color = "white";
-  titulo.fontSize = 21;
+  titulo.fontSize = TEXTO.titulo;
   titulo.top = "-9px";
   titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   cabecera.addControl(titulo);
@@ -63,7 +64,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
       : "Se guarda automáticamente en este dispositivo"
   );
   subtitulo.color = "rgba(255,255,255,0.85)";
-  subtitulo.fontSize = 13;
+  subtitulo.fontSize = TEXTO.rotulo;
   subtitulo.top = "20px";
   subtitulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   cabecera.addControl(subtitulo);
@@ -74,7 +75,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
       "Todavía no completaste una auditoría del Nivel 5.\n\n¡Jugalo y tu resultado va a aparecer acá!"
     );
     vacio.color = "rgba(255,255,255,0.75)";
-    vacio.fontSize = 16;
+    vacio.fontSize = TEXTO.cuerpo;
     vacio.textWrapping = true;
     vacio.width = "440px";
     vacio.top = "20px";
@@ -116,7 +117,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
 
       const posicion = new TextBlock(`posicionRanking_${i}`, `#${i + 1}`);
       posicion.color = COLORES_PODIO[i] ?? "rgba(255,255,255,0.7)";
-      posicion.fontSize = 20;
+      posicion.fontSize = TEXTO.destacado;
       posicion.width = "60px";
       posicion.left = "20px";
       posicion.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -131,7 +132,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
         }`
       );
       detalle.color = "white";
-      detalle.fontSize = 14;
+      detalle.fontSize = TEXTO.menor;
       detalle.left = "92px";
       detalle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detalle.top = "-9px";
@@ -139,7 +140,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
 
       const fecha = new TextBlock(`fechaRanking_${i}`, formatearFecha(entrada.fecha));
       fecha.color = "rgba(255,255,255,0.5)";
-      fecha.fontSize = 12;
+      fecha.fontSize = TEXTO.rotulo;
       fecha.left = "92px";
       fecha.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       fecha.top = "15px";
@@ -153,7 +154,7 @@ export function mostrarRankingNivel5(scene: Scene, onCerrar: () => void): void {
   botonBorrar.width = "190px";
   botonBorrar.height = "42px";
   botonBorrar.color = "white";
-  botonBorrar.fontSize = 13;
+  botonBorrar.fontSize = TEXTO.menor;
   botonBorrar.cornerRadius = 8;
   botonBorrar.thickness = 0;
   botonBorrar.background = "rgba(255,255,255,0.12)";

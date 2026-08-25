@@ -10,6 +10,8 @@ import { guardarResultadoNivel5 } from "../core/RankingStorage";
 import { briefingsNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { HUD } from "../ui/HUD";
+import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
+import { TEXTO } from "../ui/EstiloUI";
 
 // ~9 segundos por punto de control, con un piso de 35s. La cantidad de
 // puntos varía según cuántos ítems dejó el jugador en el checklist del
@@ -76,7 +78,7 @@ export function cargarNivel5(
     )}% de aciertos para aprobar la auditoría.`
   );
   instruccion.color = "white";
-  instruccion.fontSize = 14;
+  instruccion.fontSize = TEXTO.cuerpo;
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
@@ -90,7 +92,7 @@ export function cargarNivel5(
 
   const contador = new TextBlock("contadorNivel5", `Marcados: 0/${datosControl.length}`);
   contador.color = "white";
-  contador.fontSize = 15;
+  contador.fontSize = TEXTO.cuerpo;
   contador.outlineWidth = 3;
   contador.outlineColor = "rgba(0,0,0,0.6)";
   contador.top = "150px";
@@ -197,7 +199,14 @@ export function cargarNivel5(
     guardarResultadoNivel5({ tasaAcierto, promedioCalificacion, segundos: segundosTotales });
 
     mostrarInformeAuditoria(gui, filas, () => {
-      hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar);
+      // Pregunta de cierre del programa completo: el jugador acaba de ver su
+      // informe punto por punto, y acá se le pide decidir qué hacer con una
+      // desviación que se repite — que es de lo que trata Shitsuke.
+      preguntarCierreDeNivel(gui, hud, 5, () => {
+        setTimeout(() => {
+          hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar);
+        }, 1600);
+      });
     });
   }
 

@@ -13,6 +13,8 @@ import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearRotulo3D } from "../entities/Rotulo3D";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
+import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
+import { TEXTO } from "../ui/EstiloUI";
 
 const posicionesZonas: Record<ZonaChecklist, number> = {
   checklist: -3.6,
@@ -127,7 +129,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     "📋🎨 Coloca las 5 tarjetas (checklist/descartar) al frente, y las 3 señales de color en el fondo. El resultado se revela al probar el estándar."
   );
   instruccion.color = "white";
-  instruccion.fontSize = 14;
+  instruccion.fontSize = TEXTO.cuerpo;
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
@@ -141,7 +143,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const progreso = new TextBlock("progresoNivel4", `Colocado: 0/${items.length + senales.length}`);
   progreso.color = "white";
-  progreso.fontSize = 15;
+  progreso.fontSize = TEXTO.cuerpo;
   progreso.outlineWidth = 3;
   progreso.outlineColor = "rgba(0,0,0,0.6)";
   progreso.top = "110px";
@@ -161,7 +163,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const textoLectura = new TextBlock("textoLectura", "");
   textoLectura.color = "white";
-  textoLectura.fontSize = 20;
+  textoLectura.fontSize = TEXTO.destacado;
   textoLectura.textWrapping = true;
   textoLectura.paddingLeft = "16px";
   textoLectura.paddingRight = "16px";
@@ -183,7 +185,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const etiquetaNpc = new TextBlock("etiquetaNpc", "");
   etiquetaNpc.color = "white";
-  etiquetaNpc.fontSize = 15;
+  etiquetaNpc.fontSize = TEXTO.cuerpo;
   etiquetaNpc.outlineWidth = 3;
   etiquetaNpc.outlineColor = "rgba(0,0,0,0.7)";
   etiquetaNpc.width = "220px";
@@ -384,7 +386,13 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           gameManager.sumarPuntos(bonusTiempo);
           onCompletado();
 
-          hud.mostrarResultadoFinal("Nivel 4", puntosBase, bonusTiempo, segundosTotales, onVolverMenu);
+          // Pregunta de cierre: el nivel acaba de mostrar cómo falla un estándar
+          // ambiguo con el operario, así que acá se pide reconocer cuál sirve.
+          preguntarCierreDeNivel(gui, hud, 4, () => {
+            setTimeout(() => {
+              hud.mostrarResultadoFinal("Nivel 4", puntosBase, bonusTiempo, segundosTotales, onVolverMenu);
+            }, 1600);
+          });
         });
       }, 2200);
     });
@@ -411,7 +419,7 @@ function mostrarInformeEstandar(
   const tasaPct = Math.round((totalCorrectos / filas.length) * 100);
   const titulo = new TextBlock("tituloInformeEstandar", `📋 Tasa de éxito del NPC: ${tasaPct}% (${totalCorrectos}/${filas.length})`);
   titulo.color = "white";
-  titulo.fontSize = 19;
+  titulo.fontSize = TEXTO.titulo;
   titulo.textWrapping = true;
   titulo.height = "55px";
   titulo.top = "16px";
@@ -447,7 +455,7 @@ function mostrarInformeEstandar(
       `${fila.correcto ? "✅" : "❌"} ${icono} ${fila.texto}\n${fila.explicacion}`
     );
     textoFila.color = "white";
-    textoFila.fontSize = 13;
+    textoFila.fontSize = TEXTO.menor;
     textoFila.textWrapping = true;
     textoFila.paddingLeft = "10px";
     textoFila.paddingRight = "10px";

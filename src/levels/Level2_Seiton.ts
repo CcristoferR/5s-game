@@ -2,6 +2,7 @@ import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
 import { objetosNivel2, slotsNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
+import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -154,7 +155,14 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           );
 
           setTimeout(() => {
-            hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
+            // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
+            // criterio que el nivel acaba de hacer practicar. El resultado se
+            // muestra recién después de responderla.
+            preguntarCierreDeNivel(gui, hud, 2, () => {
+              setTimeout(() => {
+                hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
+              }, 1600);
+            });
           }, 1600);
         }
       } else {

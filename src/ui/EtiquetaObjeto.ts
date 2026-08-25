@@ -1,5 +1,6 @@
 import { Scene, Mesh, AbstractMesh, Color3, PointerEventTypes } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock } from "@babylonjs/gui";
+import { TEXTO } from "./EstiloUI";
 
 export interface ObjetoEtiquetable {
   mesh: Mesh;
@@ -33,7 +34,7 @@ export function habilitarEtiquetasAlPasar(
   // lee igual de bien sobre el piso claro del garaje o sobre el banco oscuro.
   const etiqueta = new TextBlock("etiquetaObjetoActivo", "");
   etiqueta.color = "#ffffff";
-  etiqueta.fontSize = 15;
+  etiqueta.fontSize = TEXTO.cuerpo;
   etiqueta.fontWeight = "600";
   etiqueta.outlineWidth = 5;
   etiqueta.outlineColor = "rgba(0,0,0,0.85)";

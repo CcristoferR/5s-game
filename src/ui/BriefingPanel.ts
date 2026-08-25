@@ -1,13 +1,14 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock, StackPanel, Button, Control } from "@babylonjs/gui";
 import type { BriefingNivel, MicroLeccionNivel } from "../data/levelConfig";
+import { TEXTO } from "./EstiloUI";
 
 // ---------------------------------------------------------------------------
 // Medidas
 // ---------------------------------------------------------------------------
 
 const ANCHO_TARJETA = 660;
-const ALTO_TARJETA = 462;
+const ALTO_TARJETA = 512;
 const MARGEN = 46;
 const ANCHO_CONTENIDO = ANCHO_TARJETA - MARGEN * 2;
 const ALTO_ENCABEZADO = 122;
@@ -123,7 +124,7 @@ export function mostrarAperturaNivel(
 
   const titulo = new TextBlock("tituloApertura", briefing.traduccion);
   titulo.color = C.titulo;
-  titulo.fontSize = 30;
+  titulo.fontSize = TEXTO.titulo;
   titulo.fontWeight = "600";
   titulo.width = ANCHO_CONTENIDO + "px";
   titulo.height = "40px";
@@ -152,7 +153,7 @@ export function mostrarAperturaNivel(
 
   const indicadorPaso = new TextBlock("indicadorPasoApertura", "");
   indicadorPaso.color = C.paso;
-  indicadorPaso.fontSize = 11;
+  indicadorPaso.fontSize = TEXTO.rotulo;
   indicadorPaso.fontWeight = "600";
   indicadorPaso.width = "120px";
   indicadorPaso.height = "16px";
@@ -168,7 +169,7 @@ export function mostrarAperturaNivel(
   const boton = Button.CreateSimpleButton("btnAvanzarApertura", "");
   boton.width = "152px";
   boton.height = "42px";
-  boton.fontSize = 14;
+  boton.fontSize = TEXTO.menor;
   boton.fontWeight = "600";
   boton.cornerRadius = 8;
   boton.thickness = 0;
@@ -213,17 +214,17 @@ export function mostrarAperturaNivel(
 
     if (paso.titulo) {
       columna.addControl(espaciador(`aireTitulo_${indice}`, 12));
-      columna.addControl(parrafo(`titulo_${indice}`, paso.titulo, C.titulo, 20, "600"));
+      columna.addControl(parrafo(`titulo_${indice}`, paso.titulo, C.titulo, TEXTO.destacado, "600"));
     }
 
     columna.addControl(espaciador(`aireCuerpo_${indice}`, 12));
-    columna.addControl(parrafo(`cuerpo_${indice}`, paso.cuerpo, C.cuerpo, 15));
+    columna.addControl(parrafo(`cuerpo_${indice}`, paso.cuerpo, C.cuerpo, TEXTO.cuerpo));
 
     if (paso.cuerpoDestacado) {
       columna.addControl(espaciador(`aireDest_${indice}`, 30));
       columna.addControl(rotulo(`rotuloDest_${indice}`, paso.rotuloDestacado ?? ""));
       columna.addControl(espaciador(`aireDest2_${indice}`, 10));
-      columna.addControl(parrafo(`dest_${indice}`, paso.cuerpoDestacado, C.titulo, 18, "500"));
+      columna.addControl(parrafo(`dest_${indice}`, paso.cuerpoDestacado, C.titulo, TEXTO.destacado, "500"));
     }
 
     indicadorPaso.text = `${indice + 1} / ${pasos.length}`;
@@ -342,7 +343,7 @@ function desvanecer(control: Control, desde: number, hasta: number, duracionMs: 
 function rotulo(nombre: string, texto: string): TextBlock {
   const bloque = new TextBlock(nombre, texto);
   bloque.color = C.rotulo;
-  bloque.fontSize = 11;
+  bloque.fontSize = TEXTO.rotulo;
   bloque.fontWeight = "600";
   bloque.height = "16px";
   bloque.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;

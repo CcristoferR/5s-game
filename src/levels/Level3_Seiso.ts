@@ -18,6 +18,7 @@ import {
 } from "../entities/WorkshopProps";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
+import { TEXTO } from "../ui/EstiloUI";
 
 export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
@@ -92,7 +93,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     "🔍 Modo detective: limpia cada mancha, luego identifica la causa de cada incidente"
   );
   instruccion.color = "white";
-  instruccion.fontSize = 15;
+  instruccion.fontSize = TEXTO.cuerpo;
   instruccion.outlineWidth = 3;
   instruccion.outlineColor = "rgba(0,0,0,0.6)";
   instruccion.textWrapping = true;
@@ -107,7 +108,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const totalManchas = incidentesNivel3.reduce((sum, inc) => sum + inc.manchas.length, 0);
   const progreso = new TextBlock("progresoNivel3", `Manchas limpias: 0/${totalManchas}`);
   progreso.color = "white";
-  progreso.fontSize = 15;
+  progreso.fontSize = TEXTO.cuerpo;
   progreso.outlineWidth = 3;
   progreso.outlineColor = "rgba(0,0,0,0.6)";
   progreso.top = "100px";

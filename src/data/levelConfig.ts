@@ -299,3 +299,148 @@ export const microLeccionesNiveles: Record<number, MicroLeccionNivel> = {
       "Un buen estándar — checklist más señalética de color — tiene que ser tan claro que cualquiera pueda seguirlo sin ayuda. Acá un operario va a poner el tuyo a prueba: si es ambiguo, fallará.",
   },
 };
+
+// ---------------------------------------------------------------------------
+// Pregunta de cierre de cada nivel
+// ---------------------------------------------------------------------------
+//
+// Al terminar la parte interactiva, cada nivel plantea un caso y pide decidir.
+// Es el mismo mecanismo que ya usaba el modo detective del Nivel 3, extendido a
+// todos los modos.
+//
+// NO son preguntas de memoria. Ninguna se responde recordando qué significa
+// Seiri o Seiton: todas presentan una situación nueva del taller y piden
+// aplicar el criterio que el nivel acaba de hacer practicar. Esa diferencia es
+// el objetivo pedagógico del proyecto — que el jugador practique la toma de
+// decisión dentro de cada fase, no que memorice los nombres de las cinco.
+//
+// Las opciones incorrectas son a propósito razonables: son los atajos que
+// cualquiera tomaría en una planta real. Una alternativa absurda no enseña
+// nada, porque se descarta sin pensar.
+
+export interface OpcionCierre {
+  id: string;
+  texto: string;
+  esCorrecta: boolean;
+  explicacion: string;
+}
+
+export interface PreguntaCierre {
+  /** Rótulo en mayúscula chica sobre la pregunta. */
+  rotulo: string;
+  pregunta: string;
+  opciones: OpcionCierre[];
+}
+
+export const preguntasCierre: Record<number, PreguntaCierre> = {
+  1: {
+    rotulo: "ANTES DE CERRAR EL TURNO",
+    pregunta: "Aparece una herramienta que nadie recuerda haber usado este año. ¿Qué corresponde hacer?",
+    opciones: [
+      {
+        id: "n1_tirar",
+        texto: "Descartarla: si no se usó en un año, no hace falta",
+        esCorrecta: false,
+        explicacion:
+          "Descartar sin verificar es el error más caro de Seiri. Puede ser un repuesto crítico de una máquina que se usa una vez al año, y reponerlo cuesta mucho más que guardarlo.",
+      },
+      {
+        id: "n1_dejar",
+        texto: "Dejarla donde está hasta que alguien la reclame",
+        esCorrecta: false,
+        explicacion:
+          "No decidir también es una decisión, y es la que genera el desorden original: así fue como el puesto llegó a estar como lo encontraste.",
+      },
+      {
+        id: "n1_tarjeta",
+        texto: "Ponerle tarjeta roja y fijar un plazo para decidir",
+        esCorrecta: true,
+        explicacion:
+          "Exacto. La tarjeta roja no descarta: deja constancia de la duda y le pone fecha. Si el plazo vence sin que nadie la use, ahí sí se descarta con fundamento.",
+      },
+    ],
+  },
+  2: {
+    rotulo: "ORGANIZANDO EL TABLERO",
+    pregunta:
+      "Dos herramientas se usan a diario, pero una pesa 12 kg. ¿Cómo conviene ubicarlas en el tablero?",
+    opciones: [
+      {
+        id: "n2_igual",
+        texto: "Las dos juntas al mismo estante, porque se usan igual de seguido",
+        esCorrecta: false,
+        explicacion:
+          "La frecuencia manda en la distancia, no en la altura. Agrupar por frecuencia y olvidar el peso obliga a levantar 12 kg desde una posición incómoda varias veces por día.",
+      },
+      {
+        id: "n2_ergonomia",
+        texto: "La pesada a la altura de la cintura y la liviana a la altura de los ojos",
+        esCorrecta: true,
+        explicacion:
+          "Correcto. Seiton combina frecuencia con ergonomía: lo pesado va donde se levanta sin forzar la espalda, y lo liviano puede ir más arriba, donde además se ve mejor.",
+      },
+      {
+        id: "n2_arriba",
+        texto: "La pesada en el estante más alto, para dejar libre el espacio de abajo",
+        esCorrecta: false,
+        explicacion:
+          "Es lo contrario de lo que corresponde: bajar 12 kg desde encima de la cabeza es una de las maniobras que más lesiones causa en planta.",
+      },
+    ],
+  },
+  4: {
+    rotulo: "REDACTANDO EL ESTÁNDAR",
+    pregunta: "¿Cuál de estas instrucciones funciona como estándar?",
+    opciones: [
+      {
+        id: "n4_vaga",
+        texto: "Mantener el puesto ordenado al terminar",
+        esCorrecta: false,
+        explicacion:
+          "Suena bien pero no dice nada verificable: cada persona entiende otra cosa por ordenado. Es la instrucción ambigua con la que el operario falló recién.",
+      },
+      {
+        id: "n4_precisa",
+        texto: "Devolver cada herramienta a su silueta antes de cerrar el turno",
+        esCorrecta: true,
+        explicacion:
+          "Exacto. Dice qué hacer, con qué referencia y cuándo. Cualquiera puede cumplirla sin preguntar, y cualquiera puede verificar si se cumplió.",
+      },
+      {
+        id: "n4_dependiente",
+        texto: "Ordenar el puesto cuando el supervisor lo indique",
+        esCorrecta: false,
+        explicacion:
+          "Un estándar que depende de que alguien avise no es un estándar: es una orden. Si el supervisor no está, el puesto queda sin criterio.",
+      },
+    ],
+  },
+  5: {
+    rotulo: "DESPUÉS DE LA AUDITORÍA",
+    pregunta:
+      "El mismo punto de control aparece con desviación en tres auditorías seguidas. ¿Qué corresponde hacer?",
+    opciones: [
+      {
+        id: "n5_corregir",
+        texto: "Corregir la desviación y seguir, como las veces anteriores",
+        esCorrecta: false,
+        explicacion:
+          "Corregir el síntoma tres veces y esperar un resultado distinto la cuarta es exactamente lo que Shitsuke busca evitar.",
+      },
+      {
+        id: "n5_recordar",
+        texto: "Recordarle al equipo que tiene que cumplir el estándar",
+        esCorrecta: false,
+        explicacion:
+          "Cuando algo falla siempre en el mismo punto, el problema rara vez es la voluntad de la gente. Insistir sin cambiar nada desgasta al equipo y no corrige la causa.",
+      },
+      {
+        id: "n5_revisar",
+        texto: "Revisar si el estándar es realista en ese punto y ajustarlo",
+        esCorrecta: true,
+        explicacion:
+          "Correcto. Una desviación que se repite es señal de que el estándar no es aplicable ahí: falta tiempo, espacio o herramienta. La disciplina se sostiene ajustando el estándar, no exigiendo más.",
+      },
+    ],
+  },
+};

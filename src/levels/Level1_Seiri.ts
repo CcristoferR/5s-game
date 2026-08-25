@@ -1,8 +1,9 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/core";
 import { objetosNivel1, type ZonaClasificacion, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
+import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { moverMalla } from "../core/Animacion";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -52,7 +53,6 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   crearBancoDeTrabajo(scene);
 
-  crearLamparaDeMesa(scene);
   crearSenalTarjetaRoja(scene, posicionesZonas.dudoso);
 
   const objetos = objetosNivel1.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel1));
@@ -166,7 +166,14 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           );
 
           setTimeout(() => {
-            hud.mostrarResultadoFinal("Nivel 1", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
+            // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
+            // criterio que el nivel acaba de hacer practicar. El resultado se
+            // muestra recién después de responderla.
+            preguntarCierreDeNivel(gui, hud, 1, () => {
+              setTimeout(() => {
+                hud.mostrarResultadoFinal("Nivel 1", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
+              }, 1600);
+            });
           }, 1400);
         }
       } else {
@@ -181,39 +188,6 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   });
 
   return { objetos, zonas: [zonaNecesario, zonaDudoso, zonaDescartar] };
-}
-
-// Lámpara de mesa: un punto de luz cálido y localizado sobre los objetos
-// — un solo elemento nuevo, pero con impacto real en la iluminación de
-// esa zona específica de la escena.
-function crearLamparaDeMesa(scene: Scene): void {
-  const matBase = new PBRMaterial("matLamparaBase", scene);
-  matBase.albedoColor = new Color3(0.15, 0.15, 0.16);
-  matBase.roughness = 0.4;
-  matBase.metallic = 0.5;
-
-  const base = MeshBuilder.CreateCylinder("lamparaBase", { diameter: 0.14, height: 0.03 }, scene);
-  base.position.set(-1.75, 0.96, -0.9);
-  base.material = matBase;
-
-  const brazo = MeshBuilder.CreateCylinder("lamparaBrazo", { diameter: 0.02, height: 0.5 }, scene);
-  brazo.position.set(-1.75, 1.21, -0.9);
-  brazo.material = matBase;
-
-  const matPantalla = new PBRMaterial("matLamparaPantalla", scene);
-  matPantalla.albedoColor = new Color3(0.9, 0.85, 0.7);
-  matPantalla.emissiveColor = new Color3(0.6, 0.5, 0.3);
-  matPantalla.roughness = 0.6;
-
-  const pantalla = MeshBuilder.CreateCylinder("lamparaPantalla", { diameterTop: 0.03, diameterBottom: 0.16, height: 0.14 }, scene);
-  pantalla.position.set(-1.6, 1.4, -0.8);
-  pantalla.rotation.z = -0.5;
-  pantalla.material = matPantalla;
-
-  const luz = new PointLight("luzLampara", new Vector3(-1.6, 1.35, -0.75), scene);
-  luz.diffuse = new Color3(1, 0.85, 0.6);
-  luz.intensity = 0.35;
-  luz.range = 4;
 }
 
 // Señal física de tarjeta roja junto a la zona "Dudoso": conecta el
