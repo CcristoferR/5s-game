@@ -9,6 +9,7 @@ import {
   DirectionalLight,
   ShadowGenerator,
   DefaultRenderingPipeline,
+  ImageProcessingConfiguration,
   SSAO2RenderingPipeline,
 } from "@babylonjs/core";
 
@@ -38,9 +39,28 @@ export class SceneManager {
     luzVentana.specular = new Color3(0, 0, 0);
 
     const shadowGenerator = new ShadowGenerator(2048, principal);
-    shadowGenerator.useBlurExponentialShadowMap = true;
-    shadowGenerator.blurKernel = 14;
-    shadowGenerator.bias = 0.001;
+
+    // SOMBRAS DE CONTACTO. El desenfoque de 14 servía para la sombra que un
+    // objeto proyecta a un metro, pero borroneaba justo el punto donde toca la
+    // mesa — y ese contacto es lo que le dice al ojo que algo está apoyado y
+    // no flotando. La variante "close" concentra la nitidez cerca del origen
+    // de la sombra y la deja difusa a distancia, que es como se comporta de
+    // verdad.
+    shadowGenerator.useCloseExponentialShadowMap = true;
+    shadowGenerator.useKernelBlur = true;
+    shadowGenerator.blurKernel = 8;
+    shadowGenerator.depthScale = 30;
+    shadowGenerator.bias = 0.0008;
+    shadowGenerator.normalBias = 0.008;
+
+    // La sombra no llega a negro: en un interior siempre hay luz rebotada.
+    shadowGenerator.darkness = 0.35;
+
+    // El frustum se ciñe a la zona de juego. Repartir 2048 píxeles entre los
+    // 19 m del garaje deja unos pocos para una taza de 20 cm; acotándolo, esos
+    // mismos píxeles se concentran donde ocurre la acción.
+    principal.shadowMinZ = 1;
+    principal.shadowMaxZ = 18;
 
     // Cámara orbital centrada en la zona de trabajo. Reemplaza a la FreeCamera
     // fija, que nunca recibía attachControl: el jugador no podía mirar nada.
@@ -121,14 +141,29 @@ camara.wheelDeltaPercentage = 0.02;
     pipeline.bloomThreshold = 0.9;
     pipeline.bloomWeight = 0.1;
     pipeline.bloomKernel = 32;
-    pipeline.imageProcessing.contrast = 1.2;
-    pipeline.imageProcessing.exposure = 1.0;
+    // MAPEO DE TONO. Sin esto, todo lo que supera el blanco se recorta de
+    // golpe: las ventanas del garaje salían como manchas planas sin detalle.
+    // ACES comprime los altos en curva, como hace una cámara real, y recupera
+    // la textura de los marcos a contraluz.
+    pipeline.imageProcessing.toneMappingEnabled = true;
+    pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+
+    // El contraste baja de 1.2 a 1.05 porque ACES ya aporta el suyo: dejarlo
+    // alto encima del mapeo aplasta los medios y ensucia el hormigón.
+    // La exposición sube un poco para compensar que ACES oscurece la imagen.
+    pipeline.imageProcessing.contrast = 1.05;
+    pipeline.imageProcessing.exposure = 1.15;
     pipeline.imageProcessing.vignetteEnabled = true;
     pipeline.imageProcessing.vignetteWeight = 0.35;
 
     const ssao = new SSAO2RenderingPipeline("ssaoOficina", this.scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camara]);
-    ssao.radius = 1.5;
-    ssao.totalStrength = 0.7;
+    // Radio calibrado al tamaño de los objetos, no del mobiliario. A 1.5 m el
+    // oclusor no oscurecía nada alrededor de una taza de 20 cm; a 0.45 aparece
+    // la sombrita en el borde donde el objeto se junta con la superficie, que
+    // es media ilusión de peso.
+    ssao.radius = 0.45;
+    ssao.totalStrength = 0.9;
+    ssao.expensiveBlur = true;
     ssao.samples = 16;
 
     return shadowGenerator;

@@ -1,4 +1,10 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh } from "@babylonjs/core";
+import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+
+// Todos los materiales de este nivel llevan grano en la rugosidad, y los
+// metálicos además un cepillado. Antes eran colores planos con rugosidad
+// uniforme: correctos de color, pero se leían como plástico porque ninguna
+// superficie real es homogénea.
 import type { ObjetoNivel2 } from "../data/levelConfig";
 
 export function crearFormaNivel2(scene: Scene, datos: ObjetoNivel2): Mesh {
@@ -33,6 +39,7 @@ function crearTelefono(scene: Scene, id: string): Mesh {
   matCuerpo.albedoColor = new Color3(0.1, 0.1, 0.12);
   matCuerpo.roughness = 0.3;
   matCuerpo.metallic = 0.2;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.08);
 
   const base = MeshBuilder.CreateBox(`base_${id}`, { width: 0.28, height: 0.06, depth: 0.24 }, scene);
   const auricular = MeshBuilder.CreateCylinder(`auricular_${id}`, { diameter: 0.06, height: 0.2 }, scene);
@@ -46,6 +53,7 @@ function crearTelefono(scene: Scene, id: string): Mesh {
   const matBoton = new PBRMaterial(`matBoton_${id}`, scene);
   matBoton.albedoColor = new Color3(0.6, 0.6, 0.62);
   matBoton.roughness = 0.4;
+  matBoton.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   [-0.06, 0, 0.06].forEach((offset, i) => {
     const boton = MeshBuilder.CreateBox(`botonTel_${id}_${i}`, { width: 0.04, height: 0.01, depth: 0.04 }, scene);
@@ -62,6 +70,7 @@ function crearEngrapadora(scene: Scene, id: string): Mesh {
   matCuerpo.albedoColor = new Color3(0.12, 0.12, 0.15);
   matCuerpo.roughness = 0.35;
   matCuerpo.metallic = 0.4;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.08);
 
   const base = MeshBuilder.CreateBox(`base_${id}`, { width: 0.4, height: 0.08, depth: 0.12 }, scene);
   const tapa = MeshBuilder.CreateBox(`tapa_${id}`, { width: 0.38, height: 0.06, depth: 0.1 }, scene);
@@ -76,6 +85,8 @@ function crearEngrapadora(scene: Scene, id: string): Mesh {
   matPlaca.albedoColor = new Color3(0.75, 0.75, 0.78);
   matPlaca.roughness = 0.2;
   matPlaca.metallic = 0.85;
+  matPlaca.albedoTexture = texturaMetalCepillado(scene);
+  matPlaca.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const placa = MeshBuilder.CreateBox(`placa_${id}`, { width: 0.06, height: 0.09, depth: 0.13 }, scene);
   placa.position.set(0.19, 0.02, 0);
@@ -102,6 +113,7 @@ function crearCarpeta(scene: Scene, id: string): Mesh {
   const matEtiqueta = new PBRMaterial(`matEtiqueta_${id}`, scene);
   matEtiqueta.albedoColor = new Color3(0.95, 0.95, 0.92);
   matEtiqueta.roughness = 0.9;
+  matEtiqueta.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const etiqueta = MeshBuilder.CreateBox(`etiquetaCarpeta_${id}`, { width: 0.07, height: 0.005, depth: 0.04 }, scene);
   etiqueta.position.set(0.08, 0.03, 0.19);
@@ -115,6 +127,7 @@ function crearTazaLapices(scene: Scene, id: string): Mesh {
   const matTaza = new PBRMaterial(`mat_${id}`, scene);
   matTaza.albedoColor = new Color3(0.25, 0.45, 0.6);
   matTaza.roughness = 0.15;
+  matTaza.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const cuerpo = MeshBuilder.CreateCylinder(`cuerpo_${id}`, { diameterTop: 0.16, diameterBottom: 0.13, height: 0.18 }, scene);
   const fusion = Mesh.MergeMeshes([cuerpo], true, true, undefined, false, true)!;
@@ -124,10 +137,12 @@ function crearTazaLapices(scene: Scene, id: string): Mesh {
   const matMadera = new PBRMaterial(`matLapiz_${id}`, scene);
   matMadera.albedoColor = new Color3(0.85, 0.65, 0.3);
   matMadera.roughness = 0.7;
+  matMadera.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const matPunta = new PBRMaterial(`matPunta_${id}`, scene);
   matPunta.albedoColor = new Color3(0.15, 0.12, 0.1);
   matPunta.roughness = 0.5;
+  matPunta.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   [-0.03, 0, 0.03].forEach((offset, i) => {
     const lapiz = MeshBuilder.CreateCylinder(`lapiz_${id}_${i}`, { diameter: 0.015, height: 0.19 }, scene);
@@ -159,11 +174,15 @@ function crearLlavero(scene: Scene, id: string): Mesh {
   matAnillo.albedoColor = new Color3(0.62, 0.63, 0.66);
   matAnillo.roughness = 0.22;
   matAnillo.metallic = 0.85;
+  matAnillo.albedoTexture = texturaMetalCepillado(scene);
+  matAnillo.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const matLlave = new PBRMaterial(`matLlave_${id}`, scene);
   matLlave.albedoColor = new Color3(0.72, 0.68, 0.46);
   matLlave.roughness = 0.3;
   matLlave.metallic = 0.75;
+  matLlave.albedoTexture = texturaMetalCepillado(scene);
+  matLlave.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const partes: Mesh[] = [];
 
@@ -212,6 +231,8 @@ function crearTijeras(scene: Scene, id: string): Mesh {
   matHoja.albedoColor = new Color3(0.65, 0.66, 0.68);
   matHoja.roughness = 0.25;
   matHoja.metallic = 0.85;
+  matHoja.albedoTexture = texturaMetalCepillado(scene);
+  matHoja.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const hoja1 = MeshBuilder.CreateBox(`hoja1_${id}`, { width: 0.02, height: 0.005, depth: 0.22 }, scene);
   hoja1.rotation.y = 0.25;
@@ -229,6 +250,8 @@ function crearTijeras(scene: Scene, id: string): Mesh {
   matTornillo.albedoColor = new Color3(0.4, 0.4, 0.42);
   matTornillo.roughness = 0.3;
   matTornillo.metallic = 0.7;
+  matTornillo.albedoTexture = texturaMetalCepillado(scene);
+  matTornillo.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const tornillo = MeshBuilder.CreateCylinder(`tornillo_${id}`, { diameter: 0.02, height: 0.01 }, scene);
   tornillo.rotation.x = Math.PI / 2;
@@ -238,6 +261,7 @@ function crearTijeras(scene: Scene, id: string): Mesh {
   const matMango = new PBRMaterial(`matMango_${id}`, scene);
   matMango.albedoColor = new Color3(0.85, 0.15, 0.1);
   matMango.roughness = 0.6;
+  matMango.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const mango1 = MeshBuilder.CreateTorus(`mango1_${id}`, { diameter: 0.06, thickness: 0.012 }, scene);
   mango1.rotation.x = 0.25;
@@ -258,6 +282,7 @@ function crearManualReferencia(scene: Scene, id: string): Mesh {
   const matPagina = new PBRMaterial(`matPagina_${id}`, scene);
   matPagina.albedoColor = new Color3(0.86, 0.85, 0.8);
   matPagina.roughness = 0.9;
+  matPagina.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const hojas: Mesh[] = [];
   for (let i = 0; i < 3; i++) {
@@ -273,6 +298,7 @@ function crearManualReferencia(scene: Scene, id: string): Mesh {
   const matPortada = new PBRMaterial(`matPortada_${id}`, scene);
   matPortada.albedoColor = new Color3(0.2, 0.5, 0.35);
   matPortada.roughness = 0.55;
+  matPortada.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const portada = MeshBuilder.CreateBox(`portada_${id}`, { width: 0.23, height: 0.008, depth: 0.29 }, scene);
   portada.position.y = 3 * 0.012 + 0.005;

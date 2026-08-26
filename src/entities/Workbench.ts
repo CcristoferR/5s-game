@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
+import { texturaVetaMadera, texturaMetalCepillado, texturaGrano } from "./TexturasSuperficie";
 
 // Altura de la cara superior del tablero. Los niveles apoyan sus objetos aca:
 // exportarla evita que cada uno tenga que repetir el numero a mano y que se
@@ -34,7 +35,14 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   const ALTO_TABLERO = ALTURA_SUPERFICIE_BANCO - 0.045;
 
   const matTablero = new PBRMaterial(`matTablero_${nombre}`, scene);
-  matTablero.albedoColor = new Color3(0.42, 0.29, 0.18);
+  // Veta real en vez de un marrón plano. Es la superficie más grande y más
+  // mirada del juego: todos los objetos se apoyan encima, así que el jugador
+  // la tiene delante todo el rato.
+  matTablero.albedoTexture = texturaVetaMadera(scene);
+  matTablero.albedoColor = new Color3(0.78, 0.72, 0.66);
+  // El grano en la rugosidad hace que el reflejo recorra la madera en vez de
+  // cubrirla por igual, que es lo que la delataba como plástico.
+  matTablero.microSurfaceTexture = texturaGrano(scene, 0.1);
   matTablero.roughness = 0.62;
   matTablero.metallic = 0;
 
@@ -46,6 +54,7 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   // Canto: remata el borde del tablero para que no termine en una arista viva.
   const matCanto = new PBRMaterial(`matCanto_${nombre}`, scene);
   matCanto.albedoColor = new Color3(0.3, 0.2, 0.12);
+  matCanto.microSurfaceTexture = texturaGrano(scene, 0.08);
   matCanto.roughness = 0.5;
 
   const canto = MeshBuilder.CreateBox(`canto_${nombre}`, { width: ANCHO + 0.04, height: 0.035, depth: FONDO + 0.04 }, scene);
@@ -54,7 +63,11 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   canto.receiveShadows = true;
 
   const matMetal = new PBRMaterial(`matMetal_${nombre}`, scene);
-  matMetal.albedoColor = new Color3(0.34, 0.36, 0.39);
+  // Metal cepillado: el metal perfectamente liso casi no existe en la
+  // realidad, y es lo que más delata una escena hecha con primitivas.
+  matMetal.albedoTexture = texturaMetalCepillado(scene);
+  matMetal.albedoColor = new Color3(0.42, 0.44, 0.47);
+  matMetal.microSurfaceTexture = texturaGrano(scene, 0.14);
   matMetal.roughness = 0.38;
   matMetal.metallic = 0.75;
 
