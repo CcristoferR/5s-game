@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3 } from "@babylonjs/core";
+import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
 
 // ---------------------------------------------------------------------------
 // Utilería de taller
@@ -17,6 +18,24 @@ function material(scene: Scene, nombre: string, color: Color3, rugosidad: number
   mat.albedoColor = color;
   mat.roughness = rugosidad;
   mat.metallic = metalico;
+
+  // Grano en la rugosidad para todo lo que pase por acá. Una superficie
+  // perfectamente uniforme se lee como plástico aunque el color sea correcto:
+  // el reflejo la cubre por igual en vez de recorrerla. Los metales llevan
+  // además el cepillado, porque el metal liso casi no existe en la realidad y
+  // es lo que más delata una escena hecha con primitivas.
+  mat.microSurfaceTexture = texturaGrano(scene, metalico >= 0.6 ? 0.14 : 0.07);
+  if (metalico >= 0.6) {
+    mat.albedoTexture = texturaMetalCepillado(scene);
+    // El albedo se aclara porque ahora lo multiplica la textura, que ronda el
+    // gris medio: sin esto el metal quedaría notoriamente más oscuro.
+    mat.albedoColor = new Color3(
+      Math.min(1, color.r * 1.35),
+      Math.min(1, color.g * 1.35),
+      Math.min(1, color.b * 1.35)
+    );
+  }
+
   return mat;
 }
 

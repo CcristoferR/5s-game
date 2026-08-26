@@ -96,19 +96,18 @@ export function texturaVetaMadera(scene: Scene): DynamicTexture {
       ctx.stroke();
     }
 
-    // Algún nudo suelto: rompe la repetición del patrón de bandas.
-    for (let i = 0; i < 3; i++) {
-      const x = Math.random() * lado;
-      const y = Math.random() * lado;
-      const radio = 8 + Math.random() * 14;
-      for (let anillo = radio; anillo > 1; anillo -= 2.2) {
-        ctx.strokeStyle = `rgba(52,32,16,${0.05 + (radio - anillo) / radio * 0.12})`;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.ellipse(x, y, anillo, anillo * 0.62, 0.4, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
+    // SIN NUDOS.
+    //
+    // Acá se dibujaban tres nudos por textura, para romper la repetición de
+    // las bandas. En una tabla real funcionan, pero esta textura se repite en
+    // mosaico sobre el tablero: los tres nudos reaparecían en cada repetición,
+    // siempre en la misma posición relativa, y lo que se veía eran manchas
+    // oscuras sueltas en el medio de la mesa. Una mancha que se repite deja de
+    // leerse como veta y pasa a leerse como suciedad o como un error de
+    // sombreado — de hecho eso pareció al principio.
+    //
+    // La variación del patrón ya la dan las bandas onduladas de arriba, que al
+    // no ser simétricas no delatan la repetición.
   });
 }
 

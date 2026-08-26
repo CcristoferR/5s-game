@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh } from "@babylonjs/core";
+import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
 
 export function crearTableroChecklist(scene: Scene, x: number): Mesh {
   const poste = MeshBuilder.CreateCylinder(`posteTablero_${x}`, { diameter: 0.08, height: 1.1 }, scene);
@@ -6,6 +7,7 @@ export function crearTableroChecklist(scene: Scene, x: number): Mesh {
   const matPoste = new PBRMaterial(`matPosteTablero_${x}`, scene);
   matPoste.albedoColor = new Color3(0.3, 0.26, 0.22);
   matPoste.roughness = 0.6;
+  matPoste.microSurfaceTexture = texturaGrano(scene, 0.07);
   poste.material = matPoste;
   poste.receiveShadows = true;
 
@@ -14,13 +16,16 @@ export function crearTableroChecklist(scene: Scene, x: number): Mesh {
   const matTablero = new PBRMaterial(`matTablero_${x}`, scene);
   matTablero.albedoColor = new Color3(0.82, 0.79, 0.7);
   matTablero.roughness = 0.7;
+  matTablero.microSurfaceTexture = texturaGrano(scene, 0.07);
   tablero.material = matTablero;
   tablero.receiveShadows = true;
 
   const matClip = new PBRMaterial(`matClip_${x}`, scene);
   matClip.albedoColor = new Color3(0.6, 0.6, 0.63);
   matClip.roughness = 0.25;
-  matClip.metallic = 0.85; // metal brillante — el clip real de una carpeta de procedimientos
+  matClip.metallic = 0.85;
+  matClip.albedoTexture = texturaMetalCepillado(scene);
+  matClip.microSurfaceTexture = texturaGrano(scene, 0.14); // metal brillante — el clip real de una carpeta de procedimientos
 
   const clip = MeshBuilder.CreateBox(`clipTablero_${x}`, { width: 0.25, height: 0.06, depth: 0.08 }, scene);
   clip.position.set(x, 1.68, 1.79);
@@ -33,6 +38,7 @@ export function crearPapeleraDescartar(scene: Scene, x: number): Mesh {
   const matPapelera = new PBRMaterial(`matPapelera_${x}`, scene);
   matPapelera.albedoColor = new Color3(0.35, 0.37, 0.4);
   matPapelera.roughness = 0.45;
+  matPapelera.microSurfaceTexture = texturaGrano(scene, 0.07);
   matPapelera.metallic = 0.3;
 
   const papelera = MeshBuilder.CreateCylinder(`papelera_${x}`, { diameterTop: 0.55, diameterBottom: 0.4, height: 0.7 }, scene);
@@ -45,6 +51,7 @@ export function crearPapeleraDescartar(scene: Scene, x: number): Mesh {
   const matBorde = new PBRMaterial(`matBordePapelera_${x}`, scene);
   matBorde.albedoColor = new Color3(0.25, 0.27, 0.3);
   matBorde.roughness = 0.4;
+  matBorde.microSurfaceTexture = texturaGrano(scene, 0.07);
   matBorde.metallic = 0.4;
 
   const borde = MeshBuilder.CreateTorus(`bordePapelera_${x}`, { diameter: 0.55, thickness: 0.03 }, scene);

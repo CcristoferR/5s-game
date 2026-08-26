@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, TransformNode } from "@babylonjs/core";
+import { texturaGrano } from "./TexturasSuperficie";
 
 // Impresora con cartucho de tóner dañado — segunda fuente de
 // investigación del nivel, distinta a la máquina con fuga de aceite.
@@ -11,6 +12,7 @@ export function crearImpresoraConToner(scene: Scene, x: number, z: number): Tran
   const matCuerpo = new PBRMaterial("matImpresoraCuerpo", scene);
   matCuerpo.albedoColor = new Color3(0.82, 0.82, 0.84);
   matCuerpo.roughness = 0.4;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.07);
   matCuerpo.metallic = 0.1;
 
   const cuerpo = MeshBuilder.CreateBox("impresoraCuerpo", { width: 0.55, height: 0.35, depth: 0.5 }, scene);
@@ -22,6 +24,7 @@ export function crearImpresoraConToner(scene: Scene, x: number, z: number): Tran
   const matBandeja = new PBRMaterial("matImpresoraBandeja", scene);
   matBandeja.albedoColor = new Color3(0.95, 0.95, 0.92);
   matBandeja.roughness = 0.7;
+  matBandeja.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const bandeja = MeshBuilder.CreateBox("impresoraBandeja", { width: 0.4, height: 0.02, depth: 0.3 }, scene);
   bandeja.position.set(0, 0.36, -0.05);
@@ -33,6 +36,7 @@ export function crearImpresoraConToner(scene: Scene, x: number, z: number): Tran
   const matRendija = new PBRMaterial("matImpresoraRendija", scene);
   matRendija.albedoColor = new Color3(0.08, 0.08, 0.08);
   matRendija.roughness = 0.6;
+  matRendija.microSurfaceTexture = texturaGrano(scene, 0.07);
 
   const rendija = MeshBuilder.CreateBox("impresoraRendija", { width: 0.5, height: 0.05, depth: 0.02 }, scene);
   rendija.position.set(0, 0.05, 0.26);

@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3 } from "@babylonjs/core";
+import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { crearRotulo3D } from "./Rotulo3D";
 import { ALTURA_SUPERFICIE_BANCO } from "./Workbench";
@@ -55,6 +56,8 @@ export function crearShelfSlot(scene: Scene, _gui: AdvancedDynamicTexture, id: s
   matMetal.albedoColor = new Color3(0.33, 0.35, 0.38);
   matMetal.roughness = 0.4;
   matMetal.metallic = 0.72;
+  matMetal.albedoTexture = texturaMetalCepillado(scene);
+  matMetal.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   // Patas: dos montantes a los costados, como una estanteria de taller.
   const alturaMontante = ALTURA_SUPERFICIE_BANCO - 0.05;
@@ -75,6 +78,7 @@ export function crearShelfSlot(scene: Scene, _gui: AdvancedDynamicTexture, id: s
   const matTabla = new PBRMaterial(`matTablaRepisa_${id}`, scene);
   matTabla.albedoTexture = crearTexturaSilueta(scene, id, "tabla", "#7a5434");
   matTabla.roughness = 0.62;
+  matTabla.microSurfaceTexture = texturaGrano(scene, 0.07);
   matTabla.metallic = 0;
 
   const tabla = MeshBuilder.CreateBox(`tablaRepisa_${id}`, { width: ANCHO_TABLA, height: 0.05, depth: 1.1 }, scene);
@@ -87,6 +91,7 @@ export function crearShelfSlot(scene: Scene, _gui: AdvancedDynamicTexture, id: s
   const matPanel = new PBRMaterial(`matPanelRepisa_${id}`, scene);
   matPanel.albedoTexture = crearTexturaSilueta(scene, id, "panel", "#6d4b2f");
   matPanel.roughness = 0.68;
+  matPanel.microSurfaceTexture = texturaGrano(scene, 0.07);
   matPanel.metallic = 0;
   matPanel.backFaceCulling = false;
 

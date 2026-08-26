@@ -10,6 +10,7 @@ import {
   ShadowGenerator,
   DefaultRenderingPipeline,
   ImageProcessingConfiguration,
+  ColorCurves,
   SSAO2RenderingPipeline,
 } from "@babylonjs/core";
 
@@ -24,6 +25,18 @@ export class SceneManager {
 
   private configurarAmbiente(): ShadowGenerator {
     this.scene.clearColor = new Color4(0.85, 0.87, 0.9, 1);
+
+    // PROFUNDIDAD ATMOSFÉRICA. El garaje tiene 19 m de fondo y hasta ahora la
+    // pared del fondo se veía con la misma nitidez y el mismo contraste que el
+    // banco que el jugador tiene delante. En un espacio real el aire se
+    // interpone y el contraste cae con la distancia; sin eso el cerebro no
+    // percibe la escala y la nave se siente más chica de lo que es.
+    //
+    // La densidad es deliberadamente baja: tiene que notarse al fondo y ser
+    // imperceptible sobre la mesa, o el nivel se vería con neblina.
+    this.scene.fogMode = Scene.FOGMODE_EXP2;
+    this.scene.fogDensity = 0.014;
+    this.scene.fogColor = new Color3(0.62, 0.64, 0.68);
 
     const relleno = new HemisphericLight("luzRelleno", new Vector3(0, 1, 0), this.scene);
     relleno.intensity = 0.4;
@@ -40,18 +53,27 @@ export class SceneManager {
 
     const shadowGenerator = new ShadowGenerator(2048, principal);
 
-    // SOMBRAS DE CONTACTO. El desenfoque de 14 servía para la sombra que un
-    // objeto proyecta a un metro, pero borroneaba justo el punto donde toca la
-    // mesa — y ese contacto es lo que le dice al ojo que algo está apoyado y
-    // no flotando. La variante "close" concentra la nitidez cerca del origen
-    // de la sombra y la deja difusa a distancia, que es como se comporta de
-    // verdad.
-    shadowGenerator.useCloseExponentialShadowMap = true;
-    shadowGenerator.useKernelBlur = true;
-    shadowGenerator.blurKernel = 8;
-    shadowGenerator.depthScale = 30;
-    shadowGenerator.bias = 0.0008;
-    shadowGenerator.normalBias = 0.008;
+    // SOMBRAS DE CONTACTO, por filtrado de porcentaje cercano (PCF).
+    //
+    // Antes esto usaba useCloseExponentialShadowMap. Esa técnica aproxima la
+    // oclusión con una función exponencial, y esa aproximación "derrama"
+    // sombra donde no hay nada que la proyecte: sobre una superficie plana y
+    // grande como el tablero del banco aparecía un borrón oscuro flotando en
+    // el medio, sin objeto encima que lo justificara. Se veía en los cinco
+    // niveles porque los cinco usan el mismo banco.
+    //
+    // PCF resuelve la oclusión muestreando el mapa de profundidad de verdad,
+    // así que no inventa sombra: si no hay caster, no hay sombra. Además deja
+    // el contacto nítido —que es lo que le dice al ojo que algo está apoyado y
+    // no flotando— sin necesidad de desenfocar todo el mapa.
+    shadowGenerator.usePercentageCloserFiltering = true;
+    shadowGenerator.filteringQuality = ShadowGenerator.QUALITY_HIGH;
+
+    // Los sesgos separan la superficie de su propia sombra. Con PCF hacen
+    // falta un poco más altos que con la variante exponencial; por debajo de
+    // estos valores reaparece el moteado sobre las superficies horizontales.
+    shadowGenerator.bias = 0.0016;
+    shadowGenerator.normalBias = 0.014;
 
     // La sombra no llega a negro: en un interior siempre hay luz rebotada.
     shadowGenerator.darkness = 0.35;
@@ -153,6 +175,21 @@ camara.wheelDeltaPercentage = 0.02;
     // La exposición sube un poco para compensar que ACES oscurece la imagen.
     pipeline.imageProcessing.contrast = 1.05;
     pipeline.imageProcessing.exposure = 1.15;
+    // AJUSTE DE COLOR. Cálido en los medios, frío en las sombras: es lo que
+    // separa una imagen fotografiada de una calculada. La luz de los focos del
+    // taller es cálida y lo que queda en penumbra lo ilumina el rebote del
+    // cielo por las ventanas, que es azulado. Reproducirlo aquí, en vez de
+    // teñir cada material, mantiene el garaje de Bitplay intacto.
+    const curvas = new ColorCurves();
+    curvas.globalSaturation = 12;
+    curvas.highlightsHue = 32;
+    curvas.highlightsDensity = 18;
+    curvas.highlightsExposure = 6;
+    curvas.shadowsHue = 220;
+    curvas.shadowsDensity = 16;
+    pipeline.imageProcessing.colorCurves = curvas;
+    pipeline.imageProcessing.colorCurvesEnabled = true;
+
     pipeline.imageProcessing.vignetteEnabled = true;
     pipeline.imageProcessing.vignetteWeight = 0.35;
 

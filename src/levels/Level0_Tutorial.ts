@@ -79,18 +79,19 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
 
   habilitarEtiquetasAlPasar(scene, gui, [{ mesh: objeto.mesh, texto: "Taza con café viejo" }]);
 
-  // La zona empieza oculta. Mostrarla desde el arranque distrae: durante los
-  // tres primeros pasos el jugador no tiene nada que hacer con ella, y un
-  // recuadro verde brillante en el piso pide a gritos que lo usen.
+  // La zona se ve completa desde que arranca el nivel.
+  //
+  // Antes empezaba oculta, con la idea de no distraer durante los tres
+  // primeros pasos. Salió mal por un detalle de cómo está armada: el borde de
+  // la zona es una malla aparte, hermana del panel y no hija, así que
+  // ocultarla junto con getChildMeshes() no lo alcanzaba. Quedaba el borde
+  // solo —un cuadrado pálido y sin relleno— y al llegar al paso 4 aparecía el
+  // panel adentro. Parecía que la zona "se encendía" a mitad del tutorial.
+  //
+  // Mostrarla entera de entrada es además más honesto: el jugador ve desde el
+  // principio el escenario completo que va a usar, y el señalamiento de "esta
+  // es tu zona" lo hace el halo pulsante en el paso 4, que para eso está.
   const zona = crearDropZone(scene, "descartar", X_ZONA, new Color3(0.2, 0.7, 0.3), gui, "SUÉLTALO AQUÍ");
-  zona.mesh.isVisible = false;
-  const piezasZona = zona.mesh.getChildMeshes();
-  piezasZona.forEach((pieza) => (pieza.isVisible = false));
-
-  function mostrarZona(): void {
-    zona.mesh.isVisible = true;
-    piezasZona.forEach((pieza) => (pieza.isVisible = true));
-  }
 
   // Halo pulsante en el piso, debajo del objeto. Es la forma más directa de
   // decir "este de acá" sin una flecha que tape media pantalla.
@@ -162,7 +163,6 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
       detalle:
         "Mantén apretado el botón izquierdo sobre la taza y llévala hasta el recuadro verde del piso. Suéltala ahí. Así se clasifica en todos los niveles.",
       vigilar: (completar) => {
-        mostrarZona();
         // El halo salta del objeto al centro de la zona: ahora el destino es
         // lo que hay que señalar, no el objeto.
         halo.isVisible = true;

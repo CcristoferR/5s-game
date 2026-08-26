@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, TransformNode } from "@babylonjs/core";
+import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
 
 export function crearMaquinaConFuga(scene: Scene, x: number, z: number): TransformNode {
   const root = new TransformNode("maquinaRoot", scene);
@@ -7,7 +8,9 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   const matCuerpo = new PBRMaterial("matMaquinaCuerpo", scene);
   matCuerpo.albedoColor = new Color3(0.25, 0.27, 0.29);
   matCuerpo.roughness = 0.4;
-  matCuerpo.metallic = 0.75; // metal industrial: brillo real, no plástico
+  matCuerpo.metallic = 0.75;
+  matCuerpo.albedoTexture = texturaMetalCepillado(scene);
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.14); // metal industrial: brillo real, no plástico
 
   const cuerpo = MeshBuilder.CreateBox("maquinaCuerpo", { width: 0.9, height: 1.3, depth: 0.7 }, scene);
   cuerpo.position.y = 0.65;
@@ -21,6 +24,8 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matRejilla.albedoColor = new Color3(0.12, 0.12, 0.13);
   matRejilla.roughness = 0.5;
   matRejilla.metallic = 0.6;
+  matRejilla.albedoTexture = texturaMetalCepillado(scene);
+  matRejilla.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   for (let i = 0; i < 4; i++) {
     const listón = MeshBuilder.CreateBox(`rejilla_${i}`, { width: 0.5, height: 0.03, depth: 0.02 }, scene);
@@ -33,6 +38,8 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matTuberia.albedoColor = new Color3(0.42, 0.44, 0.46);
   matTuberia.roughness = 0.3;
   matTuberia.metallic = 0.8;
+  matTuberia.albedoTexture = texturaMetalCepillado(scene);
+  matTuberia.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const tuberia = MeshBuilder.CreateCylinder("tuberia", { diameter: 0.12, height: 0.6 }, scene);
   tuberia.rotation.z = Math.PI / 2;
@@ -42,7 +49,8 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
 
   const matFuga = new PBRMaterial("matFugaJunta", scene);
   matFuga.albedoColor = new Color3(0.08, 0.06, 0.04);
-  matFuga.roughness = 0.15; // aceite: húmedo, brilloso
+  matFuga.roughness = 0.15;
+  matFuga.microSurfaceTexture = texturaGrano(scene, 0.07); // aceite: húmedo, brilloso
 
   const junta = MeshBuilder.CreateSphere("juntaFuga", { diameter: 0.14 }, scene);
   junta.position.set(-0.8, 0.4, 0);
@@ -52,6 +60,7 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   const matGoteo = new PBRMaterial("matGoteo", scene);
   matGoteo.albedoColor = new Color3(0.1, 0.08, 0.05);
   matGoteo.roughness = 0.1;
+  matGoteo.microSurfaceTexture = texturaGrano(scene, 0.07);
   matGoteo.alpha = 0.9;
 
   const goteo = MeshBuilder.CreateCylinder("goteoFuga", { diameterTop: 0.02, diameterBottom: 0.06, height: 0.35 }, scene);
