@@ -1,4 +1,5 @@
 import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, Control, Container } from "@babylonjs/gui";
+import { reproducir } from "../core/Sonido";
 
 // ---------------------------------------------------------------------------
 // Sistema visual del juego
@@ -204,6 +205,10 @@ export function crearBotonPrincipal(nombre: string, texto: string, ancho = 160):
   boton.onPointerEnterObservable.add(() => (boton.background = PALETA.accionFondoHover));
   boton.onPointerOutObservable.add(() => (boton.background = PALETA.accionFondo));
 
+  // El clic suena desde acá: cualquier botón construido con el sistema de
+  // diseño queda cubierto, sin tener que tocar pantalla por pantalla.
+  boton.onPointerUpObservable.add(() => reproducir("boton"));
+
   return boton;
 }
 
@@ -241,6 +246,10 @@ export function crearBotonOpcion(nombre: string, texto: string, ancho: number): 
     boton.background = PALETA.tarjetaSuave;
     boton.color = PALETA.borde;
   });
+
+  // El clic suena desde acá: cualquier botón construido con el sistema de
+  // diseño queda cubierto, sin tener que tocar pantalla por pantalla.
+  boton.onPointerUpObservable.add(() => reproducir("boton"));
 
   return boton;
 }

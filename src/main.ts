@@ -2,6 +2,11 @@ import { Engine, Mesh } from "@babylonjs/core";
 import { GameManager } from "./core/GameManager";
 import { SceneManager } from "./core/SceneManager";
 import { setupXR } from "./core/XRManager";
+import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir } from "./core/Sonido";
+import { mostrarAcceso } from "./portal/PantallaAcceso";
+import { mostrarAdministracion } from "./portal/PantallaAdmin";
+import { leerSesion, cerrarSesion } from "./portal/Sesion";
+import type { Perfil } from "./portal/Datos";
 import { cargarTutorial } from "./levels/Level0_Tutorial";
 import { cargarNivel1 } from "./levels/Level1_Seiri";
 import { cargarNivel2 } from "./levels/Level2_Seiton";
@@ -80,6 +85,8 @@ function mostrarMenu(): void {
 }
 
 function volverAlMenu(): void {
+  // El ambiente del taller pertenece al garaje: en el menú estorba.
+  detenerAmbiente();
   sceneManager.scene.dispose();
   sceneManager = new SceneManager(engine);
   mostrarMenu();
@@ -100,7 +107,10 @@ function cargarNivel(numeroNivel: number): void {
   const hud = new HUD(sceneManager.scene);
   gameManager.onPuntajeCambiado.add((puntaje) => hud.actualizarPuntaje(puntaje));
 
-  const onCompletado = () => gameManager.completarNivel(numeroNivel);
+  const onCompletado = () => {
+    gameManager.completarNivel(numeroNivel);
+    reproducir("nivelCompletado");
+  };
 
   if (numeroNivel === 0) {
     const { objetos } = cargarTutorial(sceneManager.scene, hud, volverAlMenu, onCompletado);
@@ -126,12 +136,62 @@ function cargarNivel(numeroNivel: number): void {
     puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));
   }
 
+  iniciarAmbiente();
+
   const nombreSuelo = sueloPorNivel[numeroNivel];
   const suelo = sceneManager.scene.getMeshByName(nombreSuelo) as Mesh | null;
   setupXR(sceneManager.scene, suelo ? [suelo] : []);
 }
 
-mostrarMenu();
+// ARRANQUE
+//
+// El curso tiene puerta: sin sesión abierta no se llega al menú. La sesión
+// sobrevive a recargar la página, así que quien ya entró no vuelve a ver el
+// acceso — y sobre todo, no gasta otro cupo de su código.
+//
+// El administrador no entra al juego: su sesión lo lleva a la vista de
+// administración. No tendría sentido mandarlo a clasificar herramientas.
+function abrirSegunRol(perfil: Perfil): void {
+  if (perfil.rol === "administrador") {
+    mostrarAdministracion(() => {
+      // Al cerrar sesión desde administración se vuelve a la puerta, no al
+      // juego: quien administra no necesariamente tiene inscripción.
+      mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+    });
+    return;
+  }
+
+  mostrarMenu();
+}
+
+function arrancar(): void {
+  const sesion = leerSesion();
+
+  if (sesion) {
+    abrirSegunRol(sesion.perfil);
+    return;
+  }
+
+  mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+}
+
+// Prepara los efectos y engancha el desbloqueo del audio al primer clic: los
+// navegadores no dejan sonar nada antes de que el usuario interactúe.
+iniciarAudio();
+
+// Si algo falla al abrir, se limpia la sesión y se muestra la puerta.
+//
+// Sin esto, un dato viejo o corrupto en el navegador dejaba la pantalla en
+// negro sin ningún mensaje: el error ocurría fuera de todo try, la ejecución
+// se cortaba antes de dibujar nada y en la consola no aparecía referencia
+// alguna al juego. Recargar no servía, porque el dato seguía ahí.
+try {
+  arrancar();
+} catch (error) {
+  console.error("[arranque] no se pudo abrir la sesión guardada:", error);
+  cerrarSesion();
+  mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+}
 
 engine.runRenderLoop(() => sceneManager.scene.render());
 window.addEventListener("resize", () => engine.resize());

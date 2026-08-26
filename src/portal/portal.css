@@ -1,0 +1,367 @@
+/* ---------------------------------------------------------------------------
+   Portal de acceso al curso
+   ---------------------------------------------------------------------------
+
+   Los colores y los tamaños son los mismos que usa el juego (ver
+   src/ui/EstiloUI.ts). Están repetidos acá porque el portal vive en el DOM y
+   el juego en un canvas: son dos motores de dibujo distintos y no pueden
+   compartir el objeto. Si se cambia un color allá, hay que cambiarlo acá.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --portal-fondo: #0b0d0f;
+  --portal-tarjeta: #14171b;
+  --portal-borde: rgba(255, 255, 255, 0.10);
+  --portal-linea: rgba(255, 255, 255, 0.07);
+  --portal-titulo: #f5f7f6;
+  --portal-cuerpo: rgba(224, 230, 228, 0.78);
+  --portal-rotulo: rgba(255, 255, 255, 0.38);
+  --portal-acierto: #7fb495;
+  --portal-error: #c98d80;
+  --portal-aviso: #bda079;
+  --portal-dato: #7ea3ba;
+}
+
+.portal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--portal-fondo);
+  color: var(--portal-titulo);
+  font-family: system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.portal--ancho {
+  align-items: flex-start;
+}
+
+.portal__tarjeta {
+  width: 100%;
+  max-width: 460px;
+  background: var(--portal-tarjeta);
+  border: 1px solid var(--portal-borde);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.portal__tarjeta--ancha {
+  max-width: 1080px;
+}
+
+/* Filete de color en el borde superior: identifica la pantalla sin teñir
+   la tarjeta entera. Mismo recurso que las tarjetas del juego. */
+.portal__filete {
+  height: 3px;
+  background: var(--portal-acierto);
+}
+
+.portal__filete--admin {
+  background: var(--portal-dato);
+}
+
+.portal__cuerpo {
+  padding: 34px 40px 36px;
+}
+
+.portal__rotulo {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--portal-rotulo);
+}
+
+.portal__titulo {
+  margin: 0 0 8px;
+  font-size: 27px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.portal__bajada {
+  margin: 0 0 26px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--portal-cuerpo);
+}
+
+/* --- Pestañas --- */
+
+.portal__pestanas {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--portal-linea);
+}
+
+.portal__pestana {
+  padding: 10px 4px 12px;
+  margin-right: 22px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--portal-rotulo);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.portal__pestana:hover {
+  color: var(--portal-cuerpo);
+}
+
+.portal__pestana[aria-selected="true"] {
+  color: var(--portal-titulo);
+  border-bottom-color: var(--portal-acierto);
+}
+
+/* --- Formulario --- */
+
+.portal__campo {
+  margin-bottom: 16px;
+}
+
+.portal__etiqueta {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--portal-rotulo);
+}
+
+.portal__entrada {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--portal-borde);
+  border-radius: 8px;
+  color: var(--portal-titulo);
+  font: inherit;
+  font-size: 17px;
+}
+
+.portal__entrada:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.portal__entrada::placeholder {
+  color: rgba(255, 255, 255, 0.24);
+}
+
+/* El código se escribe en mayúsculas y con separación: así se lee de una
+   tarjeta impresa sin equivocarse entre O y 0. */
+.portal__entrada--codigo {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+.portal__fila {
+  display: flex;
+  gap: 14px;
+}
+
+.portal__fila > * {
+  flex: 1;
+}
+
+.portal__ayuda {
+  margin: -8px 0 18px;
+  font-size: 14px;
+  color: var(--portal-rotulo);
+}
+
+/* --- Botones --- */
+
+.portal__boton {
+  width: 100%;
+  padding: 13px 18px;
+  margin-top: 8px;
+  background: #eef0ef;
+  border: none;
+  border-radius: 8px;
+  color: #12151a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.portal__boton:hover {
+  background: #ffffff;
+}
+
+.portal__boton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.portal__boton--secundario {
+  width: auto;
+  padding: 9px 16px;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--portal-borde);
+  color: var(--portal-cuerpo);
+  font-size: 14px;
+}
+
+.portal__boton--secundario:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.portal__enlace {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--portal-rotulo);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.portal__enlace:hover {
+  color: var(--portal-cuerpo);
+}
+
+/* --- Avisos --- */
+
+.portal__aviso {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.45;
+  border-left: 3px solid var(--portal-error);
+  background: rgba(201, 141, 128, 0.10);
+  color: var(--portal-titulo);
+}
+
+.portal__aviso--ok {
+  border-left-color: var(--portal-acierto);
+  background: rgba(127, 180, 149, 0.10);
+}
+
+.portal__aviso[hidden] {
+  display: none;
+}
+
+/* --- Vista de administración --- */
+
+.portal__encabezadoAdmin {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.portal__seccion {
+  margin-top: 34px;
+}
+
+.portal__seccion:first-of-type {
+  margin-top: 0;
+}
+
+.portal__tituloSeccion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.portal__tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.portal__tabla th {
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--portal-linea);
+  color: var(--portal-rotulo);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.portal__tabla td {
+  padding: 12px;
+  border-bottom: 1px solid var(--portal-linea);
+  color: var(--portal-cuerpo);
+  vertical-align: middle;
+}
+
+.portal__tabla tr:last-child td {
+  border-bottom: none;
+}
+
+.portal__codigo {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: var(--portal-titulo);
+}
+
+.portal__insignia {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.portal__insignia--ok {
+  background: rgba(127, 180, 149, 0.16);
+  color: var(--portal-acierto);
+}
+
+.portal__insignia--gastado {
+  background: rgba(189, 160, 121, 0.16);
+  color: var(--portal-aviso);
+}
+
+.portal__insignia--baja {
+  background: rgba(201, 141, 128, 0.16);
+  color: var(--portal-error);
+}
+
+.portal__vacio {
+  padding: 22px 12px;
+  color: var(--portal-rotulo);
+  font-size: 15px;
+}
+
+@media (max-width: 720px) {
+  .portal__cuerpo {
+    padding: 26px 22px 28px;
+  }
+
+  .portal__fila {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .portal__tablaEnvoltura {
+    overflow-x: auto;
+  }
+}

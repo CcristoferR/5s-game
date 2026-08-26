@@ -1,4 +1,5 @@
 import { Scene } from "@babylonjs/core";
+import { reproducir } from "../core/Sonido";
 import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel, Button } from "@babylonjs/gui";
 import { TEXTO, PALETA } from "./EstiloUI";
 
@@ -177,6 +178,9 @@ export class HUD {
   }
 
   mostrarFeedback(correcto: boolean, mensaje: string): void {
+    // Un solo enganche cubre los cinco niveles: todos informan aciertos y
+    // errores por acá.
+    reproducir(correcto ? "acierto" : "error");
     this.cartelFeedback.background = correcto ? "rgba(30, 110, 50, 0.95)" : "rgba(120, 30, 30, 0.95)";
     this.textoFeedback.text = correcto ? `✅  ${mensaje}` : `❌  ${mensaje}`;
     this.cartelFeedback.isVisible = true;

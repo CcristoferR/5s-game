@@ -1,4 +1,5 @@
 import { Mesh, PointerDragBehavior, Vector3, Observable } from "@babylonjs/core";
+import { reproducir } from "./Sonido";
 
 export interface ResultadoSoltar {
   mesh: Mesh;
@@ -39,6 +40,7 @@ export function hacerArrastrable(
   comportamiento.onDragStartObservable.add(() => {
     posicionAlAgarrar = mesh.position.clone();
     mesh.scaling.setAll(1.15);
+    reproducir("agarrar");
     onAgarrar.notifyObservers(mesh);
   });
 
@@ -57,6 +59,7 @@ export function hacerArrastrable(
       new Vector3(posicionAlAgarrar.x, 0, posicionAlAgarrar.z),
       new Vector3(mesh.position.x, 0, mesh.position.z)
     );
+    reproducir("soltar");
     onSoltar.notifyObservers({ mesh, movioSuficiente: distancia >= DISTANCIA_MINIMA_ARRASTRE, distancia });
   });
 
