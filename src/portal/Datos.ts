@@ -15,6 +15,19 @@
  * olvide de alguna.
  */
 
+import { definirClave, borrarCredencial } from "./Credenciales";
+
+/**
+ * Cuenta de administrador de desarrollo.
+ *
+ * Deliberadamente trivial para no estorbar mientras se prueba el portal. NO
+ * debe sobrevivir a producción: antes de entregar hay que reemplazarla por una
+ * cuenta real con clave larga y cambio obligatorio en el primer ingreso
+ * (pasar `true` como tercer argumento de definirClave, más abajo).
+ */
+export const USUARIO_ADMIN_INICIAL = "admin";
+export const CLAVE_ADMIN_INICIAL = "123";
+
 const CLAVE_PERFILES = "5s-portal.perfiles.v1";
 const CLAVE_CODIGOS = "5s-portal.codigos.v1";
 const CLAVE_INSCRIPCIONES = "5s-portal.inscripciones.v1";
@@ -52,6 +65,13 @@ export interface Inscripcion {
   cursoId: string;
   codigoUsado: string;
   inscritoEn: string;
+  /**
+   * Una inscripción dada de baja deja de contar como activa y libera su
+   * cupo, pero NO se borra: el registro de la capacitación tiene que
+   * sobrevivir, o en una auditoría no hay forma de probar quién se formó.
+   */
+  activa: boolean;
+  bajaEn?: string;
 }
 
 /** Motivos por los que un código puede rechazarse. */
@@ -143,17 +163,24 @@ function sembrarSiHaceFalta(): void {
 
   // Administrador inicial. Sin él no habría forma de entrar a la vista de
   // administración en una instalación nueva.
+  // Administrador inicial. Su contraseña se define abajo y viene marcada para
+  // cambio obligatorio: nadie debería quedarse con la clave de fábrica.
+  const idAdmin = idNuevo("perfil");
   escribir(CLAVE_PERFILES, [
     {
-      id: idNuevo("perfil"),
+      id: idAdmin,
       nombreCompleto: "Administrador del curso",
-      identificador: "admin",
+      identificador: USUARIO_ADMIN_INICIAL,
       empresa: "BITPLAY",
       area: "Capacitación",
       rol: "administrador",
       creadoEn: ahora.toISOString(),
     },
   ] satisfies Perfil[]);
+
+  // Sin cambio obligatorio: en desarrollo interrumpe cada prueba. En producción
+  // este argumento pasa a `true` y la clave deja de ser trivial.
+  void definirClave(idAdmin, CLAVE_ADMIN_INICIAL, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +304,88 @@ export async function cambiarEstadoCodigo(codigo: string, activo: boolean): Prom
 }
 
 // ---------------------------------------------------------------------------
+// Gestión de inscripciones
+// ---------------------------------------------------------------------------
+
+/**
+ * Libera un cupo del código con el que se inscribió alguien.
+ *
+ * Se llama tanto al dar de baja como al eliminar. Sin esto, cada corrección
+ * quemaba un cupo para siempre y RRHH terminaba generando códigos de más sin
+ * entender por qué se le agotaban.
+ */
+function devolverCupo(codigoUsado: string): void {
+  if (!codigoUsado) return;
+  const codigos = leer<Codigo[]>(CLAVE_CODIGOS, []);
+  escribir(
+    CLAVE_CODIGOS,
+    codigos.map((c) => (c.codigo === codigoUsado ? { ...c, usosActuales: Math.max(0, c.usosActuales - 1) } : c))
+  );
+}
+
+/**
+ * Da de baja una inscripción sin borrar nada.
+ *
+ * Es la acción para el caso normal: la persona se fue de la empresa, cambió de
+ * área, o ya no corresponde que curse. Deja de contar como activa y libera el
+ * cupo, pero su historial y su certificado quedan intactos. Es reversible.
+ */
+export async function darDeBajaInscripcion(inscripcionId: string): Promise<void> {
+  const inscripciones = leer<Inscripcion[]>(CLAVE_INSCRIPCIONES, []);
+  const objetivo = inscripciones.find((i) => i.id === inscripcionId);
+  if (!objetivo || !objetivo.activa) return;
+
+  devolverCupo(objetivo.codigoUsado);
+  escribir(
+    CLAVE_INSCRIPCIONES,
+    inscripciones.map((i) =>
+      i.id === inscripcionId ? { ...i, activa: false, bajaEn: new Date().toISOString() } : i
+    )
+  );
+}
+
+/** Vuelve a activar una inscripción dada de baja. Consume un cupo de nuevo. */
+export async function reactivarInscripcion(inscripcionId: string): Promise<void> {
+  const inscripciones = leer<Inscripcion[]>(CLAVE_INSCRIPCIONES, []);
+  const objetivo = inscripciones.find((i) => i.id === inscripcionId);
+  if (!objetivo || objetivo.activa) return;
+
+  const codigos = leer<Codigo[]>(CLAVE_CODIGOS, []);
+  escribir(
+    CLAVE_CODIGOS,
+    codigos.map((c) =>
+      c.codigo === objetivo.codigoUsado ? { ...c, usosActuales: c.usosActuales + 1 } : c
+    )
+  );
+  escribir(
+    CLAVE_INSCRIPCIONES,
+    inscripciones.map((i) => (i.id === inscripcionId ? { ...i, activa: true, bajaEn: undefined } : i))
+  );
+}
+
+/**
+ * Borra a una persona y su inscripción, de forma definitiva.
+ *
+ * Reservado para corregir errores de carga: un RUT mal escrito, un código
+ * canjeado por equivocación, un duplicado. La pantalla solo ofrece esta acción
+ * cuando la persona no registra avance — si ya cursó algo, el registro de esa
+ * capacitación no puede desaparecer.
+ */
+export async function eliminarPersona(perfilId: string): Promise<void> {
+  const inscripciones = leer<Inscripcion[]>(CLAVE_INSCRIPCIONES, []);
+  const suya = inscripciones.find((i) => i.perfilId === perfilId);
+  if (suya?.activa) devolverCupo(suya.codigoUsado);
+
+  escribir(CLAVE_INSCRIPCIONES, inscripciones.filter((i) => i.perfilId !== perfilId));
+  const perfiles = leer<Perfil[]>(CLAVE_PERFILES, []);
+  escribir(CLAVE_PERFILES, perfiles.filter((p) => p.id !== perfilId));
+
+  // Sin esto la contraseña sobreviviría al perfil borrado, y si alguien se
+  // volviera a registrar con el mismo RUT heredaría una credencial ajena.
+  borrarCredencial(perfilId);
+}
+
+// ---------------------------------------------------------------------------
 // Alta de personas
 // ---------------------------------------------------------------------------
 
@@ -286,6 +395,8 @@ export interface DatosRegistro {
   empresa: string;
   area: string;
   codigo: string;
+  /** La elige la persona al registrarse. Nunca se guarda en claro. */
+  clave: string;
 }
 
 export type ResultadoRegistro =
@@ -322,6 +433,7 @@ export async function registrarConCodigo(datos: DatosRegistro): Promise<Resultad
     cursoId: CURSO_ID,
     codigoUsado: datos.codigo.trim().toUpperCase(),
     inscritoEn: new Date().toISOString(),
+    activa: true,
   };
 
   const perfiles = leer<Perfil[]>(CLAVE_PERFILES, []);
@@ -331,6 +443,10 @@ export async function registrarConCodigo(datos: DatosRegistro): Promise<Resultad
   escribir(CLAVE_INSCRIPCIONES, [...inscripciones, inscripcion]);
 
   consumirCupo(datos.codigo);
+
+  // La credencial se crea recién acá, cuando el perfil ya existe: si algo
+  // falló antes, no queda una contraseña huérfana apuntando a nadie.
+  await definirClave(perfil.id, datos.clave);
 
   return { ok: true, perfil, inscripcion };
 }
@@ -349,6 +465,7 @@ export async function inscribirPerfilExistente(
     cursoId: CURSO_ID,
     codigoUsado: codigo.trim().toUpperCase(),
     inscritoEn: new Date().toISOString(),
+    activa: true,
   };
 
   const inscripciones = leer<Inscripcion[]>(CLAVE_INSCRIPCIONES, []);

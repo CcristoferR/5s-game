@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, ArcRotateCamera, Color3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, ArcRotateCamera, Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { Rectangle, TextBlock, Control } from "@babylonjs/gui";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
@@ -8,6 +8,8 @@ import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { PALETA, TEXTO, RADIO, crearVelo, crearTarjeta, crearRotulo, crearParrafo, crearBotonPrincipal } from "../ui/EstiloUI";
 import { HUD } from "../ui/HUD";
+import { reproducir } from "../core/Sonido";
+import { moverMalla } from "../core/Animacion";
 
 /**
  * Tutorial — cómo se juega.
@@ -34,6 +36,9 @@ import { HUD } from "../ui/HUD";
 
 const POSICION_OBJETO: [number, number, number] = [0, 0.945, -0.5];
 const X_ZONA = 0;
+// Mismas medidas que usa DropZone, para que "dentro" signifique dentro.
+const Z_ZONA = 2.4;
+const LADO_ZONA = 2.2;
 
 interface PasoTutorial {
   rotulo: string;
@@ -74,11 +79,44 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
 
   habilitarEtiquetasAlPasar(scene, gui, [{ mesh: objeto.mesh, texto: "Taza con café viejo" }]);
 
+  // La zona empieza oculta. Mostrarla desde el arranque distrae: durante los
+  // tres primeros pasos el jugador no tiene nada que hacer con ella, y un
+  // recuadro verde brillante en el piso pide a gritos que lo usen.
   const zona = crearDropZone(scene, "descartar", X_ZONA, new Color3(0.2, 0.7, 0.3), gui, "SUÉLTALO AQUÍ");
+  zona.mesh.isVisible = false;
+  const piezasZona = zona.mesh.getChildMeshes();
+  piezasZona.forEach((pieza) => (pieza.isVisible = false));
+
+  function mostrarZona(): void {
+    zona.mesh.isVisible = true;
+    piezasZona.forEach((pieza) => (pieza.isVisible = true));
+  }
+
+  // Halo pulsante en el piso, debajo del objeto. Es la forma más directa de
+  // decir "este de acá" sin una flecha que tape media pantalla.
+  const halo = MeshBuilder.CreateTorus("haloTutorial", { diameter: 0.62, thickness: 0.028, tessellation: 40 }, scene);
+  const matHalo = new StandardMaterial("matHaloTutorial", scene);
+  matHalo.emissiveColor = new Color3(0.35, 0.85, 0.55);
+  matHalo.disableLighting = true;
+  halo.material = matHalo;
+  halo.position.set(POSICION_OBJETO[0], 0.951, POSICION_OBJETO[2]);
+  halo.isPickable = false;
+  halo.isVisible = false;
+
+  let pulso = 0;
+  scene.onBeforeRenderObservable.add(() => {
+    if (!halo.isVisible) return;
+    pulso += scene.getEngine().getDeltaTime() / 1000;
+    const escala = 1 + Math.sin(pulso * 3) * 0.09;
+    halo.scaling.set(escala, 1, escala);
+    matHalo.alpha = 0.55 + Math.sin(pulso * 3) * 0.25;
+  });
 
   const camara = scene.activeCamera as ArcRotateCamera;
   const alphaInicial = camara?.alpha ?? 0;
   const radioInicial = camara?.radius ?? 9;
+
+  const tarjeta = crearTarjetaPaso(gui);
 
   const pasos: PasoTutorial[] = [
     {
@@ -110,6 +148,7 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
       detalle:
         "Pasa el cursor por encima de la taza que está sobre el banco. Aparece su nombre: así sabes qué es cada cosa antes de clasificarla.",
       vigilar: (completar) => {
+        halo.isVisible = true;
         const obs = scene.onPointerObservable.add((info) => {
           const tocado = info.pickInfo?.pickedMesh;
           if (tocado && (tocado === objeto.mesh || tocado.isDescendantOf(objeto.mesh))) completar();
@@ -123,16 +162,49 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
       detalle:
         "Mantén apretado el botón izquierdo sobre la taza y llévala hasta el recuadro verde del piso. Suéltala ahí. Así se clasifica en todos los niveles.",
       vigilar: (completar) => {
+        mostrarZona();
+        // El halo salta del objeto al centro de la zona: ahora el destino es
+        // lo que hay que señalar, no el objeto.
+        halo.isVisible = true;
+        halo.position.set(X_ZONA, 0.02, Z_ZONA);
+        halo.scaling.setAll(3.4);
+
         const obs = objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
           if (!movioSuficiente) return;
-          if (Math.abs(mesh.position.x - X_ZONA) < 1.3) completar();
+
+          // Se exige soltar DENTRO del recuadro, no cerca. Con un margen laxo
+          // el paso se daba por bueno soltando en cualquier parte, y el
+          // jugador no aprendía que la zona importa.
+          const dentro =
+            Math.abs(mesh.position.x - X_ZONA) < LADO_ZONA / 2 &&
+            Math.abs(mesh.position.z - Z_ZONA) < LADO_ZONA / 2;
+
+          if (dentro) {
+            // Mismo acomodo que en los cinco niveles: se fija el objeto y se lo
+            // baja al piso con una animación corta. Sin esto la taza quedaba
+            // flotando a la altura del banco sobre el recuadro, proyectando su
+            // sombra lejos de la base — la escena se veía rota justo en el paso
+            // que enseña a soltar.
+            objeto.fijar();
+            moverMalla(scene, mesh, new Vector3(X_ZONA, 0.012, Z_ZONA), 320);
+            completar();
+            return;
+          }
+
+          // Fallar acá no penaliza: solo se corrige el rumbo. Es un tutorial,
+          // y quien todavía no domina el arrastre no debe sentirse castigado.
+          tarjeta.detalle.text = "Casi. Suéltala dentro del recuadro verde del piso, no al lado.";
+
+          // Y vuelve al banco, igual que en los cinco niveles. Sin esto quedaba
+          // suspendida en el aire a la altura del tablero, con su sombra lejos
+          // de la base: justo la imagen rota que el tutorial no debe dejar.
+          moverMalla(scene, mesh, new Vector3(...POSICION_OBJETO), 300);
         });
         return () => objeto.onSoltar.remove(obs);
       },
     },
   ];
 
-  const tarjeta = crearTarjetaPaso(gui);
   let indice = 0;
   let bajaActual: (() => void) | null = null;
   let terminado = false;
@@ -165,6 +237,7 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
       bajaActual = null;
     }
     tarjeta.marca.isVisible = true;
+    reproducir("acierto");
     tarjeta.avance.width = Math.round(((indice + 1) / pasos.length) * 100) + "%";
     indice++;
     // Medio segundo para que se vea la palomita antes de pasar al siguiente:
@@ -176,10 +249,71 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
 
   function cerrar(): void {
     terminado = true;
+    halo.isVisible = false;
+    botonSaltar.isVisible = false;
     tarjeta.contenedor.isVisible = false;
     onCompletado();
     mostrarCierre(gui, onVolverMenu);
   }
+
+  // Saltar el tutorial.
+  //
+  // Antes era texto suelto con una zona transparente encima y no respondía:
+  // el cartel de retroalimentación del HUD trabaja en zIndex 40 y se comía el
+  // clic. Ahora es un botón con su propio fondo, borde y zIndex por encima,
+  // que además se ve como algo en lo que se puede hacer clic.
+  const botonSaltar = new Rectangle("botonSaltarTutorial");
+  botonSaltar.width = "168px";
+  botonSaltar.height = "40px";
+  botonSaltar.cornerRadius = RADIO;
+  botonSaltar.thickness = 1;
+  botonSaltar.color = PALETA.borde;
+  botonSaltar.background = PALETA.tarjeta;
+  botonSaltar.left = "-28px";
+  botonSaltar.top = "28px";
+  botonSaltar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+  botonSaltar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  botonSaltar.isPointerBlocker = true;
+  botonSaltar.hoverCursor = "pointer";
+  botonSaltar.zIndex = 45;
+  botonSaltar.alpha = 0.92;
+  gui.addControl(botonSaltar);
+
+  const textoSaltar = new TextBlock("textoSaltarTutorial", "Saltar tutorial");
+  textoSaltar.color = PALETA.cuerpo;
+  textoSaltar.fontSize = TEXTO.menor;
+  textoSaltar.left = "-8px";
+  textoSaltar.isHitTestVisible = false;
+  botonSaltar.addControl(textoSaltar);
+
+  const flechaSaltar = new TextBlock("flechaSaltarTutorial", "\u203A");
+  flechaSaltar.color = PALETA.rotulo;
+  flechaSaltar.fontSize = 20;
+  flechaSaltar.width = "20px";
+  flechaSaltar.left = "-14px";
+  flechaSaltar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+  flechaSaltar.isHitTestVisible = false;
+  botonSaltar.addControl(flechaSaltar);
+
+  botonSaltar.onPointerEnterObservable.add(() => {
+    botonSaltar.background = PALETA.tarjetaSuave;
+    botonSaltar.color = PALETA.acierto;
+    textoSaltar.color = PALETA.titulo;
+    flechaSaltar.left = "-9px";
+  });
+  botonSaltar.onPointerOutObservable.add(() => {
+    botonSaltar.background = PALETA.tarjeta;
+    botonSaltar.color = PALETA.borde;
+    textoSaltar.color = PALETA.cuerpo;
+    flechaSaltar.left = "-14px";
+  });
+  botonSaltar.onPointerUpObservable.add(() => {
+    if (terminado) return;
+    if (bajaActual) bajaActual();
+    bajaActual = null;
+    reproducir("boton");
+    cerrar();
+  });
 
   iniciarPaso();
 

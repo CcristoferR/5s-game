@@ -1,4 +1,5 @@
 import type { Perfil } from "./Datos";
+import { listarPerfiles, type RolUsuario } from "./Datos";
 
 /**
  * Sesión abierta.
@@ -28,6 +29,31 @@ export function leerSesion(): Sesion | null {
     return dato as Sesion;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Devuelve el rol REAL de quien tiene la sesión abierta.
+ *
+ * La sesión guardada no es fuente de verdad: vive en el navegador y cualquiera
+ * puede abrir las herramientas de desarrollo y cambiar "trabajador" por
+ * "administrador". Por eso el rol se vuelve a leer del registro de perfiles
+ * antes de decidir qué pantalla abrir, y ante cualquier duda se degrada a
+ * trabajador — el permiso menor, nunca el mayor.
+ *
+ * Esto sigue sin ser una barrera real: el registro de perfiles también está en
+ * el navegador y también se puede editar. Lo que hace es dejar la comprobación
+ * en el lugar correcto, para que al llegar el servidor solo cambie de dónde
+ * viene el dato.
+ */
+export async function rolVerificado(sesion: Sesion): Promise<RolUsuario> {
+  try {
+    const perfiles = await listarPerfiles();
+    const real = perfiles.find((p) => p.id === sesion.perfil.id);
+    if (!real) return "trabajador";
+    return real.rol;
+  } catch {
+    return "trabajador";
   }
 }
 

@@ -7,6 +7,7 @@ import {
   tieneInscripcion,
   type Perfil,
 } from "./Datos";
+import { verificarCredenciales, revisarClave, definirClave } from "./Credenciales";
 import { abrirSesion } from "./Sesion";
 
 /**
@@ -84,10 +85,48 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
       return;
     }
 
-    const perfil = await buscarPerfilPorIdentificador(identificador);
-    if (!perfil) {
-      mostrarAviso("No encontramos a nadie con ese dato. Si es tu primera vez, usa la pestaña Registrarme.");
+    const clave = $<HTMLInputElement>("#ingresoClave").value;
+    if (!clave) {
+      mostrarAviso("Escribe tu contraseña.");
       return;
+    }
+
+    const perfil = await buscarPerfilPorIdentificador(identificador);
+
+    // Se verifica SIEMPRE, exista o no el perfil, y el aviso es el mismo en
+    // los dos casos. Decir "ese usuario no existe" confirmaría qué RUT están
+    // registrados, que es lo primero que un atacante quiere averiguar.
+    const verificacion = await verificarCredenciales(identificador, perfil?.id ?? null, clave);
+
+    if (!verificacion.ok) {
+      if (verificacion.motivo === "bloqueado") {
+        mostrarAviso(
+          `Demasiados intentos fallidos. Vuelve a probar en ${verificacion.minutosRestantes} minutos.`
+        );
+      } else {
+        mostrarAviso("El RUT o la contraseña no coinciden.");
+      }
+      return;
+    }
+
+    if (!perfil) {
+      mostrarAviso("El RUT o la contraseña no coinciden.");
+      return;
+    }
+
+    // Clave temporal entregada por el administrador: hay que cambiarla antes
+    // de seguir, o quedaría circulando una contraseña que un tercero conoce.
+    if (verificacion.debeCambiar) {
+      const nueva = window.prompt(
+        "Tu contraseña fue restablecida.\n\nEscribe una nueva (mínimo 8 caracteres):"
+      );
+      if (!nueva) return;
+      const revision = revisarClave(nueva);
+      if (!revision.ok) {
+        mostrarAviso(revision.motivo!);
+        return;
+      }
+      await definirClave(perfil.id, nueva);
     }
 
     // El administrador entra sin inscripción: no hace el curso, lo administra.
@@ -123,10 +162,25 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
       empresa: $<HTMLInputElement>("#regEmpresa").value.trim(),
       area: $<HTMLInputElement>("#regArea").value.trim(),
       codigo: $<HTMLInputElement>("#regCodigo").value.trim(),
+      clave: $<HTMLInputElement>("#regClave").value,
     };
+    const claveRepetida = $<HTMLInputElement>("#regClave2").value;
 
     if (!datos.nombreCompleto || !datos.identificador || !datos.codigo) {
       mostrarAviso("Completa tu nombre, tu RUT o ficha y el código.");
+      return;
+    }
+
+    const revision = revisarClave(datos.clave);
+    if (!revision.ok) {
+      mostrarAviso(revision.motivo!);
+      return;
+    }
+
+    // Repetirla evita el caso más común y más molesto: registrarse con una
+    // contraseña mal tipeada y quedar afuera desde el primer día.
+    if (datos.clave !== claveRepetida) {
+      mostrarAviso("Las dos contraseñas no coinciden.");
       return;
     }
 
@@ -170,8 +224,18 @@ function plantilla(): string {
             <input class="portal__entrada" id="ingresoIdentificador" name="identificador"
                    autocomplete="username" placeholder="12345678-9" />
           </div>
-          <p class="portal__ayuda">Es el mismo dato con el que te registraste.</p>
+
+          <div class="portal__campo">
+            <label class="portal__etiqueta" for="ingresoClave">Contraseña</label>
+            <input class="portal__entrada" id="ingresoClave" name="password" type="password"
+                   autocomplete="current-password" placeholder="Tu contraseña" />
+          </div>
+
           <button class="portal__boton" type="submit">Entrar al curso</button>
+
+          <p class="portal__ayuda portal__ayuda--bajoBoton">
+            ¿Olvidaste tu contraseña? Pídele a tu supervisor que te la restablezca.
+          </p>
         </form>
 
         <form id="formRegistro" novalidate hidden>
@@ -200,6 +264,23 @@ function plantilla(): string {
             <label class="portal__etiqueta" for="regCodigo">Código de acceso</label>
             <input class="portal__entrada portal__entrada--codigo" id="regCodigo" placeholder="5S-XXXXX-XXXX" />
           </div>
+
+          <div class="portal__campo">
+            <label class="portal__etiqueta" for="regClave">Crea tu contraseña</label>
+            <input class="portal__entrada" id="regClave" type="password"
+                   autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
+          </div>
+
+          <div class="portal__campo">
+            <label class="portal__etiqueta" for="regClave2">Repite la contraseña</label>
+            <input class="portal__entrada" id="regClave2" type="password"
+                   autocomplete="new-password" placeholder="La misma otra vez" />
+          </div>
+
+          <p class="portal__ayuda">
+            La contraseña la vas a necesitar cada vez que entres. El código solo se pide
+            ahora, al registrarte.
+          </p>
           <p class="portal__ayuda">Te lo entrega tu supervisor. Cada código sirve para una cantidad limitada de personas.</p>
 
           <button class="portal__boton" type="submit">Registrarme y entrar</button>

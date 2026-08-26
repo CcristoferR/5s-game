@@ -175,10 +175,20 @@
   flex: 1;
 }
 
+/* Nota bajo un campo: se pega a él con margen superior negativo, porque
+   pertenece al campo que tiene encima. */
 .portal__ayuda {
   margin: -8px 0 18px;
   font-size: 14px;
+  line-height: 1.5;
   color: var(--portal-rotulo);
+}
+
+/* Nota bajo un botón. Necesita su propio espacio: con el margen negativo de
+   arriba se montaba encima del botón y el texto quedaba tapado. */
+.portal__ayuda--bajoBoton {
+  margin: 14px 0 0;
+  text-align: center;
 }
 
 /* --- Botones --- */
@@ -364,4 +374,89 @@
   .portal__tablaEnvoltura {
     overflow-x: auto;
   }
+}
+/* ---------------------------------------------------------------------------
+   Estado y acciones de una inscripción
+   ---------------------------------------------------------------------------
+
+   Dar de baja y eliminar son acciones de distinto peso, y el estilo lo dice:
+   la primera es un botón neutro más; la segunda se tiñe de rojo solo cuando
+   ya está pidiendo confirmación, para no gritar antes de tiempo.
+   --------------------------------------------------------------------------- */
+
+.portal__estado {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.portal__estado--activo {
+  color: var(--portal-acierto);
+  border-color: rgba(127, 180, 149, 0.35);
+  background: rgba(127, 180, 149, 0.10);
+}
+
+.portal__estado--baja {
+  color: var(--portal-rotulo);
+  border-color: var(--portal-borde);
+}
+
+.portal__estado--neutro {
+  color: var(--portal-aviso);
+  border-color: rgba(189, 160, 121, 0.3);
+}
+
+/* La fila dada de baja se atenúa, pero sigue legible: es historial, no basura. */
+.portal__fila--baja td {
+  opacity: 0.55;
+}
+
+.portal__acciones {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.portal__accion {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--portal-borde);
+  background: transparent;
+  color: var(--portal-cuerpo);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.portal__accion:hover {
+  color: var(--portal-titulo);
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.portal__accion--riesgo:hover {
+  color: var(--portal-error);
+  border-color: rgba(201, 141, 128, 0.45);
+  background: rgba(201, 141, 128, 0.08);
+}
+
+/* Segundo clic pendiente: acá sí conviene que se note. */
+.portal__accion--confirma,
+.portal__accion--confirma:hover {
+  color: #f0d6d0;
+  border-color: rgba(201, 141, 128, 0.75);
+  background: rgba(201, 141, 128, 0.20);
+}
+
+.portal__nota {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--portal-rotulo);
 }

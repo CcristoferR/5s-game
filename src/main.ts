@@ -5,7 +5,7 @@ import { setupXR } from "./core/XRManager";
 import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir } from "./core/Sonido";
 import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
-import { leerSesion, cerrarSesion } from "./portal/Sesion";
+import { leerSesion, cerrarSesion, rolVerificado } from "./portal/Sesion";
 import type { Perfil } from "./portal/Datos";
 import { cargarTutorial } from "./levels/Level0_Tutorial";
 import { cargarNivel1 } from "./levels/Level1_Seiri";
@@ -68,7 +68,9 @@ function mostrarMenu(): void {
     gameManager.getPorcentajeMadurez(),
     (numeroNivel) => cargarNivel(numeroNivel),
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
-    () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu())
+    () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu()),
+    leerSesion()?.perfil.nombreCompleto,
+    () => salirDeLaSesion()
   );
   // OJO: aca NO va attachControl ni setupXR.
   //
@@ -151,6 +153,23 @@ function cargarNivel(numeroNivel: number): void {
 //
 // El administrador no entra al juego: su sesión lo lleva a la vista de
 // administración. No tendría sentido mandarlo a clasificar herramientas.
+// Cierra la sesión y vuelve a la puerta.
+//
+// El ambiente del taller se corta acá: si el jugador sale desde el menú, la
+// escena no se recrea y el sonido seguiría sonando detrás del formulario.
+//
+// El progreso NO se borra. Es del navegador, no de la sesión: si la misma
+// persona vuelve a entrar en el mismo equipo, retoma donde quedó. Cuando el
+// progreso viva en el servidor, pasará a viajar con la cuenta.
+function salirDeLaSesion(): void {
+  detenerAmbiente();
+  cerrarSesion();
+  mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+}
+
+// El rol que trae el perfil recién autenticado sí es confiable: viene del
+// registro, no de la sesión guardada. Esta variante se usa al entrar por la
+// puerta. Para una sesión ya abierta se usa abrirSesionGuardada, que revalida.
 function abrirSegunRol(perfil: Perfil): void {
   if (perfil.rol === "administrador") {
     mostrarAdministracion(() => {
@@ -164,15 +183,26 @@ function abrirSegunRol(perfil: Perfil): void {
   mostrarMenu();
 }
 
-function arrancar(): void {
+// Abre lo que corresponda a una sesión guardada, revalidando el rol.
+//
+// Sin esto bastaba con editar la sesión en el navegador y cambiar el rol a
+// "administrador" para entrar al panel: el rol se leía del mismo dato que el
+// usuario controla.
+async function abrirSesionGuardada(): Promise<void> {
   const sesion = leerSesion();
-
-  if (sesion) {
-    abrirSegunRol(sesion.perfil);
+  if (!sesion) {
+    mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
     return;
   }
 
-  mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+  const rol = await rolVerificado(sesion);
+  abrirSegunRol({ ...sesion.perfil, rol });
+}
+
+function arrancar(): void {
+  // El rol de una sesión guardada NO se acepta tal cual: se revalida contra el
+  // registro de perfiles antes de decidir a qué pantalla se entra.
+  void abrirSesionGuardada();
 }
 
 // Prepara los efectos y engancha el desbloqueo del audio al primer clic: los

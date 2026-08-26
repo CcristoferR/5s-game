@@ -41,7 +41,11 @@ export function mostrarMenuPrincipal(
   porcentajeMadurez: number,
   onSeleccionarNivel: (numero: number) => void,
   onVerCertificado: () => void,
-  onVerRanking: () => void
+  onVerRanking: () => void,
+  /** Nombre de quien tiene la sesion abierta. Se muestra en la cabecera. */
+  usuario?: string,
+  /** Si se pasa, aparece el boton para salir de la sesion. */
+  onCerrarSesion?: () => void
 ): { ocultar: () => void } {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("menuPrincipal", true, scene);
 
@@ -82,7 +86,7 @@ export function mostrarMenuPrincipal(
   columna.width = ANCHO - 2 + "px";
   panel.addControl(columna);
 
-  columna.addControl(crearCabecera());
+  columna.addControl(crearCabecera(usuario));
   columna.addControl(separador("sepCabecera"));
 
   const filas: Array<{ marco: Rectangle; zona: Button; nivel: NivelMenuInfo }> = [];
@@ -97,7 +101,7 @@ export function mostrarMenuPrincipal(
   const progreso = crearProgreso(completadas, fases.length);
   columna.addControl(progreso.bloque);
 
-  const pie = crearPie(certificadoListo);
+  const pie = crearPie(certificadoListo, Boolean(onCerrarSesion));
   columna.addControl(pie.barra);
 
   // --- Interaccion ---
@@ -140,6 +144,10 @@ export function mostrarMenuPrincipal(
   // El ranking cierra el menu igual que el certificado: RankingScreen monta
   // su propia capa y al cerrarse vuelve a llamar a mostrarMenu().
   pie.ranking.onPointerUpObservable.add(() => cerrar(() => onVerRanking()));
+
+  if (pie.salir && onCerrarSesion) {
+    pie.salir.onPointerUpObservable.add(() => cerrar(() => onCerrarSesion()));
+  }
 
   if (pie.certificado) {
     pie.certificado.onPointerUpObservable.add(() => cerrar(() => onVerCertificado()));
@@ -210,7 +218,7 @@ function crearFondo(): Image {
 // cualquier equipo. Los emoji dependen de la fuente del sistema.
 function crearIcono(
   nombre: string,
-  tipo: "candado" | "check" | "flecha" | "sello" | "copa",
+  tipo: "candado" | "check" | "flecha" | "sello" | "copa" | "salida",
   color: string,
   tamano: number
 ): Image {
@@ -246,6 +254,23 @@ function crearIcono(
     ctx.moveTo(10, 5.8);
     ctx.lineTo(16.2, 12);
     ctx.lineTo(10, 18.2);
+    ctx.stroke();
+  } else if (tipo === "salida") {
+    // Puerta con flecha saliendo: el simbolo universal de cerrar sesion.
+    ctx.beginPath();
+    ctx.moveTo(13.5, 4.5);
+    ctx.lineTo(5.5, 4.5);
+    ctx.lineTo(5.5, 19.5);
+    ctx.lineTo(13.5, 19.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(11, 12);
+    ctx.lineTo(20, 12);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(16.8, 8.4);
+    ctx.lineTo(20.4, 12);
+    ctx.lineTo(16.8, 15.6);
     ctx.stroke();
   } else if (tipo === "copa") {
     ctx.beginPath();
@@ -317,7 +342,7 @@ function trazarRectRedondo(ctx: CanvasRenderingContext2D, x: number, y: number, 
 // Cabecera
 // ---------------------------------------------------------------------------
 
-function crearCabecera(): Rectangle {
+function crearCabecera(usuario?: string): Rectangle {
   const cabecera = new Rectangle("cabeceraMenu");
   cabecera.width = ANCHO - 2 + "px";
   cabecera.height = "118px";
@@ -332,6 +357,23 @@ function crearCabecera(): Rectangle {
   titulo.top = "26px";
   titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   cabecera.addControl(titulo);
+
+  // Quien esta jugando, arriba a la izquierda. Sin esto, en un computador
+  // compartido de planta nadie sabe con que sesion esta abierto el curso.
+  if (usuario) {
+    const identidad = new TextBlock("usuarioMenu", usuario);
+    identidad.color = C.secundario;
+    identidad.fontSize = 13;
+    identidad.width = "300px";
+    identidad.height = "20px";
+    identidad.left = "26px";
+    identidad.top = "18px";
+    identidad.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    identidad.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    identidad.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    identidad.isHitTestVisible = false;
+    cabecera.addControl(identidad);
+  }
 
   const bajada = new TextBlock("bajadaMenu", BAJADA);
   bajada.color = C.secundario;
@@ -571,10 +613,11 @@ function crearProgreso(completadas: number, totalFases: number): {
 // Barra inferior: ranking + certificado
 // ---------------------------------------------------------------------------
 
-function crearPie(certificadoListo: boolean): {
+function crearPie(certificadoListo: boolean, conSesion: boolean): {
   barra: Rectangle;
   ranking: Button;
   certificado: Button | null;
+  salir: Button | null;
 } {
   const barra = new Rectangle("barraPie");
   barra.width = ANCHO - 54 + "px";
@@ -587,6 +630,18 @@ function crearPie(certificadoListo: boolean): {
   barra.addControl(ranking);
 
   let certificado: Button | null = null;
+  let salir: Button | null = null;
+
+  // Salir de la sesion, junto al Ranking. Centrado se solapaba con la nota
+  // del certificado, que ocupa 400 px a la derecha. Siempre visible: en un
+  // equipo compartido, el turno siguiente tiene que poder entrar con su
+  // propia cuenta sin recargar la pagina.
+  if (conSesion) {
+    salir = crearBotonPie("botonSalir", "Cerrar sesión", "salida", C.terciario, 158);
+    salir.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    salir.left = "150px";
+    barra.addControl(salir);
+  }
 
   if (certificadoListo) {
     certificado = crearBotonPie("botonCertificado", "Ver certificado", "sello", C.acento, 192);
@@ -602,14 +657,14 @@ function crearPie(certificadoListo: boolean): {
     barra.addControl(nota);
   }
 
-  return { barra, ranking, certificado };
+  return { barra, ranking, certificado, salir };
 }
 
 // Boton de la barra inferior: icono + texto, borde fino, sin relleno.
 function crearBotonPie(
   nombre: string,
   etiqueta: string,
-  icono: "copa" | "sello",
+  icono: "copa" | "sello" | "salida",
   color: string,
   ancho: number
 ): Button {

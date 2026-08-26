@@ -1,6 +1,9 @@
 import "./portal.css";
 import {
   cambiarEstadoCodigo,
+  darDeBajaInscripcion,
+  reactivarInscripcion,
+  eliminarPersona,
   crearCodigo,
   listarCodigos,
   listarInscripciones,
@@ -9,6 +12,7 @@ import {
   type Inscripcion,
   type Perfil,
 } from "./Datos";
+import { restablecerClave, generarClaveTemporal } from "./Credenciales";
 import { cerrarSesion } from "./Sesion";
 
 /**
@@ -85,6 +89,63 @@ export function mostrarAdministracion(onSalir: () => void): void {
         await pintar();
       });
     });
+
+    // Restablecer contraseña. En planta no todos tienen correo, así que no hay
+    // enlaces de recuperación: el administrador genera una clave temporal y se
+    // la dicta a la persona, que está obligada a cambiarla al entrar.
+    raiz.querySelectorAll<HTMLButtonElement>("[data-clave]").forEach((boton) => {
+      boton.addEventListener("click", async () => {
+        const temporal = generarClaveTemporal();
+        await restablecerClave(boton.dataset.clave!, temporal);
+        avisar(
+          `Clave temporal: ${temporal} — dísela a la persona. Deberá cambiarla al entrar.`,
+          "ok"
+        );
+      });
+    });
+
+    raiz.querySelectorAll<HTMLButtonElement>("[data-baja]").forEach((boton) => {
+      boton.addEventListener("click", async () => {
+        await darDeBajaInscripcion(boton.dataset.baja!);
+        await pintar();
+        avisar("Inscripción dada de baja. El cupo del código quedó libre.", "ok");
+      });
+    });
+
+    raiz.querySelectorAll<HTMLButtonElement>("[data-reactivar]").forEach((boton) => {
+      boton.addEventListener("click", async () => {
+        await reactivarInscripcion(boton.dataset.reactivar!);
+        await pintar();
+        avisar("Inscripción reactivada.", "ok");
+      });
+    });
+
+    // Eliminar borra el registro y no se puede deshacer, así que pide una
+    // confirmación en el propio botón: el primer clic avisa, el segundo
+    // ejecuta. Sin ventanas encima de ventanas, igual que en el ranking.
+    raiz.querySelectorAll<HTMLButtonElement>("[data-eliminar]").forEach((boton) => {
+      let confirmando = false;
+      boton.addEventListener("click", async () => {
+        if (!confirmando) {
+          confirmando = true;
+          boton.textContent = "Confirmar";
+          boton.classList.add("portal__accion--confirma");
+          return;
+        }
+        await eliminarPersona(boton.dataset.eliminar!);
+        await pintar();
+        avisar("Registro eliminado.", "ok");
+      });
+    });
+  }
+
+  // Banda de aviso, compartida por todas las acciones de la pantalla.
+  function avisar(texto: string, tipo: "ok" | "error"): void {
+    const banda = raiz.querySelector<HTMLParagraphElement>("#avisoAdmin");
+    if (!banda) return;
+    banda.textContent = texto;
+    banda.className = `portal__aviso portal__aviso--${tipo}`;
+    banda.hidden = false;
   }
 }
 
@@ -205,14 +266,51 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string
   const filas = perfiles
     .map((p) => {
       const inscripcion = inscripciones.find((i) => i.perfilId === p.id);
+      const activa = inscripcion?.activa ?? false;
+
+      // El avance vive hoy en el navegador de cada equipo, no acá. Hasta que
+      // el progreso viaje al servidor se asume sin avance, que es el caso en
+      // el que eliminar es seguro. Cuando el dato exista, esta línea es lo
+      // único que cambia.
+      const sinAvance = true;
+
+      const estado = !inscripcion
+        ? `<span class="portal__estado portal__estado--neutro">Sin inscripción</span>`
+        : activa
+          ? `<span class="portal__estado portal__estado--activo">Activa</span>`
+          : `<span class="portal__estado portal__estado--baja">De baja</span>`;
+
+      // Dos acciones distintas a propósito. Dar de baja es lo cotidiano y es
+      // reversible; eliminar borra el registro y solo se ofrece cuando no hay
+      // nada que perder.
+      const acciones: string[] = [];
+      if (inscripcion && activa) {
+        acciones.push(
+          `<button class="portal__accion" data-clave="${p.id}">Restablecer clave</button>`,
+          `<button class="portal__accion" data-baja="${inscripcion.id}">Dar de baja</button>`
+        );
+      }
+      if (inscripcion && !activa) {
+        acciones.push(
+          `<button class="portal__accion" data-reactivar="${inscripcion.id}">Reactivar</button>`
+        );
+      }
+      if (sinAvance) {
+        acciones.push(
+          `<button class="portal__accion portal__accion--riesgo" data-eliminar="${p.id}">Eliminar</button>`
+        );
+      }
+
       return `
-        <tr>
+        <tr class="${activa || !inscripcion ? "" : "portal__fila--baja"}">
           <td>${p.nombreCompleto}</td>
           <td>${p.identificador}</td>
           <td>${p.empresa || "—"}</td>
           <td>${p.area || "—"}</td>
           <td class="portal__codigo">${inscripcion?.codigoUsado ?? "—"}</td>
-          <td>${inscripcion ? fecha(inscripcion.inscritoEn) : "Sin inscripción"}</td>
+          <td>${inscripcion ? fecha(inscripcion.inscritoEn) : "—"}</td>
+          <td>${estado}</td>
+          <td class="portal__acciones">${acciones.join("")}</td>
         </tr>`;
     })
     .join("");
@@ -221,11 +319,16 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string
     <table class="portal__tabla">
       <thead>
         <tr>
-          <th>Nombre</th><th>RUT / ficha</th><th>Empresa</th><th>Área</th><th>Código usado</th><th>Inscripción</th>
+          <th>Nombre</th><th>RUT / ficha</th><th>Empresa</th><th>Área</th>
+          <th>Código usado</th><th>Inscripción</th><th>Estado</th><th></th>
         </tr>
       </thead>
       <tbody>${filas}</tbody>
-    </table>`;
+    </table>
+    <p class="portal__nota">
+      Dar de baja libera el cupo del código y conserva el historial de la persona.
+      Eliminar borra el registro y solo está disponible mientras no haya avance.
+    </p>`;
 }
 
 function fecha(iso: string): string {
