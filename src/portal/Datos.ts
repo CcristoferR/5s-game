@@ -31,8 +31,47 @@ export const CLAVE_ADMIN_INICIAL = "123";
 const CLAVE_PERFILES = "5s-portal.perfiles.v1";
 const CLAVE_CODIGOS = "5s-portal.codigos.v1";
 const CLAVE_INSCRIPCIONES = "5s-portal.inscripciones.v1";
+const CLAVE_CURSOS = "5s-portal.cursos.v1";
+const CLAVE_PROGRESO = "5s-portal.progreso.v1";
 
 export const CURSO_ID = "curso-5s-operaciones";
+
+/**
+ * Un curso de la plataforma.
+ *
+ * Hoy el 5S es el único, pero la plataforma existe para alojar varios. Los
+ * datos del curso viven en una tabla y no incrustados en el código para que
+ * agregar el siguiente sea cargar una fila, no tocar pantallas.
+ */
+export interface Curso {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  /** Cuántas etapas tiene. El 5S tiene 5, otro curso puede tener otra cifra. */
+  totalFases: number;
+  /** Minutos estimados. Se muestra en la tarjeta del catálogo. */
+  duracionMinutos: number;
+  /** Un curso retirado deja de aparecer en el catálogo, pero no se borra. */
+  activo: boolean;
+  creadoEn: string;
+}
+
+/**
+ * Avance de una persona en un curso.
+ *
+ * Es por persona Y por curso: la misma cuenta puede ir por la fase 3 del 5S y
+ * no haber empezado el de seguridad. Hasta ahora el progreso vivía suelto en
+ * el navegador y no distinguía ni de quién era ni de qué curso.
+ */
+export interface Progreso {
+  perfilId: string;
+  cursoId: string;
+  /** Fases ya aprobadas. Su cantidad es lo que se muestra en la tarjeta. */
+  fasesCompletadas: number[];
+  puntaje: number;
+  actualizadoEn: string;
+  completadoEn?: string;
+}
 
 export type RolUsuario = "trabajador" | "administrador";
 
@@ -123,6 +162,23 @@ function idNuevo(prefijo: string): string {
  * puedan probar de verdad y no solo con el camino feliz.
  */
 function sembrarSiHaceFalta(): void {
+  // El catálogo se siembra aparte de los códigos: si mañana se agrega un curso
+  // nuevo, tiene que aparecer aunque los códigos ya existan.
+  if (leer<Curso[]>(CLAVE_CURSOS, []).length === 0) {
+    escribir(CLAVE_CURSOS, [
+      {
+        id: CURSO_ID,
+        nombre: "Operación 5S",
+        descripcion:
+          "Recorre las cinco fases de la metodología 5S dentro de un taller real: clasificar, ordenar, limpiar, estandarizar y sostener.",
+        totalFases: 5,
+        duracionMinutos: 35,
+        activo: true,
+        creadoEn: new Date().toISOString(),
+      },
+    ] satisfies Curso[]);
+  }
+
   if (leer<Codigo[]>(CLAVE_CODIGOS, []).length > 0) return;
 
   const ahora = new Date();
@@ -186,6 +242,113 @@ function sembrarSiHaceFalta(): void {
 // ---------------------------------------------------------------------------
 // Consultas
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Cursos
+// ---------------------------------------------------------------------------
+
+export async function listarCursos(): Promise<Curso[]> {
+  sembrarSiHaceFalta();
+  return leer<Curso[]>(CLAVE_CURSOS, []);
+}
+
+/** Solo los que se muestran en el catálogo. Un curso retirado no se borra. */
+export async function listarCursosActivos(): Promise<Curso[]> {
+  return (await listarCursos()).filter((c) => c.activo);
+}
+
+export async function buscarCurso(cursoId: string): Promise<Curso | null> {
+  return (await listarCursos()).find((c) => c.id === cursoId) ?? null;
+}
+
+export async function crearCurso(datos: {
+  nombre: string;
+  descripcion: string;
+  totalFases: number;
+  duracionMinutos: number;
+}): Promise<Curso> {
+  const cursos = await listarCursos();
+  const nuevo: Curso = {
+    id: idNuevo("curso"),
+    nombre: datos.nombre.trim(),
+    descripcion: datos.descripcion.trim(),
+    totalFases: Math.max(1, Math.round(datos.totalFases)),
+    duracionMinutos: Math.max(1, Math.round(datos.duracionMinutos)),
+    activo: true,
+    creadoEn: new Date().toISOString(),
+  };
+  escribir(CLAVE_CURSOS, [...cursos, nuevo]);
+  return nuevo;
+}
+
+export async function cambiarEstadoCurso(cursoId: string, activo: boolean): Promise<void> {
+  const cursos = await listarCursos();
+  escribir(CLAVE_CURSOS, cursos.map((c) => (c.id === cursoId ? { ...c, activo } : c)));
+}
+
+// ---------------------------------------------------------------------------
+// Progreso
+// ---------------------------------------------------------------------------
+
+export async function listarProgreso(): Promise<Progreso[]> {
+  return leer<Progreso[]>(CLAVE_PROGRESO, []);
+}
+
+export async function progresoDe(perfilId: string, cursoId: string): Promise<Progreso | null> {
+  const todos = await listarProgreso();
+  return todos.find((p) => p.perfilId === perfilId && p.cursoId === cursoId) ?? null;
+}
+
+/**
+ * Registra que alguien aprobó una fase.
+ *
+ * Reentrante a propósito: rejugar una fase ya aprobada no la duplica ni baja
+ * el puntaje. Se guarda el mejor puntaje alcanzado, no el último — de otro
+ * modo un intento flojo borraría un buen resultado anterior.
+ */
+export async function registrarFaseCompletada(
+  perfilId: string,
+  cursoId: string,
+  fase: number,
+  puntaje: number
+): Promise<Progreso> {
+  const todos = await listarProgreso();
+  const previo = todos.find((p) => p.perfilId === perfilId && p.cursoId === cursoId);
+  const curso = await buscarCurso(cursoId);
+  const total = curso?.totalFases ?? 5;
+
+  const fases = new Set(previo?.fasesCompletadas ?? []);
+  fases.add(fase);
+  const lista = [...fases].sort((a, b) => a - b);
+
+  // El tutorial es la fase 0 y no cuenta para completar el curso.
+  const reales = lista.filter((f) => f >= 1);
+
+  const actualizado: Progreso = {
+    perfilId,
+    cursoId,
+    fasesCompletadas: lista,
+    puntaje: Math.max(previo?.puntaje ?? 0, puntaje),
+    actualizadoEn: new Date().toISOString(),
+    completadoEn:
+      previo?.completadoEn ?? (reales.length >= total ? new Date().toISOString() : undefined),
+  };
+
+  escribir(CLAVE_PROGRESO, [
+    ...todos.filter((p) => !(p.perfilId === perfilId && p.cursoId === cursoId)),
+    actualizado,
+  ]);
+  return actualizado;
+}
+
+/** Borra el avance de alguien en un curso. Lo usa el administrador. */
+export async function reiniciarProgreso(perfilId: string, cursoId: string): Promise<void> {
+  const todos = await listarProgreso();
+  escribir(
+    CLAVE_PROGRESO,
+    todos.filter((p) => !(p.perfilId === perfilId && p.cursoId === cursoId))
+  );
+}
 
 export async function listarPerfiles(): Promise<Perfil[]> {
   sembrarSiHaceFalta();
@@ -394,13 +557,12 @@ export interface DatosRegistro {
   identificador: string;
   empresa: string;
   area: string;
-  codigo: string;
   /** La elige la persona al registrarse. Nunca se guarda en claro. */
   clave: string;
 }
 
 export type ResultadoRegistro =
-  | { ok: true; perfil: Perfil; inscripcion: Inscripcion }
+  | { ok: true; perfil: Perfil }
   | { ok: false; motivo: MotivoRechazo | "identificador_repetido" };
 
 /**
@@ -410,10 +572,16 @@ export type ResultadoRegistro =
  * antes de validar, un intento fallido gastaría un lugar del lote y el
  * supervisor terminaría con códigos agotados sin gente inscrita.
  */
-export async function registrarConCodigo(datos: DatosRegistro): Promise<ResultadoRegistro> {
-  const revision = await revisarCodigo(datos.codigo);
-  if (!revision.ok) return { ok: false, motivo: revision.motivo ?? "otro_curso" };
-
+/**
+ * Crea la cuenta. Nada más.
+ *
+ * Antes exigía un código y además inscribía al 5S de una. Eso tenía sentido
+ * cuando el 5S era lo único que existía, pero en una plataforma con varios
+ * cursos la cuenta y la inscripción son cosas distintas: uno se registra una
+ * vez y después se inscribe a los cursos que le toquen, cada uno con su
+ * código. La inscripción ahora ocurre en el catálogo.
+ */
+export async function registrarCuenta(datos: DatosRegistro): Promise<ResultadoRegistro> {
   const yaExiste = await buscarPerfilPorIdentificador(datos.identificador);
   if (yaExiste) return { ok: false, motivo: "identificador_repetido" };
 
@@ -423,32 +591,20 @@ export async function registrarConCodigo(datos: DatosRegistro): Promise<Resultad
     identificador: datos.identificador.trim(),
     empresa: datos.empresa.trim(),
     area: datos.area.trim(),
+    // El rol NUNCA sale del formulario: quien se registra es siempre
+    // trabajador. Un administrador solo puede crearlo otro administrador.
     rol: "trabajador",
     creadoEn: new Date().toISOString(),
-  };
-
-  const inscripcion: Inscripcion = {
-    id: idNuevo("insc"),
-    perfilId: perfil.id,
-    cursoId: CURSO_ID,
-    codigoUsado: datos.codigo.trim().toUpperCase(),
-    inscritoEn: new Date().toISOString(),
-    activa: true,
   };
 
   const perfiles = leer<Perfil[]>(CLAVE_PERFILES, []);
   escribir(CLAVE_PERFILES, [...perfiles, perfil]);
 
-  const inscripciones = leer<Inscripcion[]>(CLAVE_INSCRIPCIONES, []);
-  escribir(CLAVE_INSCRIPCIONES, [...inscripciones, inscripcion]);
-
-  consumirCupo(datos.codigo);
-
-  // La credencial se crea recién acá, cuando el perfil ya existe: si algo
+  // La credencial se crea recién acá, con el perfil ya guardado: si algo
   // falló antes, no queda una contraseña huérfana apuntando a nadie.
   await definirClave(perfil.id, datos.clave);
 
-  return { ok: true, perfil, inscripcion };
+  return { ok: true, perfil };
 }
 
 /** Inscribe a alguien que ya estaba registrado pero perdió su inscripción. */
@@ -476,6 +632,57 @@ export async function inscribirPerfilExistente(
 }
 
 /** Texto para mostrarle a la persona según por qué se rechazó su código. */
+// ---------------------------------------------------------------------------
+// Catálogo
+// ---------------------------------------------------------------------------
+
+/**
+ * Un curso con el estado de UNA persona frente a él.
+ *
+ * Es lo que necesita la tarjeta del catálogo para decidir qué mostrar y qué
+ * dice su botón. Se calcula acá y no en la pantalla: si mañana cambia la regla
+ * de cuándo un curso está completo, cambia en un solo lugar.
+ */
+export type EstadoCurso = "sin_inscribir" | "sin_empezar" | "en_curso" | "completado";
+
+export interface TarjetaCurso {
+  curso: Curso;
+  estado: EstadoCurso;
+  /** Fases aprobadas sin contar el tutorial. */
+  fasesHechas: number;
+  puntaje: number;
+  /** 0 a 100. Lo usa la barra de la tarjeta. */
+  porcentaje: number;
+}
+
+export async function catalogoDe(perfilId: string): Promise<TarjetaCurso[]> {
+  const [cursos, inscripciones, progresos] = await Promise.all([
+    listarCursosActivos(),
+    listarInscripciones(),
+    listarProgreso(),
+  ]);
+
+  return cursos.map((curso) => {
+    const inscrito = inscripciones.some(
+      (i) => i.perfilId === perfilId && i.cursoId === curso.id && i.activa
+    );
+    const progreso = progresos.find((p) => p.perfilId === perfilId && p.cursoId === curso.id);
+
+    // El tutorial es la fase 0: enseña los controles, no es contenido del
+    // curso, así que no cuenta para el avance ni para completarlo.
+    const fasesHechas = (progreso?.fasesCompletadas ?? []).filter((f) => f >= 1).length;
+    const porcentaje = Math.round((fasesHechas / curso.totalFases) * 100);
+
+    let estado: EstadoCurso;
+    if (!inscrito) estado = "sin_inscribir";
+    else if (progreso?.completadoEn || fasesHechas >= curso.totalFases) estado = "completado";
+    else if (fasesHechas > 0) estado = "en_curso";
+    else estado = "sin_empezar";
+
+    return { curso, estado, fasesHechas, puntaje: progreso?.puntaje ?? 0, porcentaje };
+  });
+}
+
 export function explicarRechazo(motivo: MotivoRechazo | "identificador_repetido"): string {
   switch (motivo) {
     case "inexistente":

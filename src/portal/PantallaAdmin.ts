@@ -8,6 +8,9 @@ import {
   listarCodigos,
   listarInscripciones,
   listarPerfiles,
+  listarCursos,
+  cambiarEstadoCurso,
+  type Curso,
   type Codigo,
   type Inscripcion,
   type Perfil,
@@ -34,13 +37,14 @@ export function mostrarAdministracion(onSalir: () => void): void {
   void pintar();
 
   async function pintar(): Promise<void> {
-    const [perfiles, codigos, inscripciones] = await Promise.all([
+    const [perfiles, codigos, inscripciones, cursos] = await Promise.all([
       listarPerfiles(),
       listarCodigos(),
       listarInscripciones(),
+      listarCursos(),
     ]);
 
-    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones);
+    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones, cursos);
     conectar();
   }
 
@@ -93,6 +97,13 @@ export function mostrarAdministracion(onSalir: () => void): void {
     // Restablecer contraseña. En planta no todos tienen correo, así que no hay
     // enlaces de recuperación: el administrador genera una clave temporal y se
     // la dicta a la persona, que está obligada a cambiarla al entrar.
+    raiz.querySelectorAll<HTMLButtonElement>("[data-curso]").forEach((boton) => {
+      boton.addEventListener("click", async () => {
+        await cambiarEstadoCurso(boton.dataset.curso!, boton.dataset.accion === "publicar");
+        await pintar();
+      });
+    });
+
     raiz.querySelectorAll<HTMLButtonElement>("[data-clave]").forEach((boton) => {
       boton.addEventListener("click", async () => {
         const temporal = generarClaveTemporal();
@@ -149,7 +160,12 @@ export function mostrarAdministracion(onSalir: () => void): void {
   }
 }
 
-function plantilla(perfiles: Perfil[], codigos: Codigo[], inscripciones: Inscripcion[]): string {
+function plantilla(
+  perfiles: Perfil[],
+  codigos: Codigo[],
+  inscripciones: Inscripcion[],
+  cursos: Curso[]
+): string {
   const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
 
   return `
@@ -172,6 +188,13 @@ function plantilla(perfiles: Perfil[], codigos: Codigo[], inscripciones: Inscrip
         </div>
 
         <p class="portal__aviso" id="avisoAdmin" hidden></p>
+
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Cursos de la plataforma</h2>
+          <div class="portal__tablaEnvoltorio">
+            ${tablaCursos(cursos, inscripciones)}
+          </div>
+        </section>
 
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Emitir código</h2>
@@ -256,6 +279,53 @@ function tablaCodigos(codigos: Codigo[]): string {
       </thead>
       <tbody>${filas}</tbody>
     </table>`;
+}
+
+/**
+ * Cursos publicados, con cuánta gente hay inscrita en cada uno.
+ *
+ * Retirar un curso no lo borra: deja de aparecer en el catálogo pero conserva
+ * las inscripciones y el historial de quienes ya lo hicieron. Borrarlo haría
+ * desaparecer la prueba de esas capacitaciones.
+ */
+function tablaCursos(cursos: Curso[], inscripciones: Inscripcion[]): string {
+  if (cursos.length === 0) {
+    return `<p class="portal__vacio">Todavía no hay cursos publicados.</p>`;
+  }
+
+  const filas = cursos
+    .map((curso) => {
+      const inscritos = inscripciones.filter((i) => i.cursoId === curso.id && i.activa).length;
+      const estado = curso.activo
+        ? `<span class="portal__estado portal__estado--activo">Publicado</span>`
+        : `<span class="portal__estado portal__estado--baja">Retirado</span>`;
+      const accion = curso.activo
+        ? `<button class="portal__accion" data-curso="${curso.id}" data-accion="retirar">Retirar</button>`
+        : `<button class="portal__accion" data-curso="${curso.id}" data-accion="publicar">Publicar</button>`;
+
+      return `
+        <tr class="${curso.activo ? "" : "portal__fila--baja"}">
+          <td>${curso.nombre}</td>
+          <td>${curso.totalFases} fases</td>
+          <td>${curso.duracionMinutos} min</td>
+          <td>${inscritos}</td>
+          <td>${estado}</td>
+          <td class="portal__acciones">${accion}</td>
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <table class="portal__tabla">
+      <thead>
+        <tr><th>Curso</th><th>Fases</th><th>Duración</th><th>Inscritos</th><th>Estado</th><th></th></tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p class="portal__nota">
+      Un curso retirado deja de aparecer en el catálogo, pero conserva las inscripciones
+      y el historial de quienes ya lo cursaron.
+    </p>`;
 }
 
 function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string {

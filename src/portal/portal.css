@@ -460,3 +460,402 @@
   line-height: 1.6;
   color: var(--portal-rotulo);
 }
+
+/* ---------------------------------------------------------------------------
+   Catálogo de cursos
+   ---------------------------------------------------------------------------
+
+   El resto del portal son tarjetas centradas en pantalla — un formulario de
+   acceso funciona así. El catálogo no: es una página con contenido que crece,
+   y necesita la estructura de una: barra superior fija, título, y la rejilla
+   debajo.
+
+   Antes heredaba el contenedor centrado del portal, y como ese contenedor es
+   flex, la cabecera y la tarjeta se acomodaban una AL LADO de la otra en vez
+   de una debajo de la otra. De ahí que "Cerrar sesión" quedara flotando en
+   medio de la pantalla.
+   --------------------------------------------------------------------------- */
+
+.portal--pagina {
+  display: block;
+  padding: 0;
+  overflow-y: auto;
+}
+
+/* --- Barra superior --- */
+
+.barra {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 32px;
+  height: 68px;
+  border-bottom: 1px solid var(--portal-linea);
+  /* Ligeramente más clara que el fondo: separa sin necesitar una línea gruesa. */
+  background: #0e1114;
+}
+
+.barra__marca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.barra__sello {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--portal-acierto);
+  color: #0b0d0f;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.barra__nombre {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--portal-titulo);
+}
+
+.barra__cuenta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Iniciales en vez de una foto: no hay fotos de los trabajadores y un ícono
+   genérico repetido no identifica a nadie. */
+.barra__inicial {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--portal-borde);
+  background: var(--portal-tarjeta);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--portal-cuerpo);
+}
+
+.barra__datos {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.barra__datos strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--portal-titulo);
+}
+
+.barra__datos small {
+  font-size: 12px;
+  color: var(--portal-rotulo);
+}
+
+/* --- Lámina de contenido --- */
+
+.lamina {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 32px 64px;
+}
+
+.lamina__encabezado {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.lamina__titulo {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--portal-titulo);
+}
+
+.lamina__bajada {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--portal-cuerpo);
+}
+
+.lamina__resumen {
+  display: flex;
+  gap: 22px;
+  font-size: 14px;
+  color: var(--portal-cuerpo);
+  white-space: nowrap;
+}
+
+.lamina__resumen strong {
+  color: var(--portal-titulo);
+  font-weight: 600;
+}
+
+.lamina__vacio {
+  padding: 48px 24px;
+  border: 1px dashed var(--portal-borde);
+  border-radius: 12px;
+  text-align: center;
+  color: var(--portal-rotulo);
+  font-size: 15px;
+}
+
+/* Ancho mínimo de 300 px: por debajo de eso el texto de la tarjeta se parte
+   en demasiadas líneas y la descripción deja de leerse de un vistazo. */
+.rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+/* --- Tarjeta de curso --- */
+
+.curso {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--portal-borde);
+  border-radius: 12px;
+  background: var(--portal-tarjeta);
+  overflow: hidden;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.curso:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-2px);
+}
+
+.curso__filete {
+  height: 3px;
+}
+
+.curso__filete--bloqueado { background: rgba(255, 255, 255, 0.14); }
+.curso__filete--nuevo     { background: var(--portal-dato); }
+.curso__filete--activo    { background: var(--portal-acierto); }
+.curso__filete--listo     { background: var(--portal-acierto); }
+
+.curso__cuerpo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 22px;
+}
+
+.curso__titulo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.curso__titulo h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--portal-titulo);
+}
+
+.curso__desc {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--portal-cuerpo);
+}
+
+.curso__datos {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: var(--portal-rotulo);
+}
+
+.curso__punto {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+/* El pie se empuja abajo: así los botones de todas las tarjetas quedan
+   alineados aunque las descripciones tengan distinto largo. */
+.curso__pie {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* --- Pastillas de estado --- */
+
+.pastilla {
+  flex-shrink: 0;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pastilla--gris {
+  color: var(--portal-rotulo);
+  border-color: var(--portal-borde);
+}
+
+.pastilla--verde {
+  color: var(--portal-acierto);
+  border-color: rgba(127, 180, 149, 0.35);
+  background: rgba(127, 180, 149, 0.10);
+}
+
+/* --- Avance --- */
+
+.avance {
+  margin-bottom: 18px;
+}
+
+.avance__cifras {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: var(--portal-rotulo);
+}
+
+.avance__carril {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--portal-linea);
+  overflow: hidden;
+}
+
+.avance__carril span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--portal-acierto);
+  transition: width 0.4s ease;
+}
+
+/* --- Botones del catálogo --- */
+
+.boton {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+/* Ocupa todo el ancho de la tarjeta, pero con altura contenida. El botón
+   blanco enorme de antes dominaba la tarjeta y tapaba el contenido, que es
+   lo que la hacía ver poco profesional. */
+.curso__pie .boton {
+  width: 100%;
+}
+
+.boton--principal {
+  background: var(--portal-acierto);
+  color: #0b0d0f;
+}
+
+.boton--principal:hover {
+  background: #93c4a8;
+}
+
+.boton--borde {
+  background: transparent;
+  border-color: var(--portal-borde);
+  color: var(--portal-cuerpo);
+}
+
+.boton--borde:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--portal-titulo);
+}
+
+/* --- Canje dentro de la tarjeta --- */
+
+.canje {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--portal-linea);
+}
+
+.canje__rotulo {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--portal-rotulo);
+}
+
+.canje__fila {
+  display: flex;
+  gap: 8px;
+}
+
+.canje__campo {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--portal-borde);
+  background: #0e1114;
+  color: var(--portal-titulo);
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.canje__campo:focus {
+  outline: none;
+  border-color: var(--portal-acierto);
+}
+
+.canje__fila .boton {
+  white-space: nowrap;
+}
+
+/* --- Pantallas angostas --- */
+
+@media (max-width: 640px) {
+  .barra { padding: 0 18px; height: auto; flex-wrap: wrap; gap: 12px; padding-block: 14px; }
+  .barra__datos { display: none; }
+  .lamina { padding: 28px 18px 48px; }
+  .lamina__encabezado { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .lamina__titulo { font-size: 25px; }
+}
+
+/* Las tablas del panel tienen muchas columnas y en un portátil no entran.
+   El desplazamiento horizontal es preferible a encoger la letra hasta que
+   deje de leerse. */
+.portal__tablaEnvoltorio {
+  overflow-x: auto;
+}
+
+.portal__tablaEnvoltorio .portal__tabla {
+  min-width: 640px;
+}

@@ -3,7 +3,7 @@ import {
   buscarPerfilPorIdentificador,
   explicarRechazo,
   inscribirPerfilExistente,
-  registrarConCodigo,
+  registrarCuenta,
   tieneInscripcion,
   type Perfil,
 } from "./Datos";
@@ -161,13 +161,12 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
       identificador: $<HTMLInputElement>("#regIdentificador").value.trim(),
       empresa: $<HTMLInputElement>("#regEmpresa").value.trim(),
       area: $<HTMLInputElement>("#regArea").value.trim(),
-      codigo: $<HTMLInputElement>("#regCodigo").value.trim(),
       clave: $<HTMLInputElement>("#regClave").value,
     };
     const claveRepetida = $<HTMLInputElement>("#regClave2").value;
 
-    if (!datos.nombreCompleto || !datos.identificador || !datos.codigo) {
-      mostrarAviso("Completa tu nombre, tu RUT o ficha y el código.");
+    if (!datos.nombreCompleto || !datos.identificador) {
+      mostrarAviso("Completa tu nombre y tu RUT o número de ficha.");
       return;
     }
 
@@ -184,7 +183,7 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
       return;
     }
 
-    const resultado = await registrarConCodigo(datos);
+    const resultado = await registrarCuenta(datos);
     if (!resultado.ok) {
       mostrarAviso(explicarRechazo(resultado.motivo));
       return;
@@ -203,10 +202,10 @@ function plantilla(): string {
       <div class="portal__filete"></div>
       <div class="portal__cuerpo">
         <p class="portal__rotulo">CAPACITACIÓN</p>
-        <h1 class="portal__titulo">Operación 5S</h1>
+        <h1 class="portal__titulo">Plataforma de capacitación</h1>
         <p class="portal__bajada">
-          Programa de formación en metodología 5S. Para entrar necesitas el código
-          que te entregó tu supervisor.
+          Ingresa con tu cuenta para ver tus cursos. Si es tu primera vez,
+          regístrate: el código de cada curso se pide después.
         </p>
 
         <div class="portal__pestanas" role="tablist">
@@ -260,10 +259,7 @@ function plantilla(): string {
             </div>
           </div>
 
-          <div class="portal__campo">
-            <label class="portal__etiqueta" for="regCodigo">Código de acceso</label>
-            <input class="portal__entrada portal__entrada--codigo" id="regCodigo" placeholder="5S-XXXXX-XXXX" />
-          </div>
+          
 
           <div class="portal__campo">
             <label class="portal__etiqueta" for="regClave">Crea tu contraseña</label>

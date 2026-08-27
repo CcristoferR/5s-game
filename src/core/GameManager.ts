@@ -70,6 +70,20 @@ export class GameManager {
     this.onPuntajeCambiado.notifyObservers(this.puntaje);
   }
 
+  /**
+   * Borra todo el avance en memoria.
+   *
+   * Se llama al abrir el curso, antes de restaurar el progreso guardado de
+   * quien entró. Sin esto, el avance de la persona anterior seguía cargado:
+   * en un equipo compartido de planta, el turno siguiente veía niveles
+   * desbloqueados que nunca jugó.
+   */
+  reiniciarTodo(): void {
+    this.nivelesDesbloqueados = new Set<number>([0, 1]);
+    this.nivelesCompletados = new Set<number>();
+    this.puntaje = 0;
+  }
+
   reiniciarNivel(): void {
     this.puntaje = 0;
     this.onPuntajeCambiado.notifyObservers(this.puntaje);

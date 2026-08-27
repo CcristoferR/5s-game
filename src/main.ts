@@ -5,6 +5,8 @@ import { setupXR } from "./core/XRManager";
 import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir } from "./core/Sonido";
 import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
+import { mostrarCatalogo } from "./portal/PantallaCatalogo";
+import { registrarFaseCompletada, progresoDe, CURSO_ID } from "./portal/Datos";
 import { leerSesion, cerrarSesion, rolVerificado } from "./portal/Sesion";
 import type { Perfil } from "./portal/Datos";
 import { cargarTutorial } from "./levels/Level0_Tutorial";
@@ -36,6 +38,9 @@ const engine = new Engine(canvas, true, undefined, true);
 engine.setHardwareScalingLevel(1);
 
 let sceneManager = new SceneManager(engine);
+
+// Quién está jugando. El progreso se guarda a su nombre, no al del equipo.
+let perfilActivo: Perfil | null = null;
 const gameManager = GameManager.getInstance();
 
 const infoNiveles = [
@@ -70,7 +75,7 @@ function mostrarMenu(): void {
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
     () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu()),
     leerSesion()?.perfil.nombreCompleto,
-    () => salirDeLaSesion()
+    () => volverAlCatalogo()
   );
   // OJO: aca NO va attachControl ni setupXR.
   //
@@ -112,6 +117,13 @@ function cargarNivel(numeroNivel: number): void {
   const onCompletado = () => {
     gameManager.completarNivel(numeroNivel);
     reproducir("nivelCompletado");
+
+    // El avance queda asociado a la persona, no al navegador. Es lo que
+    // permite retomar donde quedó aunque entre desde otro computador, y lo que
+    // hace posible que el administrador vea quién completó qué.
+    if (perfilActivo) {
+      void registrarFaseCompletada(perfilActivo.id, CURSO_ID, numeroNivel, gameManager.puntaje);
+    }
   };
 
   if (numeroNivel === 0) {
@@ -145,26 +157,20 @@ function cargarNivel(numeroNivel: number): void {
   setupXR(sceneManager.scene, suelo ? [suelo] : []);
 }
 
-// ARRANQUE
-//
-// El curso tiene puerta: sin sesión abierta no se llega al menú. La sesión
-// sobrevive a recargar la página, así que quien ya entró no vuelve a ver el
-// acceso — y sobre todo, no gasta otro cupo de su código.
-//
-// El administrador no entra al juego: su sesión lo lleva a la vista de
-// administración. No tendría sentido mandarlo a clasificar herramientas.
-// Cierra la sesión y vuelve a la puerta.
-//
-// El ambiente del taller se corta acá: si el jugador sale desde el menú, la
-// escena no se recrea y el sonido seguiría sonando detrás del formulario.
-//
-// El progreso NO se borra. Es del navegador, no de la sesión: si la misma
-// persona vuelve a entrar en el mismo equipo, retoma donde quedó. Cuando el
-// progreso viva en el servidor, pasará a viajar con la cuenta.
-function salirDeLaSesion(): void {
+// Desde el menú del juego se vuelve al catálogo, no a la pantalla de acceso:
+// la sesión sigue abierta y la persona puede querer entrar a otro curso. Para
+// cerrar sesión de verdad está el botón del catálogo.
+function volverAlCatalogo(): void {
   detenerAmbiente();
-  cerrarSesion();
-  mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+  sceneManager.scene.dispose();
+  sceneManager = new SceneManager(engine);
+
+  const sesion = leerSesion();
+  if (!sesion) {
+    mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+    return;
+  }
+  abrirCatalogo(sesion.perfil);
 }
 
 // El rol que trae el perfil recién autenticado sí es confiable: viene del
@@ -178,6 +184,43 @@ function abrirSegunRol(perfil: Perfil): void {
       mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
     });
     return;
+  }
+
+  abrirCatalogo(perfil);
+}
+
+// El trabajador entra al catálogo, no directo al juego.
+//
+// Antes el login llevaba al menú de niveles porque el 5S era lo único que
+// existía. Ahora la plataforma aloja varios cursos, así que primero se elige
+// uno. Con un solo curso publicado se ve una tarjeta sola; cuando haya más se
+// agregan al lado sin tocar esta pantalla.
+function abrirCatalogo(perfil: Perfil): void {
+  perfilActivo = perfil;
+  mostrarCatalogo(
+    perfil,
+    () => {
+      // Por ahora todos los cursos abren el juego 5S, que es el único que
+      // existe. Cuando haya otros, acá se decide cuál cargar según el id.
+      void iniciarCursoDelJugador();
+    },
+    () => mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil))
+  );
+}
+
+/**
+ * Arranca el curso restaurando el avance guardado de esa persona.
+ *
+ * Hasta ahora el progreso vivía suelto en el navegador: era del equipo, no de
+ * quien jugaba. Si dos personas usaban el mismo computador de planta,
+ * compartían avance; y si alguien cambiaba de equipo, empezaba de cero.
+ */
+async function iniciarCursoDelJugador(): Promise<void> {
+  gameManager.reiniciarTodo();
+
+  if (perfilActivo) {
+    const guardado = await progresoDe(perfilActivo.id, CURSO_ID);
+    guardado?.fasesCompletadas.forEach((fase) => gameManager.completarNivel(fase));
   }
 
   mostrarMenu();
