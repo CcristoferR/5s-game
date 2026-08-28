@@ -1,7 +1,7 @@
 import "./portal.css";
 import {
   catalogoDe,
-  inscribirPerfilExistente,
+  canjearCodigo,
   explicarRechazo,
   type Perfil,
   type TarjetaCurso,
@@ -83,7 +83,7 @@ export function mostrarCatalogo(
           return;
         }
 
-        const resultado = await inscribirPerfilExistente(perfil, codigo);
+        const resultado = await canjearCodigo(codigo);
         if (!resultado.ok) {
           mostrar(aviso, explicarRechazo(resultado.motivo!), "error");
           return;

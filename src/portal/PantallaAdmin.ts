@@ -15,7 +15,6 @@ import {
   type Inscripcion,
   type Perfil,
 } from "./Datos";
-import { restablecerClave, generarClaveTemporal } from "./Credenciales";
 import { cerrarSesion } from "./Sesion";
 
 /**
@@ -60,29 +59,45 @@ export function mostrarAdministracion(onSalir: () => void): void {
     $<HTMLFormElement>("#formCodigo").addEventListener("submit", async (evento) => {
       evento.preventDefault();
 
-      const prefijo = $<HTMLInputElement>("#nuevoPrefijo").value;
+      const cursoId = $<HTMLSelectElement>("#nuevoCurso").value;
+      const lote = $<HTMLInputElement>("#nuevoLote").value;
       const cupos = Number($<HTMLInputElement>("#nuevoCupos").value);
       const dias = Number($<HTMLInputElement>("#nuevoDias").value);
       const nota = $<HTMLInputElement>("#nuevaNota").value;
 
+      // La vigencia se pide en días y la base la guarda como fecha: se
+      // convierte acá para que el administrador no tenga que calcularla.
+      const venceEn =
+        Number.isFinite(dias) && dias > 0
+          ? new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10)
+          : null;
+
       const creado = await crearCodigo({
-        prefijo,
+        cursoId,
+        lote,
         usosMaximos: Number.isFinite(cupos) && cupos > 0 ? cupos : 20,
         nota,
-        diasVigencia: Number.isFinite(dias) && dias > 0 ? dias : null,
+        venceEn,
       });
+
+      // El formulario se limpia salvo los cupos: lo habitual es emitir varios
+      // lotes seguidos con el mismo tamaño y distinta etiqueta.
+      if (creado) {
+        $<HTMLInputElement>("#nuevoLote").value = "";
+        $<HTMLInputElement>("#nuevaNota").value = "";
+      }
 
       await pintar();
 
       // Se avisa el código recién creado porque es el dato que el supervisor
       // tiene que copiar y repartir; si se pierde entre la tabla, hay que
       // buscarlo a ojo.
-      const banda = raiz.querySelector<HTMLParagraphElement>("#avisoAdmin");
-      if (banda) {
-        banda.textContent = `Código creado: ${creado.codigo}`;
-        banda.className = "portal__aviso portal__aviso--ok";
-        banda.hidden = false;
-      }
+      avisar(
+        creado
+          ? `Código creado: ${creado.codigo}`
+          : "No se pudo crear el código. Revisa tu conexión.",
+        creado ? "ok" : "error"
+      );
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-codigo]").forEach((boton) => {
@@ -94,24 +109,10 @@ export function mostrarAdministracion(onSalir: () => void): void {
       });
     });
 
-    // Restablecer contraseña. En planta no todos tienen correo, así que no hay
-    // enlaces de recuperación: el administrador genera una clave temporal y se
-    // la dicta a la persona, que está obligada a cambiarla al entrar.
     raiz.querySelectorAll<HTMLButtonElement>("[data-curso]").forEach((boton) => {
       boton.addEventListener("click", async () => {
         await cambiarEstadoCurso(boton.dataset.curso!, boton.dataset.accion === "publicar");
         await pintar();
-      });
-    });
-
-    raiz.querySelectorAll<HTMLButtonElement>("[data-clave]").forEach((boton) => {
-      boton.addEventListener("click", async () => {
-        const temporal = generarClaveTemporal();
-        await restablecerClave(boton.dataset.clave!, temporal);
-        avisar(
-          `Clave temporal: ${temporal} — dísela a la persona. Deberá cambiarla al entrar.`,
-          "ok"
-        );
       });
     });
 
@@ -201,8 +202,18 @@ function plantilla(
           <form id="formCodigo">
             <div class="portal__fila">
               <div class="portal__campo">
-                <label class="portal__etiqueta" for="nuevoPrefijo">Lote</label>
-                <input class="portal__entrada" id="nuevoPrefijo" placeholder="PLANTA" />
+                <label class="portal__etiqueta" for="nuevoCurso">Curso</label>
+                <select class="portal__entrada" id="nuevoCurso">
+                  ${cursos
+                    .filter((c) => c.activo)
+                    .map((c) => `<option value="${c.id}">${c.nombre}</option>`)
+                    .join("")}
+                </select>
+              </div>
+
+              <div class="portal__campo">
+                <label class="portal__etiqueta" for="nuevoLote">Lote</label>
+                <input class="portal__entrada" id="nuevoLote" placeholder="PLANTA" maxlength="10" />
               </div>
               <div class="portal__campo">
                 <label class="portal__etiqueta" for="nuevoCupos">Cupos</label>
@@ -224,14 +235,14 @@ function plantilla(
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Códigos emitidos</h2>
           <div class="portal__tablaEnvoltura">
-            ${tablaCodigos(codigos)}
+            ${tablaCodigos(codigos, cursos)}
           </div>
         </section>
 
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Personas inscritas</h2>
           <div class="portal__tablaEnvoltura">
-            ${tablaPersonas(trabajadores, inscripciones)}
+            ${tablaPersonas(trabajadores, inscripciones, cursos)}
           </div>
         </section>
       </div>
@@ -239,7 +250,7 @@ function plantilla(
   `;
 }
 
-function tablaCodigos(codigos: Codigo[]): string {
+function tablaCodigos(codigos: Codigo[], cursos: Curso[]): string {
   if (codigos.length === 0) {
     return `<p class="portal__vacio">Todavía no hay códigos emitidos.</p>`;
   }
@@ -261,6 +272,7 @@ function tablaCodigos(codigos: Codigo[]): string {
       return `
         <tr>
           <td class="portal__codigo">${c.codigo}</td>
+          <td>${cursos.find((x) => x.id === c.cursoId)?.nombre ?? c.cursoId}</td>
           <td>${c.usosActuales} / ${c.usosMaximos}</td>
           <td>${c.venceEn ? fecha(c.venceEn) : "Sin vencimiento"}</td>
           <td>${estado}</td>
@@ -274,7 +286,7 @@ function tablaCodigos(codigos: Codigo[]): string {
     <table class="portal__tabla">
       <thead>
         <tr>
-          <th>Código</th><th>Usos</th><th>Vigencia</th><th>Estado</th><th>Nota</th><th></th>
+          <th>Código</th><th>Curso</th><th>Usos</th><th>Vigencia</th><th>Estado</th><th>Nota</th><th></th>
         </tr>
       </thead>
       <tbody>${filas}</tbody>
@@ -328,7 +340,7 @@ function tablaCursos(cursos: Curso[], inscripciones: Inscripcion[]): string {
     </p>`;
 }
 
-function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string {
+function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[], cursos: Curso[]): string {
   if (perfiles.length === 0) {
     return `<p class="portal__vacio">Todavía no se registró nadie.</p>`;
   }
@@ -356,7 +368,6 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string
       const acciones: string[] = [];
       if (inscripcion && activa) {
         acciones.push(
-          `<button class="portal__accion" data-clave="${p.id}">Restablecer clave</button>`,
           `<button class="portal__accion" data-baja="${inscripcion.id}">Dar de baja</button>`
         );
       }
@@ -377,7 +388,8 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string
           <td>${p.identificador}</td>
           <td>${p.empresa || "—"}</td>
           <td>${p.area || "—"}</td>
-          <td class="portal__codigo">${inscripcion?.codigoUsado ?? "—"}</td>
+          <td>${inscripcion ? cursos.find((c) => c.id === inscripcion.cursoId)?.nombre ?? "—" : "—"}</td>
+          <td class="portal__codigo">${inscripcion?.codigoUsado || "—"}</td>
           <td>${inscripcion ? fecha(inscripcion.inscritoEn) : "—"}</td>
           <td>${estado}</td>
           <td class="portal__acciones">${acciones.join("")}</td>
@@ -390,7 +402,7 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[]): string
       <thead>
         <tr>
           <th>Nombre</th><th>RUT / ficha</th><th>Empresa</th><th>Área</th>
-          <th>Código usado</th><th>Inscripción</th><th>Estado</th><th></th>
+          <th>Curso</th><th>Código usado</th><th>Inscripción</th><th>Estado</th><th></th>
         </tr>
       </thead>
       <tbody>${filas}</tbody>

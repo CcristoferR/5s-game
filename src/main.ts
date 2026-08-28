@@ -74,8 +74,8 @@ function mostrarMenu(): void {
     (numeroNivel) => cargarNivel(numeroNivel),
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
     () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu()),
-    leerSesion()?.perfil.nombreCompleto,
-    () => volverAlCatalogo()
+    perfilActivo?.nombreCompleto,
+    () => void volverAlCatalogo()
   );
   // OJO: aca NO va attachControl ni setupXR.
   //
@@ -160,12 +160,15 @@ function cargarNivel(numeroNivel: number): void {
 // Desde el menú del juego se vuelve al catálogo, no a la pantalla de acceso:
 // la sesión sigue abierta y la persona puede querer entrar a otro curso. Para
 // cerrar sesión de verdad está el botón del catálogo.
-function volverAlCatalogo(): void {
+async function volverAlCatalogo(): Promise<void> {
   detenerAmbiente();
   sceneManager.scene.dispose();
   sceneManager = new SceneManager(engine);
 
-  const sesion = leerSesion();
+  // Se relee del servidor en vez de reutilizar el perfil que había en memoria:
+  // si al administrador se le dio de baja mientras jugaba, corresponde que se
+  // entere ahora y no que siga entrando.
+  const sesion = await leerSesion();
   if (!sesion) {
     mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
     return;
@@ -232,7 +235,7 @@ async function iniciarCursoDelJugador(): Promise<void> {
 // "administrador" para entrar al panel: el rol se leía del mismo dato que el
 // usuario controla.
 async function abrirSesionGuardada(): Promise<void> {
-  const sesion = leerSesion();
+  const sesion = await leerSesion();
   if (!sesion) {
     mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
     return;
@@ -262,7 +265,7 @@ try {
   arrancar();
 } catch (error) {
   console.error("[arranque] no se pudo abrir la sesión guardada:", error);
-  cerrarSesion();
+  void cerrarSesion();
   mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
 }
 

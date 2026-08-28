@@ -1,14 +1,11 @@
 import "./portal.css";
 import {
-  buscarPerfilPorIdentificador,
   explicarRechazo,
-  inscribirPerfilExistente,
+  ingresar,
   registrarCuenta,
-  tieneInscripcion,
+  LARGO_MINIMO_CLAVE,
   type Perfil,
 } from "./Datos";
-import { verificarCredenciales, revisarClave, definirClave } from "./Credenciales";
-import { abrirSesion } from "./Sesion";
 
 /**
  * Puerta de entrada al curso.
@@ -64,7 +61,6 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
   pestanaRegistro.addEventListener("click", () => cambiarPestana(true));
 
   function entrar(perfil: Perfil): void {
-    abrirSesion(perfil);
     raiz.remove();
     onEntrar({ perfil });
   }
@@ -91,64 +87,21 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
       return;
     }
 
-    const perfil = await buscarPerfilPorIdentificador(identificador);
+    // La verificación entera ocurre en el servidor. El motivo de rechazo no
+    // distingue entre "ese RUT no existe" y "la contraseña está mal": decirlo
+    // confirmaría qué identificadores están registrados. Y el bloqueo por
+    // intentos repetidos lo aplica Supabase, así que ya no depende de un dato
+    // del navegador que cualquiera podía borrar.
+    const resultado = await ingresar(identificador, clave);
 
-    // Se verifica SIEMPRE, exista o no el perfil, y el aviso es el mismo en
-    // los dos casos. Decir "ese usuario no existe" confirmaría qué RUT están
-    // registrados, que es lo primero que un atacante quiere averiguar.
-    const verificacion = await verificarCredenciales(identificador, perfil?.id ?? null, clave);
-
-    if (!verificacion.ok) {
-      if (verificacion.motivo === "bloqueado") {
-        mostrarAviso(
-          `Demasiados intentos fallidos. Vuelve a probar en ${verificacion.minutosRestantes} minutos.`
-        );
-      } else {
-        mostrarAviso("El RUT o la contraseña no coinciden.");
-      }
+    if (!resultado.ok) {
+      mostrarAviso(explicarRechazo(resultado.motivo));
       return;
     }
 
-    if (!perfil) {
-      mostrarAviso("El RUT o la contraseña no coinciden.");
-      return;
-    }
-
-    // Clave temporal entregada por el administrador: hay que cambiarla antes
-    // de seguir, o quedaría circulando una contraseña que un tercero conoce.
-    if (verificacion.debeCambiar) {
-      const nueva = window.prompt(
-        "Tu contraseña fue restablecida.\n\nEscribe una nueva (mínimo 8 caracteres):"
-      );
-      if (!nueva) return;
-      const revision = revisarClave(nueva);
-      if (!revision.ok) {
-        mostrarAviso(revision.motivo!);
-        return;
-      }
-      await definirClave(perfil.id, nueva);
-    }
-
-    // El administrador entra sin inscripción: no hace el curso, lo administra.
-    if (perfil.rol === "administrador") {
-      entrar(perfil);
-      return;
-    }
-
-    if (!(await tieneInscripcion(perfil.id))) {
-      const codigo = window.prompt(
-        "Estás registrado pero no tienes una inscripción vigente.\n\nEscribe el código que te entregaron:"
-      );
-      if (!codigo) return;
-
-      const resultado = await inscribirPerfilExistente(perfil, codigo);
-      if (!resultado.ok) {
-        mostrarAviso(explicarRechazo(resultado.motivo ?? "inexistente"));
-        return;
-      }
-    }
-
-    entrar(perfil);
+    // El código ya no se pide acá. La inscripción a un curso ocurre en el
+    // catálogo, que es donde se ve a qué curso se está entrando.
+    entrar(resultado.perfil);
   });
 
   // --- Registrarme ---
@@ -170,9 +123,10 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
       return;
     }
 
-    const revision = revisarClave(datos.clave);
-    if (!revision.ok) {
-      mostrarAviso(revision.motivo!);
+    // El largo mínimo lo impone Supabase Auth; se comprueba acá también para
+    // avisar antes de mandar la petición y no hacer esperar por nada.
+    if (datos.clave.length < LARGO_MINIMO_CLAVE) {
+      mostrarAviso(explicarRechazo("clave_corta"));
       return;
     }
 
@@ -264,7 +218,7 @@ function plantilla(): string {
           <div class="portal__campo">
             <label class="portal__etiqueta" for="regClave">Crea tu contraseña</label>
             <input class="portal__entrada" id="regClave" type="password"
-                   autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
+                   autocomplete="new-password" placeholder="Mínimo 6 caracteres" />
           </div>
 
           <div class="portal__campo">

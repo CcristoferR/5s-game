@@ -1,76 +1,51 @@
-import type { Perfil } from "./Datos";
-import { listarPerfiles, type RolUsuario } from "./Datos";
+import { supabase } from "./supabase";
+import { perfilDe, type Perfil, type RolUsuario } from "./Datos";
 
 /**
- * Sesión abierta.
+ * Sesión de quien está usando la plataforma.
  *
- * Sobrevive a recargar la página a propósito: alguien que hace el curso en el
- * computador de planta y recarga sin querer no tiene que volver a canjear su
- * código —y menos gastar otro cupo del lote.
+ * La sesión de verdad la administra Supabase: guarda un token firmado, lo
+ * renueva solo y lo invalida al cerrar. Este módulo solo la consulta.
+ *
+ * La diferencia con la versión anterior es de fondo. Antes la sesión era un
+ * objeto en el navegador con el rol adentro, así que bastaba con editarlo para
+ * entrar al panel de administración. Ahora el rol se lee de la base en cada
+ * arranque, y aunque alguien manipule lo que tiene a mano, el servidor
+ * responde según lo que dice la tabla — no según lo que diga el navegador.
  */
-
-const CLAVE_SESION = "5s-portal.sesion.v2";
 
 export interface Sesion {
   perfil: Perfil;
-  abiertaEn: string;
-}
-
-export function leerSesion(): Sesion | null {
-  try {
-    const crudo = window.localStorage.getItem(CLAVE_SESION);
-    if (!crudo) return null;
-
-    const dato = JSON.parse(crudo);
-    // Si el dato quedó de una versión anterior o alguien lo editó a mano, se
-    // descarta en vez de arrastrar un objeto incompleto hasta el juego.
-    if (!dato?.perfil?.id || !dato?.perfil?.rol) return null;
-
-    return dato as Sesion;
-  } catch {
-    return null;
-  }
 }
 
 /**
- * Devuelve el rol REAL de quien tiene la sesión abierta.
+ * Devuelve la sesión abierta, o null.
  *
- * La sesión guardada no es fuente de verdad: vive en el navegador y cualquiera
- * puede abrir las herramientas de desarrollo y cambiar "trabajador" por
- * "administrador". Por eso el rol se vuelve a leer del registro de perfiles
- * antes de decidir qué pantalla abrir, y ante cualquier duda se degrada a
- * trabajador — el permiso menor, nunca el mayor.
+ * Es asíncrona porque hay que preguntarle al servidor. Antes era instantánea
+ * porque leía del navegador, y esa inmediatez era justamente el problema: lo
+ * que el navegador guarda, el navegador lo puede alterar.
+ */
+export async function leerSesion(): Promise<Sesion | null> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.user) return null;
+
+  const perfil = await perfilDe(data.session.user.id);
+  if (!perfil) return null;
+
+  return { perfil };
+}
+
+/**
+ * Rol confirmado contra la base.
  *
- * Esto sigue sin ser una barrera real: el registro de perfiles también está en
- * el navegador y también se puede editar. Lo que hace es dejar la comprobación
- * en el lugar correcto, para que al llegar el servidor solo cambie de dónde
- * viene el dato.
+ * Se vuelve a consultar en vez de confiar en lo que traiga la sesión, y ante
+ * cualquier duda se degrada a trabajador: el permiso menor, nunca el mayor.
  */
 export async function rolVerificado(sesion: Sesion): Promise<RolUsuario> {
-  try {
-    const perfiles = await listarPerfiles();
-    const real = perfiles.find((p) => p.id === sesion.perfil.id);
-    if (!real) return "trabajador";
-    return real.rol;
-  } catch {
-    return "trabajador";
-  }
+  const actual = await perfilDe(sesion.perfil.id);
+  return actual?.rol ?? "trabajador";
 }
 
-export function abrirSesion(perfil: Perfil): Sesion {
-  const sesion: Sesion = { perfil, abiertaEn: new Date().toISOString() };
-  try {
-    window.localStorage.setItem(CLAVE_SESION, JSON.stringify(sesion));
-  } catch {
-    // Navegación privada: la sesión vale igual hasta que se recargue.
-  }
-  return sesion;
-}
-
-export function cerrarSesion(): void {
-  try {
-    window.localStorage.removeItem(CLAVE_SESION);
-  } catch {
-    // Si no se puede escribir, la sesión muere sola al recargar.
-  }
+export async function cerrarSesion(): Promise<void> {
+  await supabase.auth.signOut();
 }
