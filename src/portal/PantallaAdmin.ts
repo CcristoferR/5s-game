@@ -16,6 +16,8 @@ import {
   type Perfil,
 } from "./Datos";
 import { cerrarSesion } from "./Sesion";
+import { rankingCompleto, formatearDuracion, type FilaRankingAdmin } from "./Ranking";
+import { CURSO_ID } from "./Datos";
 
 /**
  * Vista de administración.
@@ -36,14 +38,18 @@ export function mostrarAdministracion(onSalir: () => void): void {
   void pintar();
 
   async function pintar(): Promise<void> {
-    const [perfiles, codigos, inscripciones, cursos] = await Promise.all([
+    const [perfiles, codigos, inscripciones, cursos, ranking] = await Promise.all([
       listarPerfiles(),
       listarCodigos(),
       listarInscripciones(),
       listarCursos(),
+      // Sin recorte por empresa ni límite: administración necesita la tabla
+      // entera. La función de base de datos verifica el rol antes de
+      // responder, así que esta llamada falla si no es administrador.
+      rankingCompleto(CURSO_ID),
     ]);
 
-    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones, cursos);
+    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones, cursos, ranking);
     conectar();
   }
 
@@ -162,10 +168,13 @@ export function mostrarAdministracion(onSalir: () => void): void {
 }
 
 function plantilla(
+  
   perfiles: Perfil[],
   codigos: Codigo[],
   inscripciones: Inscripcion[],
   cursos: Curso[]
+,
+  ranking: FilaRankingAdmin[]
 ): string {
   const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
 
@@ -240,6 +249,13 @@ function plantilla(
         </section>
 
         <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Ranking del curso</h2>
+          <div class="portal__tablaEnvoltura">
+            ${tablaRanking(ranking)}
+          </div>
+        </section>
+
+        <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Personas inscritas</h2>
           <div class="portal__tablaEnvoltura">
             ${tablaPersonas(trabajadores, inscripciones, cursos)}
@@ -300,6 +316,49 @@ function tablaCodigos(codigos: Codigo[], cursos: Curso[]): string {
  * las inscripciones y el historial de quienes ya lo hicieron. Borrarlo haría
  * desaparecer la prueba de esas capacitaciones.
  */
+
+/**
+ * Ranking completo, tal como lo ve administración.
+ *
+ * A diferencia del que ve el trabajador, acá va la lista entera y con la
+ * empresa a la vista: es la información que hace falta para comparar áreas,
+ * detectar quién quedó a mitad de camino y decidir a quién acompañar.
+ *
+ * El orden lo define la base de datos —puntaje descendente, y a igual puntaje
+ * gana el menor tiempo—, así que esta función solo dibuja.
+ */
+function tablaRanking(ranking: FilaRankingAdmin[]): string {
+  if (ranking.length === 0) {
+    return `<p class="portal__vacio">Todavía nadie completó una fase de este curso.</p>`;
+  }
+
+  const filas = ranking
+    .map(
+      (f) => `
+        <tr>
+          <td>${f.posicion}</td>
+          <td>${f.nombreCompleto}</td>
+          <td>${f.empresa || "—"}</td>
+          <td>${f.area || "—"}</td>
+          <td>${f.fasesAprobadas} de 5</td>
+          <td>${f.puntajeTotal}</td>
+          <td>${formatearDuracion(f.segundosTotal)}</td>
+        </tr>`
+    )
+    .join("");
+
+  return `
+    <table class="portal__tabla">
+      <thead>
+        <tr>
+          <th>#</th><th>Nombre</th><th>Empresa</th><th>Área</th>
+          <th>Fases</th><th>Puntaje</th><th>Tiempo</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>`;
+}
+
 function tablaCursos(cursos: Curso[], inscripciones: Inscripcion[]): string {
   if (cursos.length === 0) {
     return `<p class="portal__vacio">Todavía no hay cursos publicados.</p>`;

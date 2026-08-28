@@ -1,4 +1,4 @@
-import { AdvancedDynamicTexture, StackPanel, Control, Rectangle } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, StackPanel, Control, Rectangle, Button } from "@babylonjs/gui";
 import {
   PALETA,
   TEXTO,
@@ -40,7 +40,7 @@ export function mostrarPanelOpciones(
   opciones: OpcionCausa[],
   onElegir: (idOpcion: string) => void,
   rotulo = "LA PREGUNTA"
-): { ocultar: () => void } {
+): { confirmar: (idOpcion: string) => void; ocultar: () => void } {
   const velo = crearVelo(gui, "veloOpciones");
 
   // El alto lo define el contenido: encabezado, pregunta y una fila por opción.
@@ -67,8 +67,11 @@ export function mostrarPanelOpciones(
   columna.addControl(crearDivisor("divisorOpciones", ANCHO_CONTENIDO));
   columna.addControl(crearEspacio("airePostDivisor", 18));
 
+  const botonesPorOpcion = new Map<string, Button>();
+
   opciones.forEach((opcion, i) => {
     const boton = crearBotonOpcion(`btnOpcion_${opcion.id}`, opcion.texto, ANCHO_CONTENIDO);
+    botonesPorOpcion.set(opcion.id, boton);
     boton.onPointerUpObservable.add(() => onElegir(opcion.id));
     columna.addControl(boton);
 
@@ -80,6 +83,32 @@ export function mostrarPanelOpciones(
   desvanecer(velo, 0, 1, 160);
 
   return {
+    /**
+     * Marca en verde la opción elegida y deja verla un instante.
+     *
+     * Es la confirmación de que la respuesta fue correcta. Antes esto se
+     * resolvía con un cartel de texto, pero obligaba a elegir entre dos
+     * males: o el panel de resultados esperaba a que se apagara —varios
+     * segundos de espera muerta— o salía antes y se lo llevaba por delante.
+     *
+     * Marcar el propio botón resuelve las dos cosas: la confirmación aparece
+     * donde el jugador está mirando, en el instante en que hace clic, y no
+     * ocupa espacio que después haya que despejar.
+     */
+    confirmar: (idOpcion: string) => {
+      const elegido = botonesPorOpcion.get(idOpcion);
+      if (!elegido) return;
+
+      elegido.background = "rgba(127,180,149,0.22)";
+      elegido.color = PALETA.acierto;
+      if (elegido.textBlock) elegido.textBlock.color = PALETA.acierto;
+
+      // Las demás se apagan para que la vista quede en la elegida.
+      botonesPorOpcion.forEach((boton, id) => {
+        if (id !== idOpcion) boton.alpha = 0.35;
+      });
+    },
+
     ocultar: () => {
       velo.isPointerBlocker = false;
       desvanecer(velo, velo.alpha, 0, 140, () => {

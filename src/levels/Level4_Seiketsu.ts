@@ -16,7 +16,7 @@ import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida 
 import { HUD } from "../ui/HUD";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
-import { TEXTO } from "../ui/EstiloUI";
+import { TEXTO, PALETA } from "../ui/EstiloUI";
 
 const posicionesZonas: Record<ZonaChecklist, number> = {
   checklist: -3.6,
@@ -129,7 +129,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const instruccion = new TextBlock(
     "instruccionNivel4",
-    "📋🎨 Coloca las 5 tarjetas (checklist/descartar) al frente, y las 3 señales de color en el fondo. El resultado se revela al probar el estándar."
+    "Coloca las 5 tarjetas (checklist/descartar) al frente, y las 3 señales de color en el fondo. El resultado se revela al probar el estándar."
   );
   instruccion.color = "white";
   instruccion.fontSize = TEXTO.cuerpo;
@@ -172,7 +172,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   textoLectura.paddingRight = "16px";
   panelLectura.addControl(textoLectura);
 
-  const botonProbar = Button.CreateSimpleButton("btnProbarEstandar", "🧪 Probar estándar");
+  const botonProbar = Button.CreateSimpleButton("btnProbarEstandar", "Probar estándar");
   botonProbar.width = "240px";
   botonProbar.height = "50px";
   botonProbar.color = "white";
@@ -209,6 +209,9 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let corriendoTiempo = false;
 
   function arrancarNivel(): void {
+    // El cronómetro del ranking arranca junto con el del nivel: leer la
+    // apertura no cuenta como tiempo de juego.
+    GameManager.getInstance().iniciarCronometroNivel();
     inicioNivel = performance.now();
     corriendoTiempo = true;
   }
@@ -239,7 +242,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
     if (colocados === total) {
       botonProbar.isVisible = true;
-      instruccion.text = "✅ Todo colocado. Presiona 'Probar estándar' cuando estés listo — ahí se revela el resultado.";
+      instruccion.text = "Todo colocado. Presiona 'Probar estándar' cuando estés listo — ahí se revela el resultado.";
     }
   }
 
@@ -281,7 +284,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         contadorDescartar++;
       }
 
-      hud.mostrarFeedback(true, "📌 Instrucción ubicada — se evaluará al probar el estándar.", mesh.position.clone());
+      hud.mostrarFeedback(true, "Instrucción ubicada — se evaluará al probar el estándar.", mesh.position.clone());
       verificarListoParaProbar();
     });
   });
@@ -306,7 +309,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       // círculo punteado, como una pieza de shadow board de verdad.
       moverMalla(scene, mesh, new Vector3(zonaMasCercana.posicionX, 0.025, Z_ZONA_SENAL), 260);
 
-      hud.mostrarFeedback(true, "🎨 Señal ubicada — se evaluará al probar el estándar.", mesh.position.clone());
+      hud.mostrarFeedback(true, "Señal ubicada — se evaluará al probar el estándar.", mesh.position.clone());
       verificarListoParaProbar();
     });
   });
@@ -378,10 +381,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     npc.caminarHacia(new Vector3(posicionesZonas.checklist, 0.6, 1.8), 2, () => {
       npc.reaccionar(npcExito);
       etiquetaNpc.isVisible = true;
-      etiquetaNpc.text = npcExito ? "✅ ¡Estándar claro, lo apliqué sin problemas!" : "❌ El estándar es ambiguo, no supe qué hacer";
+      etiquetaNpc.text = npcExito ? "Estándar claro: pude seguirlo sin preguntar nada." : "Estándar ambiguo: no supe qué hacer en varios pasos.";
       etiquetaNpc.color = npcExito ? "#8be29a" : "#ff9a9a";
 
-      luegoDe(scene, 1600, () => {
+      luegoDe(scene, 1000, () => {
         etiquetaNpc.isVisible = false;
 
         mostrarInformeEstandar(gui, todasLasFilas, totalCorrectos, () => {
@@ -398,9 +401,12 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
           // Pregunta de cierre: el nivel acaba de mostrar cómo falla un estándar
           // ambiguo con el operario, así que acá se pide reconocer cuál sirve.
-          preguntarCierreDeNivel(gui, hud, 4, () => {
-            luegoDe(scene, 2200, () => {
-              hud.mostrarResultadoFinal("Nivel 4", puntosBase, bonusTiempo, segundosTotales, onVolverMenu);
+          preguntarCierreDeNivel(gui, hud, 4, (cierre) => {
+            // El panel sale enseguida. La explicación de la pregunta viaja adentro
+            // de él, así que ya no hay que esperar a que se apague ningún cartel:
+            // esta pausa es solo para que el cierre no se sienta abrupto.
+            luegoDe(scene, 700, () => {
+              hud.mostrarResultadoFinal("Nivel 4", puntosBase, bonusTiempo, segundosTotales, onVolverMenu, cierre);
             });
           });
         });
@@ -427,7 +433,7 @@ function mostrarInformeEstandar(
   gui.addControl(fondo);
 
   const tasaPct = Math.round((totalCorrectos / filas.length) * 100);
-  const titulo = new TextBlock("tituloInformeEstandar", `📋 Tasa de éxito del NPC: ${tasaPct}% (${totalCorrectos}/${filas.length})`);
+  const titulo = new TextBlock("tituloInformeEstandar", `Tasa de éxito del operario: ${tasaPct}% (${totalCorrectos}/${filas.length})`);
   titulo.color = "white";
   titulo.fontSize = TEXTO.titulo;
   titulo.textWrapping = true;
@@ -455,19 +461,34 @@ function mostrarInformeEstandar(
     fondoFila.height = "72px";
     fondoFila.thickness = 0;
     fondoFila.cornerRadius = 8;
-    fondoFila.background = fila.correcto ? "rgba(30, 100, 50, 0.5)" : "rgba(110, 30, 30, 0.5)";
+    // Fondo neutro con franja de color al costado, igual que el informe de
+    // auditoría y el cartel del HUD. Teñir la fila entera hacía competir el
+    // color con el texto, que es lo que hay que leer.
+    fondoFila.background = "rgba(255,255,255,0.045)";
     fondoFila.paddingBottom = "8px";
     lista.addControl(fondoFila);
 
-    const icono = fila.tipo === "checklist" ? "📋" : "🎨";
+    const franjaFila = new Rectangle(`franjaInformeEstandar_${i}`);
+    franjaFila.width = "4px";
+    franjaFila.height = "100%";
+    franjaFila.thickness = 0;
+    franjaFila.background = fila.correcto ? PALETA.acierto : PALETA.error;
+    franjaFila.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    franjaFila.isHitTestVisible = false;
+    fondoFila.addControl(franjaFila);
+
+    // El tipo se dice con palabras en vez de con un icono: "Instrucción" y
+    // "Señal" se entienden sin tener que interpretar un dibujo.
+    const tipo = fila.tipo === "checklist" ? "Instrucción" : "Señal";
+    const veredicto = fila.correcto ? "Bien ubicada" : "Mal ubicada";
     const textoFila = new TextBlock(
       `textoInformeEstandar_${i}`,
-      `${fila.correcto ? "✅" : "❌"} ${icono} ${fila.texto}\n${fila.explicacion}`
+      `${tipo} · ${veredicto}\n${fila.texto}\n${fila.explicacion}`
     );
     textoFila.color = "white";
     textoFila.fontSize = TEXTO.menor;
     textoFila.textWrapping = true;
-    textoFila.paddingLeft = "10px";
+    textoFila.paddingLeft = "20px";
     textoFila.paddingRight = "10px";
     fondoFila.addControl(textoFila);
   });

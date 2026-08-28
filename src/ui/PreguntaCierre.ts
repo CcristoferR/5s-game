@@ -2,6 +2,7 @@ import { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { preguntasCierre } from "../data/levelConfig";
 import { mostrarPanelOpciones } from "./ChoicePanel";
 import { GameManager } from "../core/GameManager";
+import { reproducir } from "../core/Sonido";
 import type { HUD } from "./HUD";
 
 /** Puntos que suma responder bien. Igual que las preguntas del modo detective. */
@@ -25,12 +26,12 @@ export function preguntarCierreDeNivel(
   gui: AdvancedDynamicTexture,
   hud: HUD,
   numeroNivel: number,
-  onResuelto: () => void
+  onResuelto: (explicacion: string) => void
 ): void {
   const pregunta = preguntasCierre[numeroNivel];
 
   if (!pregunta) {
-    onResuelto();
+    onResuelto("");
     return;
   }
 
@@ -44,13 +45,29 @@ export function preguntarCierreDeNivel(
       const opcion = pregunta.opciones.find((o) => o.id === idElegido)!;
 
       if (opcion.esCorrecta) {
-        panel.ocultar();
+        // Se marca la opción en verde y se deja ver un momento antes de
+        // cerrar. Sin esta pausa el panel desaparecía en el mismo instante del
+        // clic y no quedaba ninguna señal de haber acertado: el salto al
+        // resultado se sentía brusco, como si el juego se hubiera adelantado.
+        panel.confirmar(opcion.id);
+        reproducir("acierto");
         gameManager.sumarPuntos(PUNTOS_ACIERTO);
-        hud.mostrarFeedback(true, opcion.explicacion);
-        onResuelto();
+
+        window.setTimeout(() => panel.ocultar(), 750);
+
+        // La explicación NO se muestra como cartel: se entrega a quien llamó,
+        // para que la incluya en el panel de resultados.
+        //
+        // Como cartel flotante obligaba a esperar a que se apagara antes de
+        // que apareciera el panel —varios segundos mirando la pantalla sin
+        // poder hacer nada— y si el panel salía antes, se la llevaba por
+        // delante. Dentro del panel se lee con calma y sin esperar.
+        onResuelto(opcion.explicacion);
         return;
       }
 
+      // El error sí va como cartel: el jugador sigue en la pregunta y
+      // necesita leer por qué ese atajo no funciona antes de reintentar.
       hud.mostrarFeedback(false, opcion.explicacion);
     },
     pregunta.rotulo

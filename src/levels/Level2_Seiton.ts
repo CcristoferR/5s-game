@@ -77,6 +77,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let corriendoTiempo = false;
 
   function arrancarNivel(): void {
+    // El cronómetro del ranking arranca junto con el del nivel: leer la
+    // apertura no cuenta como tiempo de juego.
+    GameManager.getInstance().iniciarCronometroNivel();
     inicioNivel = performance.now();
     corriendoTiempo = true;
   }
@@ -161,13 +164,16 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
             `¡Estante organizado! Distancia total de ajuste: ${distanciaTotalRecorrida.toFixed(1)}m — mientras menor, más eficiente tu búsqueda.`
           );
 
-          luegoDe(scene, 1600, () => {
+          luegoDe(scene, 1000, () => {
             // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
             // criterio que el nivel acaba de hacer practicar. El resultado se
             // muestra recién después de responderla.
-            preguntarCierreDeNivel(gui, hud, 2, () => {
-              luegoDe(scene, 1600, () => {
-                hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
+            preguntarCierreDeNivel(gui, hud, 2, (cierre) => {
+              // El panel sale enseguida. La explicación de la pregunta viaja adentro
+              // de él, así que ya no hay que esperar a que se apague ningún cartel:
+              // esta pausa es solo para que el cierre no se sienta abrupto.
+              luegoDe(scene, 700, () => {
+                hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu, cierre);
               });
             });
           });

@@ -84,8 +84,31 @@ export class GameManager {
     this.puntaje = 0;
   }
 
+  /**
+   * Momento en que el jugador empezó a jugar el nivel actual.
+   *
+   * Se marca cuando termina la apertura, no cuando se carga el nivel: leer el
+   * contexto no puede contar como tiempo de juego. Es el mismo criterio con el
+   * que cada nivel arranca su propio reloj.
+   *
+   * Sirve para el desempate del ranking: a igual puntaje, gana quien lo logró
+   * en menos tiempo.
+   */
+  private inicioDelNivel: number | null = null;
+
+  iniciarCronometroNivel(): void {
+    this.inicioDelNivel = performance.now();
+  }
+
+  /** Segundos jugados en el nivel actual. Cero si todavía no arrancó. */
+  segundosDelNivel(): number {
+    if (this.inicioDelNivel === null) return 0;
+    return Math.max(0, Math.round((performance.now() - this.inicioDelNivel) / 1000));
+  }
+
   reiniciarNivel(): void {
     this.puntaje = 0;
+    this.inicioDelNivel = null;
     this.onPuntajeCambiado.notifyObservers(this.puntaje);
   }
 

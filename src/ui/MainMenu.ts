@@ -163,7 +163,10 @@ export function mostrarMenuPrincipal(
     panel.top = Math.round((1 - suavizar(Math.min(1, t / 0.4))) * 14) + "px";
 
     const pConteo = suavizar(tramo(t, 0.18, 0.55));
-    progreso.contador.text = Math.round(completadas * pConteo) + " de " + niveles.length + " fases";
+    // fases.length y NO niveles.length: la lista completa incluye el tutorial,
+    // que no es una fase del curso. Usarla acá hacía que el contador dijera
+    // "5 de 6 fases" con el curso entero terminado.
+    progreso.contador.text = Math.round(completadas * pConteo) + " de " + fases.length + " fases";
 
     progreso.rellenos.forEach((relleno, i) => {
       if (i >= completadas) return;

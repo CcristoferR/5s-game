@@ -7,7 +7,6 @@ import { mostrarInformeAuditoria } from "../ui/AuditReport";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager } from "../core/GameManager";
-import { guardarResultadoNivel5 } from "../core/RankingStorage";
 import { briefingsNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { HUD } from "../ui/HUD";
@@ -75,7 +74,7 @@ export function cargarNivel5(
 
   const instruccion = new TextBlock(
     "instruccionNivel5",
-    `🔍 Estás auditando el estándar que TÚ definiste en el Nivel 4. Click en la esfera si detectas un problema (click de nuevo para desmarcar). Necesitas ${Math.round(
+    `Estás auditando el estándar que TÚ definiste en el Nivel 4. Click en la esfera si detectas un problema (click de nuevo para desmarcar). Necesitas ${Math.round(
       UMBRAL_APROBACION * 100
     )}% de aciertos para aprobar la auditoría.`
   );
@@ -150,6 +149,9 @@ export function cargarNivel5(
   mostrarAperturaNivel(scene, 5, briefingsNiveles[5], null, () => {
     inicioNivel = performance.now();
     corriendoTiempo = true;
+    // Mismo criterio que los otros niveles: el reloj del ranking empieza
+    // cuando empieza la auditoría, no cuando se abre la pantalla.
+    gameManager.iniciarCronometroNivel();
   });
 
   scene.onBeforeRenderObservable.add(() => {
@@ -205,17 +207,22 @@ export function cargarNivel5(
 
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
 
-    // Se guarda CUALQUIER intento (apruebes o no) — así el ranking
-    // también sirve para ver tu propia mejora entre reintentos.
-    guardarResultadoNivel5({ tasaAcierto, promedioCalificacion, segundos: segundosTotales });
+    // El resultado del curso lo registra main.ts contra Supabase al completar
+    // cada fase, y de ahí sale el ranking. Acá había además una copia local
+    // en el navegador: quedaba de la época en que el ranking era personal y
+    // solo de este nivel. Mantener dos registros del mismo hecho es pedir que
+    // algún día muestren números distintos.
 
     mostrarInformeAuditoria(gui, filas, () => {
       // Pregunta de cierre del programa completo: el jugador acaba de ver su
       // informe punto por punto, y acá se le pide decidir qué hacer con una
       // desviación que se repite — que es de lo que trata Shitsuke.
-      preguntarCierreDeNivel(gui, hud, 5, () => {
-        luegoDe(scene, 1600, () => {
-          hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar);
+      preguntarCierreDeNivel(gui, hud, 5, (cierre) => {
+        // El panel sale enseguida. La explicación de la pregunta viaja adentro
+        // de él, así que ya no hay que esperar a que se apague ningún cartel:
+        // esta pausa es solo para que el cierre no se sienta abrupto.
+        luegoDe(scene, 700, () => {
+          hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar, cierre);
         });
       });
     });

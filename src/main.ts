@@ -7,6 +7,7 @@ import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
 import { mostrarCatalogo } from "./portal/PantallaCatalogo";
 import { registrarFaseCompletada, progresoDe, CURSO_ID } from "./portal/Datos";
+import { guardarResultadoDeFase } from "./portal/Ranking";
 import { leerSesion, cerrarSesion, rolVerificado } from "./portal/Sesion";
 import type { Perfil } from "./portal/Datos";
 import { cargarTutorial } from "./levels/Level0_Tutorial";
@@ -18,7 +19,7 @@ import { cargarNivel5 } from "./levels/Level5_Shitsuke";
 import { HUD } from "./ui/HUD";
 import { mostrarMenuPrincipal } from "./ui/MainMenu";
 import { mostrarCertificado } from "./ui/CertificateScreen";
-import { mostrarRankingNivel5 } from "./ui/RankingScreen";
+import { mostrarRankingCurso } from "./ui/RankingScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, undefined, true);
@@ -73,7 +74,7 @@ function mostrarMenu(): void {
     gameManager.getPorcentajeMadurez(),
     (numeroNivel) => cargarNivel(numeroNivel),
     () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
-    () => mostrarRankingNivel5(sceneManager.scene, () => mostrarMenu()),
+    () => mostrarRankingCurso(sceneManager.scene, () => mostrarMenu()),
     perfilActivo?.nombreCompleto,
     () => void volverAlCatalogo()
   );
@@ -123,6 +124,20 @@ function cargarNivel(numeroNivel: number): void {
     // hace posible que el administrador vea quién completó qué.
     if (perfilActivo) {
       void registrarFaseCompletada(perfilActivo.id, CURSO_ID, numeroNivel, gameManager.puntaje);
+
+      // Resultado de ESTA fase, para el ranking.
+      //
+      // Va separado del avance porque responden preguntas distintas: el avance
+      // dice hasta dónde llegó la persona, el resultado dice qué tan bien lo
+      // hizo. Y sobre todo, el ranking necesita el puntaje fase por fase — el
+      // total del curso es la suma. El marcador del juego se reinicia en cada
+      // nivel, así que gameManager.puntaje es exactamente el de esta fase.
+      void guardarResultadoDeFase(
+        CURSO_ID,
+        numeroNivel,
+        gameManager.puntaje,
+        gameManager.segundosDelNivel()
+      );
     }
   };
 

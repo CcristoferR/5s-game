@@ -361,12 +361,18 @@ function crearTarjetaPaso(gui: Parameters<typeof crearVelo>[0]): {
   rotulo.isHitTestVisible = false;
   contenedor.addControl(rotulo);
 
-  const marca = new TextBlock("marcaTutorial", "✓");
+  // Marca de paso cumplido.
+  //
+  // Era un símbolo de tilde. Se cambió por la palabra: un tilde suelto obliga
+  // a interpretar un dibujo, mientras que "Listo" se lee directo y además
+  // acompaña al rótulo del paso, que también es texto. El color ya dice que
+  // salió bien.
+  const marca = new TextBlock("marcaTutorial", "LISTO");
   marca.color = PALETA.acierto;
-  marca.fontSize = 26;
-  marca.fontWeight = "700";
-  marca.width = "30px";
-  marca.height = "30px";
+  marca.fontSize = TEXTO.rotulo;
+  marca.fontWeight = "600";
+  marca.width = "60px";
+  marca.height = "20px";
   marca.left = "-20px";
   marca.top = "16px";
   marca.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;

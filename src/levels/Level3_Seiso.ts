@@ -93,7 +93,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const instruccion = new TextBlock(
     "instruccionNivel3",
-    "🔍 Modo detective: limpia cada mancha, luego identifica la causa de cada incidente"
+    "Modo detective: limpia cada mancha, luego identifica la causa de cada incidente"
   );
   instruccion.color = "white";
   instruccion.fontSize = TEXTO.cuerpo;
@@ -129,6 +129,9 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let corriendoTiempo = false;
 
   function arrancarNivel(): void {
+    // El cronómetro del ranking arranca junto con el del nivel: leer la
+    // apertura no cuenta como tiempo de juego.
+    GameManager.getInstance().iniciarCronometroNivel();
     inicioNivel = performance.now();
     corriendoTiempo = true;
   }
@@ -224,7 +227,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       `¡Investigación completada! Intentos fallidos en las preguntas de causa: ${intentosFallidos} — mientras menos, mejor tu trabajo de detective.`
     );
 
-    luegoDe(scene, 1800, () => {
+    luegoDe(scene, 1000, () => {
       hud.mostrarResultadoFinal("Nivel 3", puntosBase, bonusTiempo, segundosTotales, onVolverMenu);
     });
   }
