@@ -8,7 +8,7 @@ import { crearShelfSlot } from "../entities/ShelfSlot";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel2 } from "../entities/Level2Shapes";
-import { moverMalla } from "../core/Animacion";
+import { moverMalla, luegoDe } from "../core/Animacion";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
@@ -110,6 +110,11 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     new Vector3(posicionX, ALTURA_REPISA, Z_ESTACION + (yaGuardados === 0 ? -0.2 : 0.22));
 
   objetos.forEach((objeto) => {
+    // Al agarrar otro objeto el jugador ya pasó a lo siguiente: se apaga el
+    // mensaje anterior para dejar la pantalla limpia y que el resultado de
+    // ESTA acción se lea sin competencia.
+    objeto.onAgarrar.add(() => hud.ocultarFeedback());
+
     objeto.onSoltar.add(({ mesh, movioSuficiente, distancia }) => {
       if (!movioSuficiente) return;
 
@@ -123,7 +128,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
-        hud.mostrarFeedback(true, objeto.datos.explicacion);
+        // Las partículas brotan del objeto recién soltado, no del centro de la
+        // pantalla: así premian ESA decisión y no el hecho de haber hecho algo.
+        hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
         // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
         // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
         // hija volvia a habilitar el arrastre de un objeto ya resuelto.
@@ -154,32 +161,32 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
             `¡Estante organizado! Distancia total de ajuste: ${distanciaTotalRecorrida.toFixed(1)}m — mientras menor, más eficiente tu búsqueda.`
           );
 
-          setTimeout(() => {
+          luegoDe(scene, 1600, () => {
             // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
             // criterio que el nivel acaba de hacer practicar. El resultado se
             // muestra recién después de responderla.
             preguntarCierreDeNivel(gui, hud, 2, () => {
-              setTimeout(() => {
+              luegoDe(scene, 1600, () => {
                 hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
-              }, 1600);
+              });
             });
-          }, 1600);
+          });
         }
       } else {
-        hud.mostrarFeedback(false, objeto.datos.explicacion);
+        hud.mostrarFeedback(false, objeto.datos.explicacion, mesh.position.clone());
 
         // Fricción visual: el objeto "rebota" al no encajar — refuerza
         // sin palabras que ese no es su lugar, tal como pide la guía
         // ("ubicar mal genera fricción visual").
         mesh.scaling.setAll(0.85);
         setTimeout(() => mesh.scaling.setAll(1.1), 90);
-        setTimeout(() => {
+        luegoDe(scene, 180, () => {
           mesh.scaling.setAll(1);
           // Después del rebote vuelve a su sitio en el banco. Antes se quedaba
           // apoyado sobre la estación equivocada, y a los pocos errores las
           // repisas mostraban herramientas que en realidad no estaban guardadas.
           moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
-        }, 180);
+        });
       }
     });
   });

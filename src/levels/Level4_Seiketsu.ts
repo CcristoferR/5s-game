@@ -14,6 +14,7 @@ import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearRotulo3D } from "../entities/Rotulo3D";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
+import { moverMalla, luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { TEXTO } from "../ui/EstiloUI";
 
@@ -244,6 +245,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   items.forEach((item) => {
     item.onAgarrar.add(() => {
+      hud.ocultarFeedback();
       textoLectura.text = item.datos.textoVisible;
       panelLectura.isVisible = true;
     });
@@ -265,22 +267,28 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
       // "Click" real: la tarjeta salta a un lugar ordenado junto a su
       // zona, en vez de quedarse donde se soltó al azar.
+      // El acomodo va animado, igual que en los niveles 1 y 2. Antes saltaba de
+      // golpe con copyFrom: el objeto desaparecía de la mano y reaparecía en su
+      // sitio, sin que se viera el recorrido. Con la animación se entiende que
+      // el juego lo acomodó, que es la lectura correcta.
       if (zonaMasCercana === "checklist") {
         const pos = POSICIONES_SNAP_CHECKLIST[contadorChecklist] ?? POSICIONES_SNAP_CHECKLIST[POSICIONES_SNAP_CHECKLIST.length - 1];
-        mesh.position.copyFrom(pos);
+        moverMalla(scene, mesh, pos.clone(), 260);
         contadorChecklist++;
       } else {
         const pos = POSICIONES_SNAP_DESCARTAR[contadorDescartar] ?? POSICIONES_SNAP_DESCARTAR[POSICIONES_SNAP_DESCARTAR.length - 1];
-        mesh.position.copyFrom(pos);
+        moverMalla(scene, mesh, pos.clone(), 260);
         contadorDescartar++;
       }
 
-      hud.mostrarFeedback(true, "📌 Instrucción ubicada — se evaluará al probar el estándar.");
+      hud.mostrarFeedback(true, "📌 Instrucción ubicada — se evaluará al probar el estándar.", mesh.position.clone());
       verificarListoParaProbar();
     });
   });
 
   senales.forEach((senal) => {
+    senal.onAgarrar.add(() => hud.ocultarFeedback());
+
     senal.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente || colocacionSenales.has(senal.datos.id)) return;
 
@@ -296,9 +304,9 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
       // "Click" real: la ficha encaja exactamente en el centro del
       // círculo punteado, como una pieza de shadow board de verdad.
-      mesh.position.set(zonaMasCercana.posicionX, 0.025, Z_ZONA_SENAL);
+      moverMalla(scene, mesh, new Vector3(zonaMasCercana.posicionX, 0.025, Z_ZONA_SENAL), 260);
 
-      hud.mostrarFeedback(true, "🎨 Señal ubicada — se evaluará al probar el estándar.");
+      hud.mostrarFeedback(true, "🎨 Señal ubicada — se evaluará al probar el estándar.", mesh.position.clone());
       verificarListoParaProbar();
     });
   });
@@ -373,7 +381,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       etiquetaNpc.text = npcExito ? "✅ ¡Estándar claro, lo apliqué sin problemas!" : "❌ El estándar es ambiguo, no supe qué hacer";
       etiquetaNpc.color = npcExito ? "#8be29a" : "#ff9a9a";
 
-      setTimeout(() => {
+      luegoDe(scene, 1600, () => {
         etiquetaNpc.isVisible = false;
 
         mostrarInformeEstandar(gui, todasLasFilas, totalCorrectos, () => {
@@ -391,12 +399,12 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           // Pregunta de cierre: el nivel acaba de mostrar cómo falla un estándar
           // ambiguo con el operario, así que acá se pide reconocer cuál sirve.
           preguntarCierreDeNivel(gui, hud, 4, () => {
-            setTimeout(() => {
+            luegoDe(scene, 2200, () => {
               hud.mostrarResultadoFinal("Nivel 4", puntosBase, bonusTiempo, segundosTotales, onVolverMenu);
-            }, 1600);
+            });
           });
         });
-      }, 2200);
+      });
     });
   }
 

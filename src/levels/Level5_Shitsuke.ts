@@ -1,7 +1,8 @@
-import { Scene, MeshBuilder } from "@babylonjs/core";
+import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
 import { Button, TextBlock, Control } from "@babylonjs/gui";
 import { generarPuntosControlNivel5 } from "../core/AuditGenerator";
 import { crearPuntoControl } from "../entities/AuditPoint";
+import { chispasDeAcierto } from "../entities/Particulas";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
@@ -10,6 +11,7 @@ import { guardarResultadoNivel5 } from "../core/RankingStorage";
 import { briefingsNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { HUD } from "../ui/HUD";
+import { luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { TEXTO } from "../ui/EstiloUI";
 
@@ -104,10 +106,19 @@ export function cargarNivel5(
   );
 
   let marcados = 0;
-  puntos.forEach((punto) => {
+  puntos.forEach((punto, i) => {
     punto.onCambio.add((estaMarcado) => {
       marcados += estaMarcado ? 1 : -1;
       contador.text = `Marcados: ${marcados}/${puntos.length}`;
+
+      // Chispas solo AL MARCAR, no al desmarcar, y sin revelar si estuvo
+      // bien: durante la auditoría el jugador no debe saber si acertó, o el
+      // nivel se resolvería probando cada punto hasta ver el destello.
+      // El resultado se revela después, en el informe.
+      if (estaMarcado) {
+        const datos = datosControl[i];
+        chispasDeAcierto(scene, new Vector3(datos.posicion[0], 0.5, datos.posicion[1]), 0.55);
+      }
     });
   });
 
@@ -203,9 +214,9 @@ export function cargarNivel5(
       // informe punto por punto, y acá se le pide decidir qué hacer con una
       // desviación que se repite — que es de lo que trata Shitsuke.
       preguntarCierreDeNivel(gui, hud, 5, () => {
-        setTimeout(() => {
+        luegoDe(scene, 1600, () => {
           hud.mostrarResultadoAuditoria(aprobado, puntosBase, tasaAcierto, promedioCalificacion, segundosTotales, onVolverMenu, onReintentar);
-        }, 1600);
+        });
       });
     });
   }

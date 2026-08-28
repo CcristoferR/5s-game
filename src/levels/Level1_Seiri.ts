@@ -4,7 +4,7 @@ import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
-import { moverMalla } from "../core/Animacion";
+import { moverMalla, luegoDe } from "../core/Animacion";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
@@ -127,6 +127,11 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   };
 
   objetos.forEach((objeto) => {
+    // Al agarrar otro objeto el jugador ya pasó a lo siguiente: se apaga el
+    // mensaje anterior para dejar la pantalla limpia y que el resultado de
+    // ESTA acción se lea sin competencia.
+    objeto.onAgarrar.add(() => hud.ocultarFeedback());
+
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente) return;
 
@@ -139,7 +144,9 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
       if (esCorrecto) {
         gameManager.sumarPuntos(10);
-        hud.mostrarFeedback(true, objeto.datos.explicacion);
+        // Las partículas brotan del objeto recién soltado, no del centro de la
+        // pantalla: así premian ESA decisión y no el hecho de haber hecho algo.
+        hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
 
         // Se fija ANTES de moverlo: mientras viaja a su lugar el objeto ya no
         // debe poder agarrarse, o el jugador lo vuelve a soltar en otra zona y
@@ -165,19 +172,19 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
             `¡Clasificación completa! Necesario: ${conteoZonas.necesario} · Dudoso: ${conteoZonas.dudoso} · Descartar: ${conteoZonas.descartar}`
           );
 
-          setTimeout(() => {
+          luegoDe(scene, 1600, () => {
             // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
             // criterio que el nivel acaba de hacer practicar. El resultado se
             // muestra recién después de responderla.
             preguntarCierreDeNivel(gui, hud, 1, () => {
-              setTimeout(() => {
+              luegoDe(scene, 1400, () => {
                 hud.mostrarResultadoFinal("Nivel 1", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu);
-              }, 1600);
+              });
             });
-          }, 1400);
+          });
         }
       } else {
-        hud.mostrarFeedback(false, objeto.datos.explicacion);
+        hud.mostrarFeedback(false, objeto.datos.explicacion, mesh.position.clone());
 
         // Vuelve a su lugar en el banco. Antes se quedaba flotando sobre la
         // zona equivocada a la altura del tablero, y con cada error la escena
@@ -200,7 +207,15 @@ function crearSenalTarjetaRoja(scene: Scene, x: number): void {
   matPoste.metallic = 0.4;
 
   const poste = MeshBuilder.CreateCylinder("posteTarjetaRoja", { diameter: 0.035, height: 0.7 }, scene);
-  poste.position.set(x - 1.45, 0.35, 2.4);
+  // Justo DELANTE de la zona Dudoso, centrada con ella.
+  //
+  // Antes iba a x - 1.45, que cae en el pasillo entre Necesario y Dudoso:
+  // pegada al borde de la zona verde, parecía pertenecer a esa. La tarjeta
+  // roja ES el concepto de Dudoso, así que tiene que leerse junto a ella.
+  //
+  // Va delante (z menor) y no encima para no chocar con la grilla donde
+  // aterrizan los objetos clasificados, que ocupa z entre 2.09 y 2.71.
+  poste.position.set(x, 0.35, 1.05);
   poste.material = matPoste;
 
   const matTarjeta = new PBRMaterial("matTarjetaRoja", scene);

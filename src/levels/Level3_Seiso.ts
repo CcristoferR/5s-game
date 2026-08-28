@@ -3,6 +3,8 @@ import { TextBlock, Control, AdvancedDynamicTexture } from "@babylonjs/gui";
 import { incidentesNivel3, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearMancha } from "../entities/Stain";
+import { chispasDeAcierto } from "../entities/Particulas";
+import { reproducir } from "../core/Sonido";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
 import { crearImpresoraConToner } from "../entities/PrinterMachine";
 import { mostrarPanelOpciones } from "../ui/ChoicePanel";
@@ -18,6 +20,7 @@ import {
 } from "../entities/WorkshopProps";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
+import { luegoDe } from "../core/Animacion";
 import { TEXTO } from "../ui/EstiloUI";
 
 export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
@@ -155,6 +158,17 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       const { onLimpia } = crearMancha(scene, datosMancha.id, datosMancha.posicion[0], datosMancha.posicion[1], datosMancha.tipoVisual);
 
       onLimpia.add(() => {
+        // Sonido al terminar de limpiar cada mancha.
+        //
+        // Este nivel era el único de los cinco que se jugaba en silencio: se
+        // frotaba, la mancha desaparecía y no pasaba nada. El acuse sonoro es
+        // lo que cierra la acción — sobre todo acá, donde limpiar toma varios
+        // clics y el jugador necesita saber cuándo terminó una y empieza otra.
+        reproducir("acierto");
+        // Chispas en la mancha que se acaba de limpiar. Acá no se usa
+        // mostrarFeedback porque limpiar no abre el cartel de texto: sería
+        // un cartel cada cinco clics y taparía la escena todo el rato.
+        chispasDeAcierto(scene, new Vector3(datosMancha.posicion[0], 0.15, datosMancha.posicion[1]), 0.7);
         gameManager.sumarPuntos(5);
         manchasLimpiasTotal++;
         manchasLimpiasEsteIncidente++;
@@ -210,9 +224,9 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       `¡Investigación completada! Intentos fallidos en las preguntas de causa: ${intentosFallidos} — mientras menos, mejor tu trabajo de detective.`
     );
 
-    setTimeout(() => {
+    luegoDe(scene, 1800, () => {
       hud.mostrarResultadoFinal("Nivel 3", puntosBase, bonusTiempo, segundosTotales, onVolverMenu);
-    }, 1800);
+    });
   }
 
   return { maquina, impresora };

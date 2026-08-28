@@ -1,5 +1,6 @@
-import { Scene } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import { reproducir } from "../core/Sonido";
+import { chispasDeAcierto, humoDeError, lluviaDeEstrellas, puntoFrenteALaCamara } from "../entities/Particulas";
 import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel, Button } from "@babylonjs/gui";
 import { TEXTO, PALETA } from "./EstiloUI";
 
@@ -23,7 +24,12 @@ export class HUD {
   private botonVolverMenu: Button;
   private botonReintentar: Button;
 
+  private readonly scene: Scene;
+  /** Temporizador que apaga el cartel de feedback. null si no hay ninguno. */
+  private temporizadorFeedback: number | null = null;
+
   constructor(scene: Scene) {
+    this.scene = scene;
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI("hudPrincipal", true, scene);
 
     // --- Marcador: ahora con tarjeta real detrás, no texto flotando solo ---
@@ -177,20 +183,79 @@ export class HUD {
     this.textoTiempo.text = `⏱  Restante: ${segundos}s`;
   }
 
-  mostrarFeedback(correcto: boolean, mensaje: string): void {
-    // Un solo enganche cubre los cinco niveles: todos informan aciertos y
-    // errores por acá.
+  /**
+   * Informa un acierto o un error.
+   *
+   * @param punto Lugar de la escena donde ocurrió. Si se omite, las partículas
+   *   salen delante de la cámara — sirve para lo que no pasa en un lugar
+   *   concreto, como acertar la pregunta de un panel.
+   *
+   * Un solo enganche cubre los cinco niveles: todos informan aciertos y errores
+   * por acá. Por eso el sonido y las partículas viven en este método y no
+   * repartidos por los niveles, donde tarde o temprano alguno quedaría sin su
+   * efecto.
+   */
+  mostrarFeedback(correcto: boolean, mensaje: string, punto?: Vector3): void {
     reproducir(correcto ? "acierto" : "error");
+
+    // Las partículas llegan antes que el texto: el jugador se entera de que
+    // estuvo bien sin haber terminado de leer.
+    const lugar = punto ?? puntoFrenteALaCamara(this.scene);
+    if (correcto) {
+      chispasDeAcierto(this.scene, lugar);
+    } else {
+      humoDeError(this.scene, lugar);
+    }
+
     this.cartelFeedback.background = correcto ? "rgba(30, 110, 50, 0.95)" : "rgba(120, 30, 30, 0.95)";
     this.textoFeedback.text = correcto ? `✅  ${mensaje}` : `❌  ${mensaje}`;
     this.cartelFeedback.isVisible = true;
 
-    setTimeout(() => {
+    // Se cancela el temporizador anterior antes de armar el nuevo.
+    //
+    // Sin esto los temporizadores se acumulan: si el jugador coloca un objeto
+    // dos segundos después del anterior, el temporizador viejo apaga el
+    // cartel recién puesto a los 200 ms. El mensaje aparecía y desaparecía sin
+    // dar tiempo a leerlo, y encima de forma errática — dependía de cuánto
+    // hubiera tardado entre una acción y la otra.
+    if (this.temporizadorFeedback !== null) {
+      clearTimeout(this.temporizadorFeedback);
+    }
+
+    // La duración se ajusta al largo del texto en vez de ser fija. Las
+    // explicaciones de los niveles van de 40 a 140 caracteres: con un tiempo
+    // único, o las cortas se quedaban de más o las largas no alcanzaban a
+    // leerse. El piso de 3,5 s cubre incluso los mensajes de una línea.
+    const duracion = Math.min(9000, Math.max(3500, 1200 + mensaje.length * 55));
+
+    this.temporizadorFeedback = window.setTimeout(() => {
       this.cartelFeedback.isVisible = false;
-    }, 2200);
+      this.temporizadorFeedback = null;
+    }, duracion);
+  }
+
+  /**
+   * Apaga el cartel de inmediato.
+   *
+   * Los niveles la llaman cuando el jugador agarra otro objeto: en ese momento
+   * ya pasó a lo siguiente y el mensaje anterior sobra. Deja la pantalla limpia
+   * para el resultado de ESA acción.
+   */
+  ocultarFeedback(): void {
+    if (this.temporizadorFeedback !== null) {
+      clearTimeout(this.temporizadorFeedback);
+      this.temporizadorFeedback = null;
+    }
+    this.cartelFeedback.isVisible = false;
   }
 
   mostrarResultadoFinal(nombreNivel: string, puntosBase: number, bonusTiempo: number, segundosTotales: number, onVolverMenu: () => void): void {
+    // Lluvia de estrellas sobre la escena, más larga que un acierto suelto:
+    // terminar una fase tiene que sentirse distinto de clasificar un objeto.
+    // Cae detrás del panel de resultados, así el fondo se mantiene vivo
+    // mientras el jugador lee su puntaje.
+    lluviaDeEstrellas(this.scene, puntoFrenteALaCamara(this.scene, 5));
+
     const total = puntosBase + bonusTiempo;
     this.textoTituloFinal.text = `🎉  ${nombreNivel} completado`;
     this.textoStatsFinal.text =

@@ -49,3 +49,21 @@ export function moverMalla(
     }
   });
 }
+/**
+ * Ejecuta algo después de una pausa, salvo que la escena ya no exista.
+ *
+ * Las secuencias de fin de nivel encadenan esperas de varios segundos y al
+ * terminar tocan la interfaz. Si en ese lapso el jugador vuelve al menú, la
+ * escena se destruye y el temporizador sigue vivo: dispara contra controles y
+ * mallas que ya no están.
+ *
+ * No es un fallo que se vea siempre —hay que salir justo en esa ventana— pero
+ * cuando ocurre deja el juego en un estado incoherente y sin ningún mensaje
+ * que explique por qué.
+ */
+export function luegoDe(scene: Scene, milisegundos: number, accion: () => void): void {
+  window.setTimeout(() => {
+    if (scene.isDisposed) return;
+    accion();
+  }, milisegundos);
+}
