@@ -16,6 +16,7 @@
     "@babylonjs/core": "^9.21.2",
     "@babylonjs/gui": "^9.21.2",
     "@babylonjs/loaders": "^9.21.2",
-    "@supabase/supabase-js": "^2.112.4"
+    "@supabase/supabase-js": "^2.112.4",
+    "exceljs": "^4.4.0"
   }
 }

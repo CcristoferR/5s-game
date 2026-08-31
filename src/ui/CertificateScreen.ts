@@ -54,7 +54,7 @@ export function mostrarCertificado(
   }
 
   const botonCerrar = crearBotonOpcion("btnCerrarCert", "Volver al menú", 180);
-  botonCerrar.top = "300px";
+  botonCerrar.top = "398px";
   botonCerrar.onPointerUpObservable.add(cerrar);
   fondo.addControl(botonCerrar);
 
@@ -83,10 +83,15 @@ export function mostrarCertificado(
     const dataUrl = generarCertificado(certificado, datosAuditoria);
 
     const imagen = new Image("imagenCertificado", dataUrl);
-    // Proporción 1200x850 del lienzo: si se estira, el texto sale deformado.
-    imagen.width = "620px";
-    imagen.height = "439px";
-    imagen.top = "-70px";
+    // 880x623 conserva exactamente la proporción del lienzo (1200x850): si se
+    // estira aunque sea un poco, el texto sale deformado.
+    //
+    // Es el tamaño más grande que deja los tres botones dentro de la pantalla
+    // sin tener que desplazar. Con 920 también entraba, pero el margen quedaba
+    // tan justo que en una pantalla algo más baja el botón de cerrar se iba.
+    imagen.width = "880px";
+    imagen.height = "623px";
+    imagen.top = "-50px";
     fondo.addControl(imagen);
 
     // El código repetido bajo la imagen se puede leer sin abrir el archivo, y
@@ -95,12 +100,12 @@ export function mostrarCertificado(
     codigo.color = PALETA.rotulo;
     codigo.fontSize = TEXTO.menor;
     codigo.height = "26px";
-    codigo.top = "168px";
+    codigo.top = "290px";
     codigo.isHitTestVisible = false;
     fondo.addControl(codigo);
 
     const botonDescargar = crearBotonPrincipal("btnDescargarCert", "Descargar certificado", 240);
-    botonDescargar.top = "222px";
+    botonDescargar.top = "338px";
     botonDescargar.left = "-130px";
     botonDescargar.onPointerUpObservable.add(() =>
       descargarCertificado(dataUrl, certificado.codigo)
@@ -108,7 +113,7 @@ export function mostrarCertificado(
     fondo.addControl(botonDescargar);
 
     const botonCompartir = crearBotonOpcion("btnCompartirCert", "Compartir", 180);
-    botonCompartir.top = "222px";
+    botonCompartir.top = "338px";
     botonCompartir.left = "130px";
     botonCompartir.onPointerUpObservable.add(() =>
       void compartirCertificado(dataUrl, certificado.codigo)

@@ -859,3 +859,102 @@
 .portal__tablaEnvoltorio .portal__tabla {
   min-width: 640px;
 }
+/* ---------------------------------------------------------------------------
+   Reportes descargables
+   ---------------------------------------------------------------------------
+
+   Botones grandes y no una fila de enlaces: cada reporte necesita una línea
+   que explique qué trae, o el administrador descarga los cuatro para ver cuál
+   servía.
+   --------------------------------------------------------------------------- */
+
+.reportes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.reporte {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px 18px;
+  text-align: left;
+  border: 1px solid var(--portal-borde);
+  border-radius: 10px;
+  background: var(--portal-tarjetaSuave, rgba(255, 255, 255, 0.02));
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.reporte:hover:not(:disabled) {
+  border-color: rgba(127, 180, 149, 0.45);
+  background: rgba(127, 180, 149, 0.06);
+}
+
+.reporte:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.reporte__nombre {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--portal-titulo);
+}
+
+.reporte__desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--portal-rotulo);
+}
+
+/* Mientras arma el archivo. Con muchas filas la consulta tarda y sin señal el
+   administrador vuelve a hacer clic. */
+.reporte--trabajando .reporte__nombre::after {
+  content: " · generando…";
+  font-weight: 400;
+  color: var(--portal-rotulo);
+}
+
+.portal__nota--arriba {
+  margin: -6px 0 16px;
+}
+
+/* --- Cobertura por área --- */
+
+.cobertura {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 150px;
+}
+
+.cobertura__carril {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--portal-linea);
+  overflow: hidden;
+}
+
+.cobertura__barra {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+/* El color no es decorativo: marca dónde hay que intervenir. Bajo 50% deja de
+   ser un rezago normal y pasa a ser algo que alguien tiene que ir a mirar. */
+.cobertura__barra--ok    { background: var(--portal-acierto); }
+.cobertura__barra--media { background: var(--portal-aviso, #bda079); }
+.cobertura__barra--baja  { background: var(--portal-error); }
+
+.cobertura__cifra {
+  min-width: 38px;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--portal-cuerpo);
+}

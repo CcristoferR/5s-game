@@ -15,6 +15,14 @@ import {
   type Inscripcion,
   type Perfil,
 } from "./Datos";
+import {
+  exportarPersonas,
+  exportarRanking,
+  exportarCodigos,
+  exportarResumenAreas,
+  resumenPorArea,
+  type ResumenArea,
+} from "./Reportes";
 import { cerrarSesion } from "./Sesion";
 import { rankingCompleto, formatearDuracion, type FilaRankingAdmin } from "./Ranking";
 import { CURSO_ID } from "./Datos";
@@ -38,7 +46,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
   void pintar();
 
   async function pintar(): Promise<void> {
-    const [perfiles, codigos, inscripciones, cursos, ranking] = await Promise.all([
+    const [perfiles, codigos, inscripciones, cursos, ranking, areas] = await Promise.all([
       listarPerfiles(),
       listarCodigos(),
       listarInscripciones(),
@@ -47,9 +55,10 @@ export function mostrarAdministracion(onSalir: () => void): void {
       // entera. La función de base de datos verifica el rol antes de
       // responder, así que esta llamada falla si no es administrador.
       rankingCompleto(CURSO_ID),
+      resumenPorArea(),
     ]);
 
-    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones, cursos, ranking);
+    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones, cursos, ranking, areas);
     conectar();
   }
 
@@ -115,6 +124,40 @@ export function mostrarAdministracion(onSalir: () => void): void {
       });
     });
 
+    raiz.querySelectorAll<HTMLButtonElement>("[data-reporte]").forEach((boton) => {
+      boton.addEventListener("click", async () => {
+        const tipo = boton.dataset.reporte!;
+        const etiqueta = boton.querySelector(".reporte__nombre")!.textContent;
+
+        // El botón se desactiva mientras arma el archivo. Con muchas filas la
+        // consulta tarda, y sin esta señal el administrador vuelve a hacer
+        // clic y se descarga el mismo reporte tres veces.
+        boton.disabled = true;
+        boton.classList.add("reporte--trabajando");
+
+        try {
+          const cuantas =
+            tipo === "personas" ? await exportarPersonas()
+            : tipo === "ranking" ? await exportarRanking()
+            : tipo === "areas" ? await exportarResumenAreas()
+            : await exportarCodigos();
+
+          avisar(
+            cuantas === 0
+              ? `${etiqueta}: no hay datos para exportar todavía.`
+              : `${etiqueta}: ${cuantas} ${cuantas === 1 ? "fila descargada" : "filas descargadas"}.`,
+            cuantas === 0 ? "error" : "ok"
+          );
+        } catch (error) {
+          console.error("[reportes]", error);
+          avisar("No se pudo generar el reporte. Revisa tu conexión.", "error");
+        } finally {
+          boton.disabled = false;
+          boton.classList.remove("reporte--trabajando");
+        }
+      });
+    });
+
     raiz.querySelectorAll<HTMLButtonElement>("[data-curso]").forEach((boton) => {
       boton.addEventListener("click", async () => {
         await cambiarEstadoCurso(boton.dataset.curso!, boton.dataset.accion === "publicar");
@@ -168,13 +211,12 @@ export function mostrarAdministracion(onSalir: () => void): void {
 }
 
 function plantilla(
-  
   perfiles: Perfil[],
   codigos: Codigo[],
   inscripciones: Inscripcion[],
-  cursos: Curso[]
-,
-  ranking: FilaRankingAdmin[]
+  cursos: Curso[],
+  ranking: FilaRankingAdmin[],
+  areas: ResumenArea[]
 ): string {
   const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
 
@@ -198,6 +240,39 @@ function plantilla(
         </div>
 
         <p class="portal__aviso" id="avisoAdmin" hidden></p>
+
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Reportes</h2>
+          <p class="portal__nota portal__nota--arriba">
+            Archivos Excel con formato, listos para archivar o adjuntar.
+          </p>
+
+          <div class="reportes">
+            <button class="reporte" type="button" data-reporte="personas">
+              <span class="reporte__nombre">Personas y avance</span>
+              <span class="reporte__desc">Una fila por inscripción, con fases completadas y estado</span>
+            </button>
+            <button class="reporte" type="button" data-reporte="ranking">
+              <span class="reporte__nombre">Ranking completo</span>
+              <span class="reporte__desc">Todos los participantes ordenados por puntaje</span>
+            </button>
+            <button class="reporte" type="button" data-reporte="areas">
+              <span class="reporte__nombre">Resumen por área</span>
+              <span class="reporte__desc">Cobertura de la capacitación en cada área</span>
+            </button>
+            <button class="reporte" type="button" data-reporte="codigos">
+              <span class="reporte__nombre">Códigos emitidos</span>
+              <span class="reporte__desc">Consumo de cupos y vigencia de cada código</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Cobertura por área</h2>
+          <div class="portal__tablaEnvoltura">
+            ${tablaAreas(areas)}
+          </div>
+        </section>
 
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Cursos de la plataforma</h2>
@@ -264,6 +339,54 @@ function plantilla(
       </div>
     </div>
   `;
+}
+
+/**
+ * Cuántos completaron el curso en cada área.
+ *
+ * Es lo primero que mira una jefatura: no le interesa persona por persona, le
+ * interesa si su área está al día. Y hace visible que un turno completo quedó
+ * sin capacitar, algo que en una lista de cien nombres pasa desapercibido.
+ */
+function tablaAreas(areas: ResumenArea[]): string {
+  if (areas.length === 0) {
+    return `<p class="portal__vacio">Todavía no hay personas inscritas.</p>`;
+  }
+
+  const filas = areas
+    .map((a) => {
+      // Bajo 50% se marca en rojo: es el umbral donde deja de ser un
+      // rezago normal y pasa a ser algo que hay que ir a mirar.
+      const color = a.cobertura >= 80 ? "ok" : a.cobertura >= 50 ? "media" : "baja";
+      return `
+        <tr>
+          <td>${a.area}</td>
+          <td>${a.inscritos}</td>
+          <td>${a.completados}</td>
+          <td>${a.enCurso}</td>
+          <td>${a.sinEmpezar}</td>
+          <td>
+            <div class="cobertura">
+              <div class="cobertura__carril">
+                <span class="cobertura__barra cobertura__barra--${color}" style="width:${a.cobertura}%"></span>
+              </div>
+              <span class="cobertura__cifra">${a.cobertura}%</span>
+            </div>
+          </td>
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <table class="portal__tabla">
+      <thead>
+        <tr>
+          <th>Área</th><th>Inscritos</th><th>Completados</th>
+          <th>En curso</th><th>Sin empezar</th><th>Cobertura</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>`;
 }
 
 function tablaCodigos(codigos: Codigo[], cursos: Curso[]): string {

@@ -16,14 +16,32 @@ import type { Certificado } from "../portal/Datos";
 const ANCHO = 1200;
 const ALTO = 850;
 
+/**
+ * Píxeles reales por unidad de dibujo.
+ *
+ * Todo se traza con las medidas de arriba, pero el lienzo se crea al doble y
+ * el contexto se escala. Así las proporciones no cambian ni una coma y la
+ * imagen tiene cuatro veces más píxeles: se lee nítida tanto en la vista
+ * previa como al abrir el archivo descargado y acercarse.
+ *
+ * Antes el lienzo era de 1200x850 y se mostraba a 620 px de ancho: el
+ * navegador tenía que reducirlo casi a la mitad y los textos chicos —el
+ * código, los rótulos de las casillas— se deshacían.
+ */
+const ESCALA = 2;
+
 export function generarCertificado(
   certificado: Certificado,
   datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number }
 ): string {
   const canvas = document.createElement("canvas");
-  canvas.width = ANCHO;
-  canvas.height = ALTO;
+  canvas.width = ANCHO * ESCALA;
+  canvas.height = ALTO * ESCALA;
   const ctx = canvas.getContext("2d")!;
+
+  // A partir de acá se dibuja en las medidas originales y el contexto se
+  // encarga de multiplicar. Ninguna coordenada del resto del archivo cambia.
+  ctx.scale(ESCALA, ESCALA);
 
   fondoYMarco(ctx);
   encabezado(ctx);
