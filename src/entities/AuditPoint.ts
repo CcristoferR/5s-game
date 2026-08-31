@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh, Observable, Vector3 } from "@babylonjs/core";
+import { texturaGrano, texturaConcreto, texturaCarton, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { crearRotulo3D } from "./Rotulo3D";
 import type { TipoEvidencia } from "../data/levelConfig";
@@ -32,6 +33,8 @@ export function crearPuntoControl(
 
   const mat = new PBRMaterial(`matPunto_${id}`, scene);
   mat.albedoColor = colorNeutro;
+  // Microtextura de rugosidad: una esfera de color liso se lee como plástico.
+  mat.microSurfaceTexture = texturaGrano(scene, 0.1);
   mat.emissiveColor = colorNeutro.scale(0.15);
   mat.roughness = 0.25;
   mat.metallic = 0.4;
@@ -68,8 +71,12 @@ export function crearPuntoControl(
 }
 
 function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
+  // Concreto texturado, igual que los pedestales y muebles del resto del
+  // juego. Antes era gris plano: al lado de los objetos texturados de los
+  // niveles 1 a 4, el Nivel 5 se veía de otra época.
   const mat = new PBRMaterial(`matPedestal_${id}`, scene);
-  mat.albedoColor = new Color3(0.5, 0.48, 0.44);
+  mat.albedoTexture = texturaConcreto(scene);
+  mat.albedoColor = new Color3(0.72, 0.7, 0.66);
   mat.roughness = 0.6;
   mat.metallic = 0.1;
 
@@ -130,7 +137,10 @@ function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: Ti
     creados.push(salpicadura);
   } else if (tipo === "objetoFueraDeLugar") {
     const matCasilla = new PBRMaterial(`matCasillaAudit_${id}`, scene);
-    matCasilla.albedoColor = new Color3(0.5, 0.55, 0.6);
+    matCasilla.albedoTexture = texturaMetalCepillado(scene);
+    matCasilla.bumpTexture = normalMetalCepillado(scene);
+    matCasilla.invertNormalMapY = true;
+    matCasilla.albedoColor = new Color3(0.72, 0.78, 0.85);
     matCasilla.alpha = 0.5;
     matCasilla.roughness = 0.5;
 
@@ -140,7 +150,8 @@ function crearEvidencia(scene: Scene, id: string, x: number, z: number, tipo: Ti
     creados.push(casilla);
 
     const matCaja = new PBRMaterial(`matObjetoFuera_${id}`, scene);
-    matCaja.albedoColor = new Color3(0.65, 0.6, 0.3);
+    matCaja.albedoTexture = texturaCarton(scene);
+    matCaja.albedoColor = new Color3(0.92, 0.86, 0.5);
     matCaja.emissiveColor = new Color3(0.15, 0.13, 0.02);
     matCaja.roughness = 0.6;
 

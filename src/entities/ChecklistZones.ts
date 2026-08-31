@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh } from "@babylonjs/core";
-import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 
 export function crearTableroChecklist(scene: Scene, x: number): Mesh {
   const poste = MeshBuilder.CreateCylinder(`posteTablero_${x}`, { diameter: 0.08, height: 1.1 }, scene);
@@ -25,6 +25,8 @@ export function crearTableroChecklist(scene: Scene, x: number): Mesh {
   matClip.roughness = 0.25;
   matClip.metallic = 0.85;
   matClip.albedoTexture = texturaMetalCepillado(scene);
+  matClip.bumpTexture = normalMetalCepillado(scene);
+  matClip.invertNormalMapY = true;
   matClip.microSurfaceTexture = texturaGrano(scene, 0.14); // metal brillante — el clip real de una carpeta de procedimientos
 
   const clip = MeshBuilder.CreateBox(`clipTablero_${x}`, { width: 0.25, height: 0.06, depth: 0.08 }, scene);

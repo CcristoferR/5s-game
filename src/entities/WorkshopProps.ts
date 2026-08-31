@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3 } from "@babylonjs/core";
-import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 
 // ---------------------------------------------------------------------------
 // Utilería de taller
@@ -27,6 +27,8 @@ function material(scene: Scene, nombre: string, color: Color3, rugosidad: number
   mat.microSurfaceTexture = texturaGrano(scene, metalico >= 0.6 ? 0.14 : 0.07);
   if (metalico >= 0.6) {
     mat.albedoTexture = texturaMetalCepillado(scene);
+    mat.bumpTexture = normalMetalCepillado(scene);
+    mat.invertNormalMapY = true;
     // El albedo se aclara porque ahora lo multiplica la textura, que ronda el
     // gris medio: sin esto el metal quedaría notoriamente más oscuro.
     mat.albedoColor = new Color3(
@@ -88,7 +90,8 @@ export function crearEstanteriaTaller(scene: Scene, x: number, z: number, giroY:
   carga.forEach(([px, py, ancho, mat, alto], i) => {
     const bulto = MeshBuilder.CreateBox(`bulto_${x}_${z}_${i}`, { width: ancho, height: alto, depth: 0.36 }, scene);
     bulto.position.set(px, py + alto / 2, (Math.random() - 0.5) * 0.1);
-    bulto.rotation.y = (Math.random() - 0.5) * 0.25;
+    bulto.rotation.y = (Math.random() - 0.5) * 0.4;
+    bulto.scaling.setAll(0.93 + Math.random() * 0.14);
     bulto.material = mat;
     bulto.parent = raiz;
     bulto.receiveShadows = true;
@@ -109,6 +112,14 @@ export function crearTamboresAceite(scene: Scene, x: number, z: number): void {
   posiciones.forEach(([dx, dz], i) => {
     const tambor = MeshBuilder.CreateCylinder(`tambor_${x}_${z}_${i}`, { diameter: 0.58, height: 0.88, tessellation: 24 }, scene);
     tambor.position.set(x + dx, 0.44, z + dz);
+    // Cada tambor gira sobre su eje y varía un poco de tamaño.
+    //
+    // Sin esto los tres son la misma malla con el mismo material en la misma
+    // pose: el ojo detecta la repetición al instante y la escena se lee como
+    // copiar-pegar. Es lo que más delata un decorado hecho por código, y se
+    // arregla con dos líneas.
+    tambor.rotation.y = Math.random() * Math.PI * 2;
+    tambor.scaling.setAll(0.94 + Math.random() * 0.12);
     tambor.material = matTambor;
     tambor.receiveShadows = true;
 
@@ -150,7 +161,8 @@ export function crearPalletConCajas(scene: Scene, x: number, z: number): void {
   cajas.forEach(([dx, py, ancho, alto], i) => {
     const caja = MeshBuilder.CreateBox(`cajaPallet_${x}_${z}_${i}`, { width: ancho, height: alto, depth: 0.44 }, scene);
     caja.position.set(x + dx, py, z);
-    caja.rotation.y = (Math.random() - 0.5) * 0.2;
+    caja.rotation.y = (Math.random() - 0.5) * 0.35;
+    caja.scaling.setAll(0.95 + Math.random() * 0.1);
     caja.material = matCaja;
     caja.receiveShadows = true;
   });

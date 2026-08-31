@@ -195,8 +195,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   etiquetaNpc.height = "26px";
   etiquetaNpc.isVisible = false;
   gui.addControl(etiquetaNpc);
-  etiquetaNpc.linkWithMesh(npc.mesh);
-  etiquetaNpc.linkOffsetY = -55;
+  // Se cuelga del anclaje sobre el casco, no de la raíz: la figura apoya en
+  // el piso, así que atarla a la raíz dejaría el globo sobre las piernas.
+  etiquetaNpc.linkWithMesh(npc.anclaEtiqueta);
+  etiquetaNpc.linkOffsetY = -30;
 
   // APERTURA DEL NIVEL
   //
@@ -414,7 +416,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     });
   }
 
-  return { items, zonas: [tableroChecklist, papeleraDescartar], senales };
+  return { items, zonas: [tableroChecklist, papeleraDescartar], senales, npc };
 }
 function mostrarInformeEstandar(
   gui: AdvancedDynamicTexture,

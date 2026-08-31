@@ -803,3 +803,113 @@ export async function rankingDe(cursoId = CURSO_ID, tope = 20): Promise<EntradaR
       completadoEn: f.completado_en,
     }));
 }
+// ---------------------------------------------------------------------------
+// Certificados
+// ---------------------------------------------------------------------------
+
+export interface Certificado {
+  codigo: string;
+  nombre: string;
+  empresa: string;
+  area: string;
+  puntaje: number;
+  emitidoEn: string;
+}
+
+export type ResultadoCertificado =
+  | { ok: true; certificado: Certificado }
+  | { ok: false; motivo: "sin_sesion" | "sin_perfil" | "sin_curso" | "sin_avance" | "curso_incompleto" | "otro" };
+
+/**
+ * Emite el certificado de una persona, o devuelve el que ya tenía.
+ *
+ * La emisión ocurre entera en el servidor. Importa que sea así: el servidor
+ * comprueba contra la tabla de progreso que la persona REALMENTE terminó el
+ * curso, y toma el nombre y la empresa del perfil guardado en vez de aceptar
+ * lo que mande el navegador. De otro modo cualquiera podría emitirse un
+ * certificado a nombre de quien quisiera.
+ *
+ * Es reentrante: volver a abrir la pantalla devuelve el mismo código, no uno
+ * nuevo. El que la persona ya descargó tiene que seguir siendo válido.
+ */
+export async function emitirCertificado(cursoId = CURSO_ID): Promise<ResultadoCertificado> {
+  const { data, error } = await supabase.rpc("emitir_certificado", { curso: cursoId });
+
+  if (error) {
+    avisarError("emitirCertificado", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  const r = data as {
+    ok: boolean;
+    motivo?: ResultadoCertificado extends { ok: false; motivo: infer M } ? M : never;
+    codigo?: string;
+    nombre?: string;
+    empresa?: string;
+    area?: string;
+    puntaje?: number;
+    emitido_en?: string;
+  };
+
+  if (!r.ok) return { ok: false, motivo: r.motivo ?? "otro" };
+
+  return {
+    ok: true,
+    certificado: {
+      codigo: r.codigo!,
+      nombre: r.nombre ?? "",
+      empresa: r.empresa ?? "",
+      area: r.area ?? "",
+      puntaje: r.puntaje ?? 0,
+      emitidoEn: r.emitido_en ?? new Date().toISOString(),
+    },
+  };
+}
+
+export interface Verificacion {
+  valido: boolean;
+  nombre?: string;
+  empresa?: string;
+  area?: string;
+  curso?: string;
+  puntaje?: number;
+  emitidoEn?: string;
+}
+
+/**
+ * Comprueba si un código de certificado es auténtico.
+ *
+ * Es una consulta pública: quien verifica no necesita tener cuenta. Eso es lo
+ * que permite que un auditor externo valide un certificado que le mostraron.
+ * Devuelve solo lo que aparece impreso en el papel — nunca el RUT.
+ */
+export async function verificarCertificado(codigo: string): Promise<Verificacion> {
+  const { data, error } = await supabase.rpc("verificar_certificado", {
+    codigo_consultado: codigo,
+  });
+
+  if (error) {
+    avisarError("verificarCertificado", error);
+    return { valido: false };
+  }
+
+  const r = data as {
+    valido: boolean;
+    nombre?: string;
+    empresa?: string;
+    area?: string;
+    curso?: string;
+    puntaje?: number;
+    emitido_en?: string;
+  };
+
+  return {
+    valido: r.valido,
+    nombre: r.nombre,
+    empresa: r.empresa,
+    area: r.area,
+    curso: r.curso,
+    puntaje: r.puntaje,
+    emitidoEn: r.emitido_en,
+  };
+}

@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3, Matrix } from "@babylonjs/core";
-import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 import type { ObjetoNivel1 } from "../data/levelConfig";
 
 // ---------------------------------------------------------------------------
@@ -118,6 +118,8 @@ function material(scene: Scene, nombre: string, color: Color3, rugosidad: number
   mat.microSurfaceTexture = texturaGrano(scene, metalico >= 0.6 ? 0.14 : 0.07);
   if (metalico >= 0.6) {
     mat.albedoTexture = texturaMetalCepillado(scene);
+    mat.bumpTexture = normalMetalCepillado(scene);
+    mat.invertNormalMapY = true;
     // El albedo se aclara porque ahora lo multiplica la textura, que ronda el
     // gris medio: sin esto el metal quedaría notoriamente más oscuro.
     mat.albedoColor = new Color3(
@@ -511,49 +513,76 @@ function crearCintaMetrica(scene: Scene, id: string): Mesh {
 // ---------------------------------------------------------------------------
 
 function crearGuantes(scene: Scene, id: string): Mesh {
-  const matGuante = material(scene, `mat_${id}`, new Color3(0.72, 0.58, 0.4), 0.88);
+  // Guante de trabajo: cuero claro, puño azul y refuerzo oscuro en la palma.
+  //
+  // Antes era todo de un solo beige y los dos guantes se superponían casi a la
+  // misma altura: el conjunto se leía como un bulto, no como un par de guantes.
+  // Los tres colores son los que trae un guante real y son justamente los que
+  // dan la lectura — el puño de otro color dice "esto se calza", y el refuerzo
+  // marca dónde está la palma.
+  const matCuero = material(scene, `matCuero_${id}`, new Color3(0.78, 0.66, 0.48), 0.9);
+  const matPuno = material(scene, `matPuno_${id}`, new Color3(0.24, 0.36, 0.55), 0.85);
+  const matRefuerzo = material(scene, `matRefuerzo_${id}`, new Color3(0.52, 0.4, 0.27), 0.92);
 
-  // Cada guante se arma con palma, cuatro dedos y pulgar. Antes eran dos
-  // cápsulas cruzadas, que podían pasar por cualquier cosa; con los dedos la
-  // lectura es inmediata.
-  const construirGuante = (sufijo: string, desplazamiento: Vector3, giro: number): Mesh[] => {
-    const piezas: Mesh[] = [];
+  const raiz = new Mesh(id, scene);
 
-    const palma = MeshBuilder.CreateBox(`palma_${id}_${sufijo}`, { width: 0.13, height: 0.035, depth: 0.15 }, scene);
-    piezas.push(palma);
+  const construirGuante = (sufijo: string, desplazamiento: Vector3, giro: number, alzado: number): void => {
+    const grupo = new Mesh(`guante_${id}_${sufijo}`, scene);
+    grupo.parent = raiz;
+    grupo.position.copyFrom(desplazamiento);
+    grupo.position.y += alzado;
+    grupo.rotation.y = giro;
 
-    const puno = MeshBuilder.CreateBox(`puno_${id}_${sufijo}`, { width: 0.115, height: 0.04, depth: 0.07 }, scene);
-    puno.position.set(0, 0, -0.1);
-    piezas.push(puno);
+    const palma = MeshBuilder.CreateBox(`palma_${id}_${sufijo}`, { width: 0.12, height: 0.032, depth: 0.14 }, scene);
+    palma.position.y = 0.016;
+    palma.material = matCuero;
+    palma.parent = grupo;
 
-    for (let d = 0; d < 4; d++) {
-      const dedo = MeshBuilder.CreateCapsule(`dedo_${id}_${sufijo}_${d}`, { height: 0.1, radius: 0.016 }, scene);
-      dedo.rotation.x = Math.PI / 2;
-      dedo.position.set(-0.045 + d * 0.03, 0.002, 0.115);
-      piezas.push(dedo);
-    }
+    // Refuerzo de la palma: parche más oscuro, un poco más chico.
+    const refuerzo = MeshBuilder.CreateBox(`refuerzo_${id}_${sufijo}`, { width: 0.085, height: 0.006, depth: 0.1 }, scene);
+    refuerzo.position.set(0, 0.034, 0.005);
+    refuerzo.material = matRefuerzo;
+    refuerzo.parent = grupo;
 
-    const pulgar = MeshBuilder.CreateCapsule(`pulgar_${id}_${sufijo}`, { height: 0.075, radius: 0.017 }, scene);
-    pulgar.rotation.z = Math.PI / 2;
-    pulgar.rotation.y = 0.5;
-    pulgar.position.set(0.075, 0, 0.035);
-    piezas.push(pulgar);
+    // Puño acanalado: tres aros marcan el elástico.
+    const puno = MeshBuilder.CreateBox(`puno_${id}_${sufijo}`, { width: 0.105, height: 0.045, depth: 0.065 }, scene);
+    puno.position.set(0, 0.022, -0.098);
+    puno.material = matPuno;
+    puno.parent = grupo;
 
-    piezas.forEach((pieza) => {
-      pieza.rotation.y += giro;
-      pieza.position.addInPlace(desplazamiento);
+    [-0.02, 0, 0.02].forEach((dz, k) => {
+      const nervio = MeshBuilder.CreateBox(`nervioPuno_${id}_${sufijo}_${k}`, { width: 0.108, height: 0.048, depth: 0.006 }, scene);
+      nervio.position.set(0, 0.022, -0.098 + dz);
+      nervio.material = matRefuerzo;
+      nervio.parent = grupo;
     });
 
-    return piezas;
+    // Dedos SEPARADOS con hueco visible entre ellos: cuatro cápsulas pegadas
+    // se ven como un bloque redondeado; con la separación se cuentan.
+    for (let d = 0; d < 4; d++) {
+      const largo = d === 0 || d === 3 ? 0.075 : 0.092;
+      const dedo = MeshBuilder.CreateCapsule(`dedo_${id}_${sufijo}_${d}`, { height: largo, radius: 0.0135 }, scene);
+      dedo.rotation.x = Math.PI / 2;
+      dedo.position.set(-0.042 + d * 0.028, 0.018, 0.07 + largo / 2 - 0.012);
+      dedo.material = matCuero;
+      dedo.parent = grupo;
+    }
+
+    // Pulgar apartado del resto, que es lo que define la silueta de una mano.
+    const pulgar = MeshBuilder.CreateCapsule(`pulgar_${id}_${sufijo}`, { height: 0.07, radius: 0.015 }, scene);
+    pulgar.rotation.z = Math.PI / 2;
+    pulgar.rotation.y = 0.65;
+    pulgar.position.set(0.072, 0.018, 0.03);
+    pulgar.material = matCuero;
+    pulgar.parent = grupo;
   };
 
-  // Uno encima del otro y girados: montoncito de guantes dejados sobre el banco.
-  const piezas = [
-    ...construirGuante("a", new Vector3(-0.03, 0, 0), -0.25),
-    ...construirGuante("b", new Vector3(0.04, 0.04, 0.01), 0.35),
-  ];
+  // Uno claramente encima del otro, no a la misma altura: así se leen dos
+  // guantes apilados y no una masa sola.
+  construirGuante("a", new Vector3(-0.02, 0, 0.01), -0.3, 0);
+  construirGuante("b", new Vector3(0.035, 0, -0.015), 0.42, 0.05);
 
-  return unir(piezas, id, matGuante);
+  return raiz;
 }
 
 // ---------------------------------------------------------------------------
@@ -561,37 +590,82 @@ function crearGuantes(scene: Scene, id: string): Mesh {
 // ---------------------------------------------------------------------------
 
 function crearChatarra(scene: Scene, id: string): Mesh {
-  // Óxido: rugoso y poco metálico, lo contrario de una herramienta cuidada.
-  const matOxido = material(scene, `mat_${id}`, new Color3(0.42, 0.24, 0.13), 0.78, 0.35);
+  // Resto de metal sin identificar.
+  //
+  // Es el objeto más difícil del nivel, porque "chatarra" no tiene una forma
+  // propia: se reconoce por lo que le PASÓ, no por lo que es. Tres señales lo
+  // resuelven, y las tres van juntas:
+  //
+  //   1. Óxido desparejo. Antes todas las piezas compartían un único marrón,
+  //      y un color uniforme se lee como "material", no como deterioro. Ahora
+  //      cada pieza tiene su tono, del metal todavía gris al óxido avanzado.
+  //   2. Piezas rotas, no piezas enteras. Una chapa doblada, un caño cortado
+  //      al sesgo, una varilla torcida: formas que solo existen cuando algo se
+  //      rompió o se descartó.
+  //   3. Apiladas sin orden, cruzándose entre sí. Nada acomodado.
+  const matMetal = material(scene, `matMetal_${id}`, new Color3(0.48, 0.46, 0.44), 0.62, 0.5);
+  const matOxidoLeve = material(scene, `matOxidoLeve_${id}`, new Color3(0.52, 0.34, 0.19), 0.8, 0.3);
+  const matOxidoFuerte = material(scene, `matOxidoFuerte_${id}`, new Color3(0.38, 0.19, 0.1), 0.92, 0.15);
 
-  const piezas: Mesh[] = [];
+  const raiz = new Mesh(id, scene);
 
-  // Chapa doblada: la forma que más grita "esto es un resto", no una pieza útil.
-  const chapa = MeshBuilder.CreateBox(`chapa_${id}`, { width: 0.26, height: 0.014, depth: 0.14 }, scene);
-  chapa.rotation.set(0.1, 0.35, 0.08);
-  piezas.push(chapa);
+  const agregar = (malla: Mesh, mat: PBRMaterial): void => {
+    malla.material = mat;
+    malla.parent = raiz;
+  };
 
-  const chapaDoblada = MeshBuilder.CreateBox(`chapaDoblada_${id}`, { width: 0.12, height: 0.013, depth: 0.13 }, scene);
-  chapaDoblada.rotation.set(0.9, 0.35, 0);
-  chapaDoblada.position.set(0.14, 0.045, -0.01);
-  piezas.push(chapaDoblada);
+  // Chapa doblada en dos: la forma que más grita "esto se rompió".
+  const chapa = MeshBuilder.CreateBox(`chapa_${id}`, { width: 0.24, height: 0.012, depth: 0.13 }, scene);
+  chapa.position.set(0, 0.012, 0);
+  chapa.rotation.set(0.06, 0.3, 0.05);
+  agregar(chapa, matOxidoLeve);
 
-  const perfil = MeshBuilder.CreateBox(`perfil_${id}`, { width: 0.19, height: 0.035, depth: 0.035 }, scene);
-  perfil.rotation.set(0, -0.6, 0.25);
-  perfil.position.set(-0.05, 0.04, 0.05);
-  piezas.push(perfil);
+  const alaDoblada = MeshBuilder.CreateBox(`alaDoblada_${id}`, { width: 0.11, height: 0.011, depth: 0.125 }, scene);
+  alaDoblada.position.set(0.13, 0.055, -0.015);
+  alaDoblada.rotation.set(1.0, 0.3, 0);
+  agregar(alaDoblada, matOxidoFuerte);
 
-  const tuerca = MeshBuilder.CreateCylinder(`tuerca_${id}`, { diameter: 0.055, height: 0.03, tessellation: 6 }, scene);
-  tuerca.rotation.x = 0.4;
-  tuerca.position.set(-0.11, 0.025, -0.05);
-  piezas.push(tuerca);
+  // Caño cortado al sesgo: el corte en diagonal delata que se cortó, no que
+  // se fabricó así.
+  const cano = MeshBuilder.CreateCylinder(`cano_${id}`, { diameterTop: 0.05, diameterBottom: 0.055, height: 0.17, tessellation: 14 }, scene);
+  cano.position.set(-0.07, 0.03, 0.045);
+  cano.rotation.set(Math.PI / 2 - 0.12, 0.7, 0.2);
+  agregar(cano, matOxidoLeve);
 
-  const varilla = MeshBuilder.CreateCylinder(`varilla_${id}`, { diameter: 0.018, height: 0.22 }, scene);
-  varilla.rotation.set(Math.PI / 2, 0.9, 0);
-  varilla.position.set(0.02, 0.015, -0.06);
-  piezas.push(varilla);
+  const bocaCano = MeshBuilder.CreateCylinder(`bocaCano_${id}`, { diameter: 0.038, height: 0.012, tessellation: 14 }, scene);
+  bocaCano.position.set(-0.006, 0.037, 0.098);
+  bocaCano.rotation.set(Math.PI / 2 - 0.12, 0.7, 0.2);
+  agregar(bocaCano, matOxidoFuerte);
 
-  return unir(piezas, id, matOxido);
+  // Perno con tuerca: la pieza que hace pensar "esto salió de una máquina".
+  const perno = MeshBuilder.CreateCylinder(`perno_${id}`, { diameter: 0.017, height: 0.085, tessellation: 10 }, scene);
+  perno.position.set(-0.115, 0.02, -0.055);
+  perno.rotation.set(Math.PI / 2, 0.35, 0);
+  agregar(perno, matMetal);
+
+  const tuerca = MeshBuilder.CreateCylinder(`tuerca_${id}`, { diameter: 0.038, height: 0.018, tessellation: 6 }, scene);
+  tuerca.position.set(-0.145, 0.024, -0.045);
+  tuerca.rotation.set(Math.PI / 2, 0.35, 0);
+  agregar(tuerca, matOxidoFuerte);
+
+  // Varilla torcida: dos tramos con un quiebre en el medio.
+  const varillaA = MeshBuilder.CreateCylinder(`varillaA_${id}`, { diameter: 0.014, height: 0.13, tessellation: 8 }, scene);
+  varillaA.position.set(0.03, 0.014, -0.07);
+  varillaA.rotation.set(Math.PI / 2, 1.0, 0);
+  agregar(varillaA, matMetal);
+
+  const varillaB = MeshBuilder.CreateCylinder(`varillaB_${id}`, { diameter: 0.014, height: 0.1, tessellation: 8 }, scene);
+  varillaB.position.set(0.098, 0.02, -0.105);
+  varillaB.rotation.set(Math.PI / 2 - 0.3, 0.45, 0);
+  agregar(varillaB, matOxidoLeve);
+
+  // Recorte pequeño suelto, para que el montón no se vea armado.
+  const recorte = MeshBuilder.CreateBox(`recorte_${id}`, { width: 0.06, height: 0.008, depth: 0.045 }, scene);
+  recorte.position.set(-0.02, 0.022, 0.095);
+  recorte.rotation.set(0.15, -0.5, 0.3);
+  agregar(recorte, matOxidoFuerte);
+
+  return raiz;
 }
 
 // ---------------------------------------------------------------------------

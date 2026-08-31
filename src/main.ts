@@ -73,7 +73,23 @@ function mostrarMenu(): void {
     niveles,
     gameManager.getPorcentajeMadurez(),
     (numeroNivel) => cargarNivel(numeroNivel),
-    () => mostrarCertificado(sceneManager.scene, () => mostrarMenu()),
+    () => {
+      // Los datos de la auditoría del nivel 5 se imprimen en el certificado.
+      // Vienen del GameManager y no del servidor porque son de esta sesión;
+      // si alguien vuelve al certificado en otro momento, simplemente no
+      // aparece esa casilla y el resto del documento queda igual.
+      const auditoria = gameManager.getResultadoAuditoriaN5();
+      mostrarCertificado(
+        sceneManager.scene,
+        () => mostrarMenu(),
+        auditoria
+          ? {
+              promedioCalificacion: auditoria.promedioCalificacion,
+              tasaAcierto: auditoria.tasaAcierto,
+            }
+          : undefined
+      );
+    },
     () => mostrarRankingCurso(sceneManager.scene, () => mostrarMenu()),
     perfilActivo?.nombreCompleto,
     () => void volverAlCatalogo()
@@ -156,10 +172,13 @@ function cargarNivel(numeroNivel: number): void {
     maquina.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
     impresora.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
   } else if (numeroNivel === 4) {
-    const { items, zonas, senales } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
+    const { items, zonas, senales, npc } = cargarNivel4(sceneManager.scene, hud, volverAlMenu, onCompletado);
     items.forEach((item) => sceneManager.shadowGenerator.addShadowCaster(item.mesh));
     zonas.forEach((z) => sceneManager.shadowGenerator.addShadowCaster(z));
     senales.forEach((s) => sceneManager.shadowGenerator.addShadowCaster(s.mesh));
+    // El operario también proyecta sombra: sin ella una figura de pie sobre
+    // el piso se ve pegada encima, no parada ahí.
+    npc.mesh.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
   } else if (numeroNivel === 5) {
     const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado, () => reintentarNivel(5));
     puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));

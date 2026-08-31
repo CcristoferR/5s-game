@@ -13,6 +13,7 @@ import {
   ColorCurves,
   SSAO2RenderingPipeline,
 } from "@babylonjs/core";
+import { aplicarEntornoGaraje } from "./EntornoGaraje";
 
 export class SceneManager {
   scene: Scene;
@@ -154,14 +155,20 @@ camara.wheelDeltaPercentage = 0.02;
       }
     });
 
-    this.scene.createDefaultEnvironment({ createGround: false, createSkybox: false });
-    this.scene.environmentIntensity = 0.7;
+    // Entorno propio del garaje en lugar del estudio genérico que arma
+    // createDefaultEnvironment. Define QUÉ reflejan los metales: con el
+    // genérico devolvían una habitación blanca que no existe en la escena.
+    // La intensidad quedó calibrada para no alterar el brillo general.
+    aplicarEntornoGaraje(this.scene);
 
     const pipeline = new DefaultRenderingPipeline("pipelineOficina", true, this.scene, [camara]);
     pipeline.fxaaEnabled = false; // el antialiasing real de la GPU (MSAA) ya cubre esto
     pipeline.bloomEnabled = true;
     pipeline.bloomThreshold = 0.9;
-    pipeline.bloomWeight = 0.1;
+    // 0.14 y no más: el bloom da la sensación de luz real en luminarias y
+    // ventanas, pero pasado de 0.2 empieza a velar los bordes y el juego se
+    // vuelve incómodo de mirar. Es un realce, no un efecto.
+    pipeline.bloomWeight = 0.14;
     pipeline.bloomKernel = 32;
     // MAPEO DE TONO. Sin esto, todo lo que supera el blanco se recorta de
     // golpe: las ventanas del garaje salían como manchas planas sin detalle.
@@ -191,7 +198,10 @@ camara.wheelDeltaPercentage = 0.02;
     pipeline.imageProcessing.colorCurvesEnabled = true;
 
     pipeline.imageProcessing.vignetteEnabled = true;
-    pipeline.imageProcessing.vignetteWeight = 0.35;
+    // Bajado de 0.35 a 0.22: el viñeteado oscurecía justo las esquinas donde
+    // están las ventanas del garaje, que es lo que da profundidad a la
+    // escena. Sigue cerrando la composición, sin comerse la luz que entra.
+    pipeline.imageProcessing.vignetteWeight = 0.22;
 
     const ssao = new SSAO2RenderingPipeline("ssaoOficina", this.scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camara]);
     // Radio calibrado al tamaño de los objetos, no del mobiliario. A 1.5 m el

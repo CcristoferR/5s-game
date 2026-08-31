@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, TransformNode } from "@babylonjs/core";
-import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 
 export function crearMaquinaConFuga(scene: Scene, x: number, z: number): TransformNode {
   const root = new TransformNode("maquinaRoot", scene);
@@ -10,6 +10,8 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matCuerpo.roughness = 0.4;
   matCuerpo.metallic = 0.75;
   matCuerpo.albedoTexture = texturaMetalCepillado(scene);
+  matCuerpo.bumpTexture = normalMetalCepillado(scene);
+  matCuerpo.invertNormalMapY = true;
   matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.14); // metal industrial: brillo real, no plástico
 
   const cuerpo = MeshBuilder.CreateBox("maquinaCuerpo", { width: 0.9, height: 1.3, depth: 0.7 }, scene);
@@ -25,6 +27,8 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matRejilla.roughness = 0.5;
   matRejilla.metallic = 0.6;
   matRejilla.albedoTexture = texturaMetalCepillado(scene);
+  matRejilla.bumpTexture = normalMetalCepillado(scene);
+  matRejilla.invertNormalMapY = true;
   matRejilla.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   for (let i = 0; i < 4; i++) {
@@ -39,6 +43,8 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matTuberia.roughness = 0.3;
   matTuberia.metallic = 0.8;
   matTuberia.albedoTexture = texturaMetalCepillado(scene);
+  matTuberia.bumpTexture = normalMetalCepillado(scene);
+  matTuberia.invertNormalMapY = true;
   matTuberia.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   const tuberia = MeshBuilder.CreateCylinder("tuberia", { diameter: 0.12, height: 0.6 }, scene);

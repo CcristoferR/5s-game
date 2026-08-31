@@ -136,3 +136,166 @@ export function texturaMetalCepillado(scene: Scene): DynamicTexture {
     }
   });
 }
+// ---------------------------------------------------------------------------
+// Relieve del metal
+// ---------------------------------------------------------------------------
+//
+// Las texturas de arriba pintan COLOR: dicen de qué color es cada punto, pero
+// no si sobresale o se hunde. La luz las ve como una superficie lisa con un
+// dibujo encima.
+//
+// Un mapa normal guarda, en cada punto, hacia dónde mira la superficie. Con eso
+// la luz rebota distinto en cada surco y el relieve aparece sin sumar un solo
+// triángulo.
+//
+// SOLO PARA METAL, a propósito. En la madera el efecto quedaba exagerado: la
+// luz rasante del garaje marcaba tanto la veta que el tablero parecía
+// corrugado. En el metal en cambio los surcos del cepillado ESTIRAN el reflejo
+// del entorno en una dirección, y ese estiramiento es justo lo que el ojo
+// reconoce como metal en vez de plástico gris.
+
+/**
+ * Convierte un campo de alturas en un mapa de normales.
+ *
+ * Para cada punto mide cuánto sube o baja respecto de sus vecinos y guarda esa
+ * inclinación en los canales R y G, que es el formato que espera Babylon.
+ */
+function normalDesdeAltura(
+  scene: Scene,
+  nombre: string,
+  lado: number,
+  altura: (x: number, y: number) => number,
+  fuerza: number
+): DynamicTexture {
+  const yaHecha = cache.get(nombre);
+  if (yaHecha && yaHecha.getScene() === scene) return yaHecha;
+
+  const textura = new DynamicTexture(nombre, { width: lado, height: lado }, scene, true);
+  const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
+  const imagen = ctx.createImageData(lado, lado);
+  const datos = imagen.data;
+
+  // El módulo mantiene continuos los bordes: la textura se repite en mosaico y
+  // sin esto aparecería una costura marcada en cada repetición.
+  const h = (x: number, y: number): number => altura((x + lado) % lado, (y + lado) % lado);
+
+  for (let y = 0; y < lado; y++) {
+    for (let x = 0; x < lado; x++) {
+      const dx = (h(x + 1, y) - h(x - 1, y)) * fuerza;
+      const dy = (h(x, y + 1) - h(x, y - 1)) * fuerza;
+
+      let nx = -dx;
+      let ny = -dy;
+      const largo = Math.sqrt(nx * nx + ny * ny + 1);
+      nx /= largo;
+      ny /= largo;
+
+      const i = (y * lado + x) * 4;
+      datos[i] = (nx * 0.5 + 0.5) * 255;
+      datos[i + 1] = (ny * 0.5 + 0.5) * 255;
+      datos[i + 2] = (1 / largo) * 127.5 + 127.5;
+      datos[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imagen, 0, 0);
+  textura.update();
+  // Filtrado alto: sin esto el relieve se deshace en cuanto la superficie se ve
+  // en ángulo, que es la mayoría del tiempo con una cámara que orbita.
+  textura.anisotropicFilteringLevel = 16;
+  cache.set(nombre, textura);
+  return textura;
+}
+
+/**
+ * Relieve del metal cepillado: surcos finos en una sola dirección.
+ *
+ * La fuerza es baja (0,8) a propósito. Con valores altos el metal se ve
+ * repujado, como chapa golpeada; lo que se busca es la microtextura que hace
+ * que el reflejo se estire, no un relieve visible.
+ */
+export function normalMetalCepillado(scene: Scene): DynamicTexture {
+  const LADO = 256;
+
+  // Ruido fino para que los surcos no salgan perfectamente paralelos: el
+  // cepillado real tiene irregularidades y son las que rompen el brillo.
+  const irregular = (x: number, y: number): number => {
+    const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+    return (s - Math.floor(s)) * 2 - 1;
+  };
+
+  return normalDesdeAltura(
+    scene,
+    "normalMetalCepillado",
+    LADO,
+    (x, y) => Math.sin(y * 2.4) * 0.3 + irregular(Math.floor(x / 2), Math.floor(y / 3)) * 0.35,
+    0.8
+  );
+}
+
+/**
+ * Concreto: grano fino con manchas amplias y alguna veta de junta.
+ *
+ * Para pedestales, bases y elementos de obra. Es la superficie más repetida del
+ * garaje, así que se apoya en manchas de escala grande: si solo tuviera grano
+ * fino, la repetición del mosaico saltaría a la vista.
+ */
+export function texturaConcreto(scene: Scene): DynamicTexture {
+  return obtener(scene, "texturaConcreto", 256, (ctx, lado) => {
+    ctx.fillStyle = "#8d8b86";
+    ctx.fillRect(0, 0, lado, lado);
+
+    // Manchas amplias: variación de tono que rompe la uniformidad.
+    for (let i = 0; i < 22; i++) {
+      const gris = 120 + Math.random() * 40;
+      ctx.fillStyle = `rgba(${gris},${gris - 2},${gris - 6},0.16)`;
+      ctx.beginPath();
+      ctx.ellipse(
+        Math.random() * lado,
+        Math.random() * lado,
+        22 + Math.random() * 60,
+        18 + Math.random() * 45,
+        Math.random() * Math.PI,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+
+    // Poros del árido.
+    for (let i = 0; i < 2600; i++) {
+      const claro = Math.random() > 0.55;
+      ctx.fillStyle = claro ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)";
+      ctx.fillRect(Math.random() * lado, Math.random() * lado, 2, 2);
+    }
+  });
+}
+
+/**
+ * Cartón corrugado: canaladuras verticales y fibra.
+ *
+ * Para cajas y bultos. Las canaladuras son lo que distingue una caja de cartón
+ * de un cubo marrón — sin ellas, cualquier caja del juego podía ser de madera,
+ * de plástico o de lo que fuera.
+ */
+export function texturaCarton(scene: Scene): DynamicTexture {
+  return obtener(scene, "texturaCarton", 256, (ctx, lado) => {
+    ctx.fillStyle = "#b5946a";
+    ctx.fillRect(0, 0, lado, lado);
+
+    // Canaladuras: par de líneas claro/oscuro que simulan el relieve del
+    // corrugado sin necesitar geometría.
+    for (let x = 0; x < lado; x += 9) {
+      ctx.fillStyle = "rgba(255,255,255,0.07)";
+      ctx.fillRect(x, 0, 3, lado);
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillRect(x + 4, 0, 3, lado);
+    }
+
+    // Fibra del papel.
+    for (let i = 0; i < 1500; i++) {
+      ctx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.04)" : "rgba(60,40,20,0.05)";
+      ctx.fillRect(Math.random() * lado, Math.random() * lado, 2, 1);
+    }
+  });
+}

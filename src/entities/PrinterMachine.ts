@@ -45,6 +45,7 @@ export function crearImpresoraConToner(scene: Scene, x: number, z: number): Tran
 
   const matLuz = new PBRMaterial("matImpresoraLuz", scene);
   matLuz.albedoColor = new Color3(0.8, 0.15, 0.1);
+  matLuz.microSurfaceTexture = texturaGrano(scene, 0.1);
   matLuz.emissiveColor = new Color3(0.9, 0.15, 0.1);
 
   const luz = MeshBuilder.CreateSphere("impresoraLuzEstado", { diameter: 0.03 }, scene);

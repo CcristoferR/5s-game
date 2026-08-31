@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3 } from "@babylonjs/core";
-import { texturaVetaMadera, texturaMetalCepillado, texturaGrano } from "./TexturasSuperficie";
+import { texturaVetaMadera, texturaMetalCepillado, texturaGrano, normalMetalCepillado } from "./TexturasSuperficie";
 
 // Altura de la cara superior del tablero. Los niveles apoyan sus objetos aca:
 // exportarla evita que cada uno tenga que repetir el numero a mano y que se
@@ -66,6 +66,8 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   // Metal cepillado: el metal perfectamente liso casi no existe en la
   // realidad, y es lo que más delata una escena hecha con primitivas.
   matMetal.albedoTexture = texturaMetalCepillado(scene);
+  matMetal.bumpTexture = normalMetalCepillado(scene);
+  matMetal.invertNormalMapY = true;
   matMetal.albedoColor = new Color3(0.42, 0.44, 0.47);
   matMetal.microSurfaceTexture = texturaGrano(scene, 0.14);
   matMetal.roughness = 0.38;

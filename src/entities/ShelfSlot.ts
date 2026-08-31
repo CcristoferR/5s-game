@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3 } from "@babylonjs/core";
-import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { crearRotulo3D } from "./Rotulo3D";
 import { ALTURA_SUPERFICIE_BANCO } from "./Workbench";
@@ -57,6 +57,8 @@ export function crearShelfSlot(scene: Scene, _gui: AdvancedDynamicTexture, id: s
   matMetal.roughness = 0.4;
   matMetal.metallic = 0.72;
   matMetal.albedoTexture = texturaMetalCepillado(scene);
+  matMetal.bumpTexture = normalMetalCepillado(scene);
+  matMetal.invertNormalMapY = true;
   matMetal.microSurfaceTexture = texturaGrano(scene, 0.14);
 
   // Patas: dos montantes a los costados, como una estanteria de taller.
