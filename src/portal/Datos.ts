@@ -1,4 +1,4 @@
-import { supabase, correoDeIdentificador } from "./supabase";
+import { supabase, correoDeIdentificador, clienteAislado } from "./supabase";
 
 /**
  * Capa de datos de la plataforma.
@@ -101,6 +101,20 @@ export interface DatosRegistro {
 export type ResultadoRegistro =
   | { ok: true; perfil: Perfil }
   | { ok: false; motivo: MotivoRechazo | "identificador_repetido" | "clave_corta" };
+
+/**
+ * Alta de administrador desde el panel.
+ *
+ * Tiene su propio tipo y no reusa ResultadoRegistro porque agrega un caso que
+ * el registro normal no puede tener: "rol_pendiente", cuando la cuenta se creó
+ * pero el ascenso falló.
+ */
+export type ResultadoAltaAdmin =
+  | { ok: true; perfil: Perfil }
+  | {
+      ok: false;
+      motivo: MotivoRechazo | "identificador_repetido" | "clave_corta" | "rol_pendiente";
+    };
 
 export type ResultadoIngreso =
   | { ok: true; perfil: Perfil }
@@ -374,6 +388,151 @@ export async function eliminarPersona(perfilId: string): Promise<void> {
   // servidor que el navegador no tiene, y por seguridad así debe ser.
   const { error } = await supabase.from("perfiles").delete().eq("id", perfilId);
   if (error) avisarError("eliminarPersona", error);
+}
+
+/**
+ * Resultado de cambiar el rol de una persona.
+ *
+ * Los motivos vienen tal cual de la función de base de datos, para que la
+ * pantalla pueda decir qué pasó en vez de un "no se pudo" genérico.
+ */
+export type ResultadoRol =
+  | { ok: true }
+  | {
+      ok: false;
+      motivo: "sin_sesion" | "sin_permiso" | "rol_invalido" | "auto_degradacion" | "sin_perfil" | "otro";
+    };
+
+/**
+ * Cambia el rol de una persona entre trabajador y administrador.
+ *
+ * Va por función de base de datos y no por un update directo a `perfiles`, y
+ * la diferencia acá no es de estilo. Un update directo lo evalúa RLS contra la
+ * fila que se está tocando: si existe cualquier política que deje a alguien
+ * editar su propio perfil —que es lo normal, para que pueda corregir su
+ * nombre— entonces esa misma política le deja escribirse `rol` a sí mismo. Es
+ * decir, cualquier trabajador se hace administrador desde la consola del
+ * navegador.
+ *
+ * La función corre con permisos de servidor, comprueba que quien llama sea
+ * administrador y recién ahí escribe. El navegador pide el cambio; quien
+ * decide es la base.
+ */
+export async function cambiarRol(perfilId: string, rol: RolUsuario): Promise<ResultadoRol> {
+  const { data, error } = await supabase.rpc("cambiar_rol", {
+    p_perfil_id: perfilId,
+    p_rol: rol,
+  });
+
+  if (error) {
+    avisarError("cambiarRol", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  const r = data as { ok: boolean; motivo?: ResultadoRol extends { ok: false; motivo: infer M } ? M : never };
+  return r.ok ? { ok: true } : { ok: false, motivo: r.motivo ?? "otro" };
+}
+
+/** Texto para el administrador cuando el cambio de rol no procede. */
+export function explicarRechazoRol(motivo: Exclude<ResultadoRol, { ok: true }>["motivo"]): string {
+  switch (motivo) {
+    case "sin_permiso":
+      return "Solo un administrador puede cambiar roles.";
+    case "auto_degradacion":
+      return "No puedes quitarte a ti mismo el rol de administrador.";
+    case "sin_perfil":
+      return "Esa persona ya no existe. Actualiza la página.";
+    case "sin_sesion":
+      return "Tu sesión expiró. Vuelve a entrar.";
+    default:
+      return "No se pudo cambiar el rol. Revisa tu conexión.";
+  }
+}
+
+/**
+ * Crea una cuenta ya con rol de administrador, desde el panel.
+ *
+ * Son tres pasos y ninguno se puede saltar:
+ *
+ *  1. La cuenta se crea con un cliente aparte (ver clienteAislado en
+ *     supabase.ts). Con el cliente normal, el `signUp` dejaría al
+ *     administrador conectado como la persona recién creada.
+ *
+ *  2. El perfil se inserta con ese mismo cliente aislado, porque la política
+ *     de la tabla exige que quien inserta sea el dueño de la fila. Nace como
+ *     trabajador: la base no acepta otra cosa en un insert, y así debe ser —
+ *     es lo que impide que alguien se registre como administrador manipulando
+ *     la petición.
+ *
+ *  3. Recién ahí, con la sesión del administrador que está usando el panel, se
+ *     sube el rol. Ese paso pasa por cambiar_rol, que verifica del lado del
+ *     servidor que quien lo pide sea administrador de verdad.
+ *
+ * Para quien usa el panel esto es un solo formulario. La separación es para
+ * que no exista ningún atajo que permita nacer administrador sin permiso.
+ */
+export async function crearAdministrador(datos: DatosRegistro): Promise<ResultadoAltaAdmin> {
+  const identificador = normalizarIdentificador(datos.identificador);
+
+  if (datos.clave.length < LARGO_MINIMO_CLAVE) {
+    return { ok: false, motivo: "clave_corta" };
+  }
+
+  const aislado = clienteAislado();
+
+  const { data, error } = await aislado.auth.signUp({
+    email: correoDeIdentificador(identificador),
+    password: datos.clave,
+  });
+
+  if (error) {
+    if (/already|registered|exists/i.test(error.message)) {
+      return { ok: false, motivo: "identificador_repetido" };
+    }
+    avisarError("crearAdministrador/auth", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  const usuario = data.user;
+  if (!usuario) {
+    avisarError("crearAdministrador", "signUp no devolvió usuario");
+    return { ok: false, motivo: "otro" };
+  }
+
+  const { data: fila, error: errorPerfil } = await aislado
+    .from("perfiles")
+    .insert({
+      id: usuario.id,
+      nombre_completo: datos.nombreCompleto.trim(),
+      identificador,
+      empresa: datos.empresa.trim(),
+      area: datos.area.trim(),
+      rol: "trabajador",
+    })
+    .select()
+    .single();
+
+  if (errorPerfil || !fila) {
+    if (errorPerfil && /duplicate|unique/i.test(errorPerfil.message)) {
+      return { ok: false, motivo: "identificador_repetido" };
+    }
+    avisarError("crearAdministrador/perfil", errorPerfil);
+    return { ok: false, motivo: "otro" };
+  }
+
+  // La sesión prestada ya cumplió su función: se cierra en el cliente aislado
+  // para no dejarla viva en memoria. La del administrador nunca se tocó.
+  await aislado.auth.signOut();
+
+  const ascenso = await cambiarRol(usuario.id, "administrador");
+  if (!ascenso.ok) {
+    // La cuenta quedó creada como trabajador. Se avisa en vez de fingir que
+    // salió bien: desde la tabla de personas se puede terminar con un clic.
+    avisarError("crearAdministrador/rol", ascenso.motivo);
+    return { ok: false, motivo: "rol_pendiente" };
+  }
+
+  return { ok: true, perfil: { ...desdePerfil(fila as FilaPerfil), rol: "administrador" } };
 }
 
 // ---------------------------------------------------------------------------

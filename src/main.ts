@@ -1,7 +1,7 @@
 import { Engine, Mesh } from "@babylonjs/core";
 import { GameManager } from "./core/GameManager";
 import { SceneManager } from "./core/SceneManager";
-import { setupXR } from "./core/XRManager";
+import { setupXR, cerrarXR } from "./core/XRManager";
 import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir } from "./core/Sonido";
 import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
@@ -23,7 +23,7 @@ import { mostrarCertificado } from "./ui/CertificateScreen";
 import { mostrarRankingCurso } from "./ui/RankingScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-const engine = new Engine(canvas, true, undefined, true);
+const engine = new Engine(canvas, true, undefined, false);
 
 // El buffer de render va 1:1 con el tamanio del canvas.
 //
@@ -37,7 +37,18 @@ const engine = new Engine(canvas, true, undefined, true);
 //
 // La nitidez de la interfaz se resuelve por el lado de la GUI (idealWidth /
 // idealHeight en MainMenu), que no toca la geometria del puntero.
-engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
+//
+// OJO: la linea de abajo tiene que quedar en 1 fijo. Volvio a aparecer como
+// (1 / devicePixelRatio) con un tope de 2, creyendo que el tope la hacia
+// segura, y no lo es: con la pantalla al 125% o 150% —lo normal en Windows—
+// el divisor es 1.25 o 1.5 y el desfase vuelve igual. Se nota poco arriba y
+// mucho abajo, porque crece con la distancia al borde superior: las primeras
+// filas del menu todavia se dejan apretar y las ultimas ya no, igual que el
+// ranking y el cerrar sesion, que estan al fondo del panel.
+//
+// Por el mismo motivo el cuarto argumento del Engine va en false:
+// adaptToDeviceRatio hace exactamente lo mismo por su cuenta.
+engine.setHardwareScalingLevel(1);
 let sceneManager = new SceneManager(engine);
 
 // Quién está jugando. El progreso se guarda a su nombre, no al del equipo.
@@ -121,20 +132,80 @@ function mostrarMenu(): void {
   // arma al entrar a cada nivel, que es donde tiene sentido.
 }
 
+/**
+ * Cerrojo de transición.
+ *
+ * Como la reconstrucción ahora va diferida, un segundo clic alcanzaría a
+ * entrar antes de que la primera empiece, y quedarían dos destrucciones de
+ * escena encoladas sobre una escena que ya no existe.
+ */
+let cambiandoEscena = false;
+
+/**
+ * Destruye la escena actual y arma la siguiente, fuera del evento de clic.
+ *
+ * El diferido no es opcional. Estas funciones se llaman desde
+ * onPointerUpObservable —el botón "Volver al menú" del HUD, el de reintentar—,
+ * y destruir ahí mismo la capa que está repartiendo ese clic corta el recorrido
+ * interno de controles de Babylon: el puntero queda tomado y los POINTERUP
+ * siguientes no llegan nunca a la capa nueva. El menú se ve perfecto, el hover
+ * responde, y ningún botón funciona.
+ *
+ * Es el mismo motivo por el que el menú libera su capa con setTimeout al
+ * elegir un nivel, y por el que el ranking arma el menú en el tick siguiente.
+ * Este camino era el único que había quedado sin la misma protección.
+ */
+function cambiarEscena(despues: () => void): void {
+  if (cambiandoEscena) return;
+  cambiandoEscena = true;
+
+  setTimeout(() => {
+    try {
+      // Primero la experiencia XR y después la escena: al revés queda
+      // enganchada al reparto de punteros de un lienzo que ya no tiene dueño.
+      cerrarXR();
+      sceneManager.scene.dispose();
+      sceneManager = new SceneManager(engine);
+      despues();
+    } finally {
+      cambiandoEscena = false;
+    }
+  }, 0);
+}
+
 function volverAlMenu(): void {
   // El ambiente del taller pertenece al garaje: en el menú estorba.
   detenerAmbiente();
-  sceneManager.scene.dispose();
-  sceneManager = new SceneManager(engine);
-  mostrarMenu();
+  cambiarEscena(() => mostrarMenu());
 }
 
 // Reinicia la escena y vuelve a cargar el mismo nivel (usado por el
 // botón "Reintentar auditoría" cuando el jugador reprueba el Nivel 5).
 function reintentarNivel(numeroNivel: number): void {
-  sceneManager.scene.dispose();
-  sceneManager = new SceneManager(engine);
-  cargarNivel(numeroNivel);
+  cambiarEscena(() => cargarNivel(numeroNivel));
+}
+
+/**
+ * Guarda el resultado de una fase insistiendo si el servidor no responde.
+ *
+ * Tres intentos, esperando cada vez un poco más. Cubre el caso real: un
+ * tropiezo de red suelto justo al terminar un nivel dejaba la fase fuera del
+ * ranking mientras el avance sí quedaba guardado, y el jugador terminaba con
+ * el certificado emitido pero una fase menos en la tabla.
+ *
+ * El RPC conserva el mejor intento, así que repetir la llamada es inofensivo:
+ * si la primera sí había llegado, la segunda no cambia nada.
+ */
+async function guardarConReintentos(fase: number, puntaje: number, segundos: number): Promise<void> {
+  for (let intento = 1; intento <= 3; intento++) {
+    if (await guardarResultadoDeFase(CURSO_ID, fase, puntaje, segundos)) return;
+    await new Promise((listo) => setTimeout(listo, intento * 1500));
+  }
+
+  console.error(
+    `[ranking] La fase ${fase} no se pudo guardar tras 3 intentos. ` +
+      `Vuelve a jugarla para que quede registrada en el ranking.`
+  );
 }
 
 function cargarNivel(numeroNivel: number): void {
@@ -161,8 +232,13 @@ function cargarNivel(numeroNivel: number): void {
       // hizo. Y sobre todo, el ranking necesita el puntaje fase por fase — el
       // total del curso es la suma. El marcador del juego se reinicia en cada
       // nivel, así que gameManager.puntaje es exactamente el de esta fase.
-      void guardarResultadoDeFase(
-        CURSO_ID,
+      //
+      // Con reintentos: esta escritura ya se perdió una vez en producción. Se
+      // guardó el avance (y por lo tanto el certificado dio el curso por
+      // completo) pero la fila del ranking no llegó, y la persona quedó con
+      // "4 de 5 fases" habiendo hecho las cinco. Como se lanzaba sin esperar
+      // el resultado, el fallo solo apareció en la consola y nadie lo vio.
+      void guardarConReintentos(
         numeroNivel,
         gameManager.puntaje,
         gameManager.segundosDelNivel()
@@ -209,6 +285,12 @@ function cargarNivel(numeroNivel: number): void {
 // cerrar sesión de verdad está el botón del catálogo.
 async function volverAlCatalogo(): Promise<void> {
   detenerAmbiente();
+
+  // Mismo diferido que cambiarEscena: esto también sale de un clic sobre la
+  // capa del menú, y destruirla en ese momento deja el puntero tomado.
+  await new Promise<void>((listo) => setTimeout(listo, 0));
+
+  cerrarXR();
   sceneManager.scene.dispose();
   sceneManager = new SceneManager(engine);
 

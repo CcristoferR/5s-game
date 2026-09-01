@@ -38,6 +38,28 @@ export const supabase = createClient(URL, CLAVE, {
 });
 
 /**
+ * Cliente de un solo uso, sin sesión guardada.
+ *
+ * Sirve para crear una cuenta desde el panel de administración. El problema es
+ * que `signUp` no solo crea el usuario: además lo deja con la sesión iniciada
+ * en el cliente que hizo la llamada. Hecho con el cliente de arriba, el
+ * administrador terminaría conectado como la persona que acaba de dar de alta
+ * — se echaría a sí mismo del panel.
+ *
+ * Este cliente no persiste ni renueva nada: la sesión del recién creado vive
+ * en memoria, se usa para insertar su perfil y se descarta al terminar. La
+ * sesión del administrador queda intacta porque nunca se toca.
+ */
+export function clienteAislado() {
+  return createClient(URL!, CLAVE!, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+/**
  * El identificador del trabajador es su RUT, pero Supabase Auth trabaja con
  * correos. Se arma uno interno a partir del RUT.
  *

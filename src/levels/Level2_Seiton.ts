@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
+import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { objetosNivel2, slotsNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
@@ -55,6 +56,12 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   const objetos = objetosNivel2.map((datos) =>
     crearObjetoInteractable(scene, datos, crearFormaNivel2, limitesArrastre)
   );
+
+  // Realce al pasar el cursor, solo sobre los objetos agarrables. Acá pesa
+  // más que en el Nivel 1: el jugador no decide QUÉ es cada objeto sino
+  // DÓNDE va, así que distinguir de un vistazo lo que se puede mover de lo
+  // que es mobiliario le ahorra probar pieza por pieza.
+  const realce = habilitarRealceAlPasar(scene, objetos.map((o) => o.mesh));
   const slots = slotsNivel2.map((s) => crearShelfSlot(scene, gui, s.id, s.posicionX, s.descripcion));
 
   // Nombre y resalte al pasar el cursor, igual que en el Nivel 1. Acá importa
@@ -138,6 +145,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
         // hija volvia a habilitar el arrastre de un objeto ya resuelto.
         objeto.fijar();
+        // Deja de realzarse: ya no se puede agarrar, y seguir marcándolo
+        // como agarrable sería mentir.
+        realce.quitar(objeto.mesh);
 
         // Encaje animado en la silueta, igual que en el Nivel 1: la herramienta
         // se acomoda sola en su lugar en vez de quedar donde cayó. Es el gesto

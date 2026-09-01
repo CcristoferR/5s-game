@@ -1,4 +1,4 @@
-    import { supabase } from "./supabase";
+import { supabase } from "./supabase";
 
 /**
  * Ranking del curso.
@@ -54,7 +54,7 @@ export async function guardarResultadoDeFase(
   fase: number,
   puntaje: number,
   segundos: number
-): Promise<void> {
+): Promise<boolean> {
   const { error } = await supabase.rpc("guardar_resultado_fase", {
     p_curso_id: cursoId,
     p_fase: fase,
@@ -62,7 +62,12 @@ export async function guardarResultadoDeFase(
     p_segundos: Math.max(0, Math.round(segundos)),
   });
 
-  if (error) avisarError("guardarResultadoDeFase", error);
+  if (error) {
+    avisarError("guardarResultadoDeFase", error);
+    return false;
+  }
+
+  return true;
 }
 
 /** Los primeros del ranking de la empresa de quien consulta. */

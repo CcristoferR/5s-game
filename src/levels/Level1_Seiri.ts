@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/core";
+import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { objetosNivel1, type ZonaClasificacion, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
@@ -56,6 +57,11 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   crearSenalTarjetaRoja(scene, posicionesZonas.dudoso);
 
   const objetos = objetosNivel1.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel1));
+
+  // Realce al pasar el cursor: solo sobre los objetos agarrables, nunca
+  // sobre el piso ni el mobiliario del garaje. Se le pasa la lista para
+  // eso — si detectara solo lo seleccionable, marcaría media escena.
+  const realce = habilitarRealceAlPasar(scene, objetos.map((o) => o.mesh));
 
   // Al pasar el cursor por un objeto se muestra su nombre y se lo resalta.
   //
@@ -155,6 +161,9 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         // debe poder agarrarse, o el jugador lo vuelve a soltar en otra zona y
         // se cuenta dos veces.
         objeto.fijar();
+        // Deja de realzarse: ya no se puede agarrar, y seguir marcándolo
+        // como agarrable sería mentir.
+        realce.quitar(objeto.mesh);
         moverMalla(scene, mesh, lugarEnZona(zonaMasCercana, conteoZonas[objeto.datos.zonaCorrecta]), 320);
 
         objetosResueltos++;

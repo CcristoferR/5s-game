@@ -298,6 +298,47 @@
   font-weight: 600;
 }
 
+/* La tabla puede ser más ancha que la tarjeta —la de personas tiene diez
+   columnas— así que el contenedor desplaza en horizontal siempre, no solo en
+   pantallas chicas. Sin esto la última columna se corta y los botones quedan
+   fuera de alcance. */
+.portal__tablaEnvoltura {
+  overflow-x: auto;
+}
+
+/* Celda con un dato principal y otro secundario debajo. Es lo que permite
+   bajar la tabla de personas de diez columnas a seis: los pares que siempre se
+   leen juntos —nombre y ficha, empresa y área— comparten celda en vez de
+   ocupar dos, y la tabla entra sin barra de desplazamiento. */
+.portal__apilada {
+  line-height: 1.4;
+}
+
+.portal__apilada strong {
+  display: block;
+  color: var(--portal-titulo);
+  font-weight: 600;
+}
+
+.portal__subdato {
+  display: block;
+  margin-top: 3px;
+  color: var(--portal-rotulo);
+  font-size: 13px;
+}
+
+.portal__subdato--codigo {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+
+/* La columna de acciones se queda con lo justo y el resto del ancho se
+   reparte entre los datos. */
+.portal__tabla--personas th:last-child {
+  width: 1%;
+}
+
 .portal__tabla {
   width: 100%;
   border-collapse: collapse;
@@ -370,10 +411,6 @@
     flex-direction: column;
     gap: 0;
   }
-
-  .portal__tablaEnvoltura {
-    overflow-x: auto;
-  }
 }
 /* ---------------------------------------------------------------------------
    Estado y acciones de una inscripción
@@ -417,9 +454,11 @@
 
 .portal__acciones {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
-  white-space: nowrap;
+  /* En línea mientras quepan; si la ventana se angosta bajan de línea en vez
+     de estirar la tabla. */
+  flex-wrap: wrap;
 }
 
 .portal__accion {
@@ -431,6 +470,7 @@
   font-family: inherit;
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 

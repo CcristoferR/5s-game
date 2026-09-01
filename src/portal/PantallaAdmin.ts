@@ -4,6 +4,11 @@ import {
   darDeBajaInscripcion,
   reactivarInscripcion,
   eliminarPersona,
+  cambiarRol,
+  explicarRechazoRol,
+  crearAdministrador,
+  LARGO_MINIMO_CLAVE,
+  type ResultadoAltaAdmin,
   crearCodigo,
   listarCodigos,
   listarInscripciones,
@@ -24,7 +29,7 @@ import {
   type ResumenArea,
 } from "./Reportes";
 import { mostrarVerificacion } from "./PantallaVerificacion";
-import { cerrarSesion } from "./Sesion";
+import { cerrarSesion, leerSesion } from "./Sesion";
 import { rankingCompleto, formatearDuracion, type FilaRankingAdmin } from "./Ranking";
 import { CURSO_ID } from "./Datos";
 
@@ -47,7 +52,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
   void pintar();
 
   async function pintar(): Promise<void> {
-    const [perfiles, codigos, inscripciones, cursos, ranking, areas] = await Promise.all([
+    const [perfiles, codigos, inscripciones, cursos, ranking, areas, sesion] = await Promise.all([
       listarPerfiles(),
       listarCodigos(),
       listarInscripciones(),
@@ -57,9 +62,21 @@ export function mostrarAdministracion(onSalir: () => void): void {
       // responder, así que esta llamada falla si no es administrador.
       rankingCompleto(CURSO_ID),
       resumenPorArea(),
+      // Hace falta saber quién está mirando para no ofrecerle el botón que le
+      // quitaría su propio permiso: la base lo rechaza igual, pero es mejor
+      // que el botón no esté a que aparezca y falle.
+      leerSesion(),
     ]);
 
-    raiz.innerHTML = plantilla(perfiles, codigos, inscripciones, cursos, ranking, areas);
+    raiz.innerHTML = plantilla(
+      perfiles,
+      codigos,
+      inscripciones,
+      cursos,
+      ranking,
+      areas,
+      sesion?.perfil.id ?? null
+    );
     conectar();
   }
 
@@ -114,6 +131,39 @@ export function mostrarAdministracion(onSalir: () => void): void {
           : "No se pudo crear el código. Revisa tu conexión.",
         creado ? "ok" : "error"
       );
+    });
+
+    $<HTMLFormElement>("#formAdmin").addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+
+      const boton = $<HTMLFormElement>("#formAdmin").querySelector("button")!;
+      const clave = $<HTMLInputElement>("#adminClave").value;
+
+      // El botón se bloquea mientras trabaja: crear la cuenta son tres viajes
+      // al servidor y un segundo envío dejaría dos cuentas a medio hacer.
+      boton.disabled = true;
+
+      const resultado = await crearAdministrador({
+        nombreCompleto: $<HTMLInputElement>("#adminNombre").value,
+        identificador: $<HTMLInputElement>("#adminIdentificador").value,
+        empresa: $<HTMLInputElement>("#adminEmpresa").value,
+        area: $<HTMLInputElement>("#adminArea").value,
+        clave,
+      });
+
+      boton.disabled = false;
+
+      if (!resultado.ok) {
+        avisar(explicarRechazoAlta(resultado.motivo), "error");
+        // La cuenta quedó creada pero sin el ascenso: conviene refrescar para
+        // que aparezca en la tabla y se pueda terminar con un clic.
+        if (resultado.motivo === "rol_pendiente") await pintar();
+        return;
+      }
+
+      $<HTMLFormElement>("#formAdmin").reset();
+      await pintar();
+      avisar(`${resultado.perfil.nombreCompleto} ya puede entrar al panel.`, "ok");
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-codigo]").forEach((boton) => {
@@ -190,6 +240,46 @@ export function mostrarAdministracion(onSalir: () => void): void {
       });
     });
 
+    // Dar o quitar administrador confirma en el propio botón, igual que
+    // eliminar: es un permiso, no una preferencia, y conviene que cueste un
+    // clic de más.
+    raiz.querySelectorAll<HTMLButtonElement>("[data-rol]").forEach((boton) => {
+      const etiqueta = boton.textContent ?? "";
+      let confirmando = false;
+
+      boton.addEventListener("click", async () => {
+        if (!confirmando) {
+          confirmando = true;
+          boton.textContent = "Confirmar";
+          boton.classList.add("portal__accion--confirma");
+          return;
+        }
+
+        boton.disabled = true;
+        const nuevoRol = boton.dataset.accion === "promover" ? "administrador" : "trabajador";
+        const resultado = await cambiarRol(boton.dataset.rol!, nuevoRol);
+
+        if (!resultado.ok) {
+          // Se deshace la confirmación para que el botón vuelva a su estado
+          // normal en vez de quedar pidiendo un clic que ya no va a funcionar.
+          confirmando = false;
+          boton.disabled = false;
+          boton.textContent = etiqueta;
+          boton.classList.remove("portal__accion--confirma");
+          avisar(explicarRechazoRol(resultado.motivo), "error");
+          return;
+        }
+
+        await pintar();
+        avisar(
+          nuevoRol === "administrador"
+            ? "Ahora es administrador. Verá el panel la próxima vez que entre."
+            : "Vuelve a ser trabajador.",
+          "ok"
+        );
+      });
+    });
+
     // Eliminar borra el registro y no se puede deshacer, así que pide una
     // confirmación en el propio botón: el primer clic avisa, el segundo
     // ejecuta. Sin ventanas encima de ventanas, igual que en el ranking.
@@ -219,13 +309,28 @@ export function mostrarAdministracion(onSalir: () => void): void {
   }
 }
 
+/** Texto para el administrador cuando el alta no procede. */
+function explicarRechazoAlta(motivo: Exclude<ResultadoAltaAdmin, { ok: true }>["motivo"]): string {
+  switch (motivo) {
+    case "identificador_repetido":
+      return "Ese RUT o correo ya tiene cuenta. Búscalo en la tabla y dale Hacer admin.";
+    case "clave_corta":
+      return `La contraseña necesita al menos ${LARGO_MINIMO_CLAVE} caracteres.`;
+    case "rol_pendiente":
+      return "La cuenta se creó, pero quedó como trabajador. Dale Hacer admin en la tabla.";
+    default:
+      return "No se pudo crear la cuenta. Revisa tu conexión.";
+  }
+}
+
 function plantilla(
   perfiles: Perfil[],
   codigos: Codigo[],
   inscripciones: Inscripcion[],
   cursos: Curso[],
   ranking: FilaRankingAdmin[],
-  areas: ResumenArea[]
+  areas: ResumenArea[],
+  perfilPropio: string | null
 ): string {
   const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
 
@@ -305,6 +410,38 @@ function plantilla(
         </section>
 
         <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Agregar administrador</h2>
+          <form id="formAdmin">
+            <div class="portal__fila">
+              <div class="portal__campo">
+                <label class="portal__etiqueta" for="adminNombre">Nombre completo</label>
+                <input class="portal__entrada" id="adminNombre" required />
+              </div>
+              <div class="portal__campo">
+                <label class="portal__etiqueta" for="adminIdentificador">RUT o correo</label>
+                <input class="portal__entrada" id="adminIdentificador" required />
+              </div>
+            </div>
+            <div class="portal__fila">
+              <div class="portal__campo">
+                <label class="portal__etiqueta" for="adminEmpresa">Empresa</label>
+                <input class="portal__entrada" id="adminEmpresa" />
+              </div>
+              <div class="portal__campo">
+                <label class="portal__etiqueta" for="adminArea">Área</label>
+                <input class="portal__entrada" id="adminArea" placeholder="Capacitación" />
+              </div>
+              <div class="portal__campo">
+                <label class="portal__etiqueta" for="adminClave">Contraseña</label>
+                <input class="portal__entrada" id="adminClave" type="password" required
+                       minlength="${LARGO_MINIMO_CLAVE}" placeholder="mínimo ${LARGO_MINIMO_CLAVE} caracteres" />
+              </div>
+            </div>
+            <button class="portal__boton" type="submit">Crear administrador</button>
+          </form>
+        </section>
+
+        <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Emitir código</h2>
           <form id="formCodigo">
             <div class="portal__fila">
@@ -354,9 +491,9 @@ function plantilla(
         </section>
 
         <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Personas inscritas</h2>
+          <h2 class="portal__tituloSeccion">Personas registradas</h2>
           <div class="portal__tablaEnvoltura">
-            ${tablaPersonas(trabajadores, inscripciones, cursos)}
+            ${tablaPersonas(perfiles, inscripciones, cursos, perfilPropio)}
           </div>
         </section>
       </div>
@@ -545,9 +682,14 @@ function tablaCursos(cursos: Curso[], inscripciones: Inscripcion[]): string {
     </p>`;
 }
 
-function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[], cursos: Curso[]): string {
+function tablaPersonas(
+  perfiles: Perfil[],
+  inscripciones: Inscripcion[],
+  cursos: Curso[],
+  perfilPropio: string | null
+): string {
   if (perfiles.length === 0) {
-    return `<p class="portal__vacio">Todavía no se registró nadie.</p>`;
+    return `<p class="portal__vacio">Todav\u00eda no se registr\u00f3 nadie.</p>`;
   }
 
   const filas = perfiles
@@ -555,22 +697,43 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[], cursos:
       const inscripcion = inscripciones.find((i) => i.perfilId === p.id);
       const activa = inscripcion?.activa ?? false;
 
-      // El avance vive hoy en el navegador de cada equipo, no acá. Hasta que
+      // El avance vive hoy en el navegador de cada equipo, no ac\u00e1. Hasta que
       // el progreso viaje al servidor se asume sin avance, que es el caso en
-      // el que eliminar es seguro. Cuando el dato exista, esta línea es lo
-      // único que cambia.
+      // el que eliminar es seguro. Cuando el dato exista, esta l\u00ednea es lo
+      // \u00fanico que cambia.
       const sinAvance = true;
 
+      const esAdmin = p.rol === "administrador";
+      const esUnoMismo = p.id === perfilPropio;
+
+      const rol = esAdmin
+        ? `<span class="portal__estado portal__estado--activo">Administrador</span>`
+        : `<span class="portal__estado portal__estado--neutro">Trabajador</span>`;
+
       const estado = !inscripcion
-        ? `<span class="portal__estado portal__estado--neutro">Sin inscripción</span>`
+        ? `<span class="portal__estado portal__estado--neutro">Sin inscripci\u00f3n</span>`
         : activa
           ? `<span class="portal__estado portal__estado--activo">Activa</span>`
           : `<span class="portal__estado portal__estado--baja">De baja</span>`;
 
-      // Dos acciones distintas a propósito. Dar de baja es lo cotidiano y es
-      // reversible; eliminar borra el registro y solo se ofrece cuando no hay
-      // nada que perder.
+      const curso = inscripcion
+        ? cursos.find((c) => c.id === inscripcion.cursoId)?.nombre ?? "\u2014"
+        : "\u2014";
+
       const acciones: string[] = [];
+
+      // El propio administrador no ve el bot\u00f3n sobre su fila: quitarse el
+      // permiso es la forma m\u00e1s f\u00e1cil de quedarse afuera del panel.
+      if (!esUnoMismo) {
+        acciones.push(
+          esAdmin
+            ? `<button class="portal__accion" data-rol="${p.id}" data-accion="degradar">Quitar admin</button>`
+            : `<button class="portal__accion" data-rol="${p.id}" data-accion="promover">Hacer admin</button>`
+        );
+      }
+
+      // Dar de baja es lo cotidiano y es reversible; eliminar borra el
+      // registro y solo se ofrece cuando no hay nada que perder.
       if (inscripcion && activa) {
         acciones.push(
           `<button class="portal__accion" data-baja="${inscripcion.id}">Dar de baja</button>`
@@ -587,35 +750,64 @@ function tablaPersonas(perfiles: Perfil[], inscripciones: Inscripcion[], cursos:
         );
       }
 
+      // Seis columnas en vez de diez: los datos que siempre se leen juntos
+      // \u2014nombre y ficha, empresa y \u00e1rea, curso y c\u00f3digo, estado y fecha\u2014
+      // van apilados en una sola celda. No se pierde ning\u00fan dato y la tabla
+      // entra en la tarjeta sin barra de desplazamiento.
       return `
         <tr class="${activa || !inscripcion ? "" : "portal__fila--baja"}">
-          <td>${p.nombreCompleto}</td>
-          <td>${p.identificador}</td>
-          <td>${p.empresa || "—"}</td>
-          <td>${p.area || "—"}</td>
-          <td>${inscripcion ? cursos.find((c) => c.id === inscripcion.cursoId)?.nombre ?? "—" : "—"}</td>
-          <td class="portal__codigo">${inscripcion?.codigoUsado || "—"}</td>
-          <td>${inscripcion ? fecha(inscripcion.inscritoEn) : "—"}</td>
-          <td>${estado}</td>
+          <td class="portal__apilada">
+            <strong>${escapar(p.nombreCompleto)}</strong>
+            <span class="portal__subdato">${escapar(p.identificador)}</span>
+          </td>
+          <td class="portal__apilada">
+            ${escapar(p.empresa) || "\u2014"}
+            <span class="portal__subdato">${escapar(p.area) || "\u2014"}</span>
+          </td>
+          <td>${rol}</td>
+          <td class="portal__apilada">
+            ${escapar(curso)}
+            <span class="portal__subdato portal__subdato--codigo">${escapar(inscripcion?.codigoUsado || "\u2014")}</span>
+          </td>
+          <td class="portal__apilada">
+            ${estado}
+            <span class="portal__subdato">${inscripcion ? fecha(inscripcion.inscritoEn) : "\u2014"}</span>
+          </td>
           <td class="portal__acciones">${acciones.join("")}</td>
         </tr>`;
     })
     .join("");
 
   return `
-    <table class="portal__tabla">
+    <table class="portal__tabla portal__tabla--personas">
       <thead>
         <tr>
-          <th>Nombre</th><th>RUT / ficha</th><th>Empresa</th><th>Área</th>
-          <th>Curso</th><th>Código usado</th><th>Inscripción</th><th>Estado</th><th></th>
+          <th>Persona</th><th>Empresa / \u00e1rea</th><th>Rol</th>
+          <th>Curso</th><th>Inscripci\u00f3n</th><th></th>
         </tr>
       </thead>
       <tbody>${filas}</tbody>
     </table>
     <p class="portal__nota">
-      Dar de baja libera el cupo del código y conserva el historial de la persona.
-      Eliminar borra el registro y solo está disponible mientras no haya avance.
+      Dar de baja libera el cupo del c\u00f3digo y conserva el historial. Eliminar
+      borra el registro. Para sumar un administrador, la persona se registra con
+      un c\u00f3digo y ac\u00e1 se le cambia el rol.
     </p>`;
+}
+
+/**
+ * Escapa el texto que viene de la base antes de incrustarlo en el HTML.
+ *
+ * Los nombres, empresas y \u00e1reas los escribe cada persona al registrarse. Sin
+ * esto, alguien que ponga etiquetas HTML en su nombre las ejecuta en el
+ * navegador del administrador, que es justamente quien m\u00e1s permisos tiene.
+ */
+function escapar(texto: string): string {
+  return texto
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function fecha(iso: string): string {
