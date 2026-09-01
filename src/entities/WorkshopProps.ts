@@ -373,3 +373,102 @@ function salpicarImpacto(scene: Scene, punto: Vector3, matBase: PBRMaterial): vo
     }
   });
 }
+/**
+ * Tablero de sombras: el panel con la silueta de cada herramienta pintada.
+ *
+ * Es la imagen mas reconocible del 5S — de un vistazo se ve que falta una
+ * herramienta y cual. Encaja con Seiton (un lugar para cada cosa) y con
+ * Seiketsu (el estandar queda a la vista, no en un manual).
+ *
+ * Va montado en la pared a proposito. Toda la uterlia de piso compite por
+ * espacio con las zonas de juego; esta no puede estorbar nada porque no
+ * ocupa suelo.
+ *
+ * @param giroY  Orientacion del panel. Debe quedar mirando hacia el interior
+ *               del galpon: -PI/2 para la pared derecha, +PI/2 para la
+ *               izquierda.
+ */
+export function crearTableroHerramientas(scene: Scene, x: number, z: number, giroY: number): void {
+  const id = `${x}_${z}`;
+
+  const panel = MeshBuilder.CreateBox(`tableroHerr_${id}`, { width: 1.9, height: 1.15, depth: 0.06 }, scene);
+  panel.position.set(x, 1.62, z);
+  panel.rotation.y = giroY;
+  panel.receiveShadows = true;
+
+  // Las siluetas se pintan en una textura en vez de modelarse: son formas
+  // planas sobre el panel, y como malla serian dos docenas de cajas finas
+  // por tablero sin ganar nada a cambio.
+  const lienzo = new DynamicTexture(`texTableroHerr_${id}`, { width: 768, height: 460 }, scene, false);
+  const ctx = lienzo.getContext() as CanvasRenderingContext2D;
+
+  ctx.fillStyle = "#2f3a41";
+  ctx.fillRect(0, 0, 768, 460);
+
+  // Marco y division: un tablero real esta zonificado por familia de
+  // herramienta, y esa division es parte del estandar.
+  ctx.strokeStyle = "#5a6a74";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(10, 10, 748, 440);
+  ctx.beginPath();
+  ctx.moveTo(384, 16);
+  ctx.lineTo(384, 454);
+  ctx.stroke();
+
+  // Silueta = herramienta ausente. Se pintan en un tono mas claro que el
+  // fondo para que se lean como pintura sobre el panel.
+  ctx.fillStyle = "#8a99a3";
+
+  // Llaves fijas: mango recto con la boca abierta arriba.
+  [70, 140, 210].forEach((cx, i) => {
+    const largo = 150 + i * 18;
+    ctx.fillRect(cx - 9, 120, 18, largo);
+    ctx.beginPath();
+    ctx.arc(cx, 112, 26, Math.PI * 0.15, Math.PI * 0.85, true);
+    ctx.fill();
+  });
+
+  // Destornilladores: mango grueso y vastago fino.
+  [300, 345].forEach((cx) => {
+    ctx.fillRect(cx - 14, 110, 28, 70);
+    ctx.fillRect(cx - 5, 180, 10, 130);
+  });
+
+  // Martillo: cabeza en T y cabo largo.
+  ctx.fillRect(455, 105, 92, 30);
+  ctx.fillRect(492, 135, 18, 165);
+
+  // Alicate: dos ramas que se cruzan.
+  ctx.save();
+  ctx.translate(640, 210);
+  [-0.22, 0.22].forEach((giro) => {
+    ctx.save();
+    ctx.rotate(giro);
+    ctx.fillRect(-8, -105, 16, 200);
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // Rotulos de cada zona: sin texto el tablero se lee como manchas.
+  ctx.fillStyle = "#c8d4dc";
+  ctx.font = "bold 26px sans-serif";
+  ctx.fillText("LLAVES", 40, 400);
+  ctx.fillText("GOLPE / CORTE", 420, 400);
+
+  lienzo.update();
+
+  const mat = new PBRMaterial(`matTableroHerr_${id}`, scene);
+  mat.albedoTexture = lienzo;
+  mat.roughness = 0.72;
+  mat.metallic = 0.05;
+  mat.microSurfaceTexture = texturaGrano(scene, 0.06);
+  panel.material = mat;
+
+  // Repisa inferior: le da grosor al panel y evita que se lea como una
+  // calcomania pegada a la pared.
+  const repisa = MeshBuilder.CreateBox(`repisaTableroHerr_${id}`, { width: 1.9, height: 0.05, depth: 0.16 }, scene);
+  repisa.position.set(x, 1.02, z);
+  repisa.rotation.y = giroY;
+  repisa.material = material(scene, `matRepisaHerr_${id}`, new Color3(0.34, 0.38, 0.41), 0.5, 0.4);
+  repisa.receiveShadows = true;
+}

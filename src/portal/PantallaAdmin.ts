@@ -7,6 +7,8 @@ import {
   cambiarRol,
   explicarRechazoRol,
   crearAdministrador,
+  restablecerClave,
+  explicarRechazoClave,
   LARGO_MINIMO_CLAVE,
   type ResultadoAltaAdmin,
   crearCodigo,
@@ -237,6 +239,44 @@ export function mostrarAdministracion(onSalir: () => void): void {
         await reactivarInscripcion(boton.dataset.reactivar!);
         await pintar();
         avisar("Inscripción reactivada.", "ok");
+      });
+    });
+
+    // Restablecer clave tambien confirma en dos pasos: genera una contrasenia
+    // nueva, y la anterior deja de servir en el acto.
+    raiz.querySelectorAll<HTMLButtonElement>("[data-clave]").forEach((boton) => {
+      const etiqueta = boton.textContent ?? "";
+      let confirmando = false;
+
+      boton.addEventListener("click", async () => {
+        if (!confirmando) {
+          confirmando = true;
+          boton.textContent = "Confirmar";
+          boton.classList.add("portal__accion--confirma");
+          return;
+        }
+
+        boton.disabled = true;
+        const resultado = await restablecerClave(boton.dataset.clave!);
+
+        confirmando = false;
+        boton.disabled = false;
+        boton.textContent = etiqueta;
+        boton.classList.remove("portal__accion--confirma");
+
+        if (!resultado.ok) {
+          avisar(explicarRechazoClave(resultado.motivo), "error");
+          return;
+        }
+
+        // El aviso NO se refresca con pintar() a proposito: repintar borraria
+        // la banda y con ella la unica copia de la clave. No queda guardada en
+        // ninguna parte legible, asi que si se pierde hay que generar otra.
+        const nombre = boton.closest("tr")?.querySelector("strong")?.textContent ?? "la persona";
+        avisar(
+          `Clave temporal de ${nombre}: ${resultado.clave} — anotala ahora, no se vuelve a mostrar.`,
+          "ok"
+        );
       });
     });
 
@@ -731,6 +771,13 @@ function tablaPersonas(
             : `<button class="portal__accion" data-rol="${p.id}" data-accion="promover">Hacer admin</button>`
         );
       }
+
+      // Restablecer clave se ofrece siempre, tambien sobre la propia fila: es
+      // el caso legitimo de un administrador que perdio la suya y todavia
+      // tiene la sesion abierta.
+      acciones.push(
+        `<button class="portal__accion" data-clave="${p.id}">Restablecer clave</button>`
+      );
 
       // Dar de baja es lo cotidiano y es reversible; eliminar borra el
       // registro y solo se ofrece cuando no hay nada que perder.

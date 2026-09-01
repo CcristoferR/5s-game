@@ -10,6 +10,7 @@ import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/Check
 import { crearZonaSenal } from "../entities/SignageZone";
 import { crearNPCWorker } from "../entities/NPCWorker";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearRotulo3D } from "../entities/Rotulo3D";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
@@ -62,6 +63,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     { z: -0.6, intensidad: 0.9 },
     { z: 1.6, intensidad: 0.8 },
   ]);
+
+  // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
+  // por nivel para acompanar lo que ensena cada S.
+  ambientarNivel(scene, 4);
 
   // Suelo invisible al ras del piso del garaje. Se conserva el nombre
   // "sueloN4" porque main.ts lo busca así para decirle a WebXR sobre qué

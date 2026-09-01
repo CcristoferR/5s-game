@@ -10,14 +10,8 @@ import { crearImpresoraConToner } from "../entities/PrinterMachine";
 import { mostrarPanelOpciones } from "../ui/ChoicePanel";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
-import {
-  crearEstanteriaTaller,
-  crearTamboresAceite,
-  crearPalletConCajas,
-  crearCarroDeLimpieza,
-  crearSenalPisoMojado,
-  crearGoteoDeFuga,
-} from "../entities/WorkshopProps";
+import { crearGoteoDeFuga } from "../entities/WorkshopProps";
+import { ambientarNivel } from "../entities/AmbienteNivel";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 import { luegoDe } from "../core/Animacion";
@@ -80,11 +74,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // x entre -4 y 3.6, z entre -1.3 y 2.5 — ahí están el banco, el equipo, la
   // impresora y las cinco manchas. Nada de esto es interactivo: un objeto
   // decorativo que tape o imite una mancha juega en contra del ejercicio.
-  crearEstanteriaTaller(scene, 5.1, 3.4, -Math.PI / 2);
-  crearTamboresAceite(scene, 4.5, 0.4);
-  crearPalletConCajas(scene, -5.0, 4.6);
-  crearCarroDeLimpieza(scene, -1.5, 3.6, 0.5);
-  crearSenalPisoMojado(scene, 0.9, 1.9, -0.35);
+  ambientarNivel(scene, 3);
 
   // El goteo cae exactamente donde la junta de la máquina pierde aceite.
   // Ese punto está en el costado izquierdo del equipo, y la primera mancha se

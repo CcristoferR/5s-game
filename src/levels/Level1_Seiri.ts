@@ -8,6 +8,7 @@ import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { GameManager } from "../core/GameManager";
@@ -44,6 +45,10 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     { z: -0.5, intensidad: 0.9 },
     { z: 2.2, intensidad: 0.7, tinte: new Color3(0.95, 0.96, 1) },
   ]);
+
+  // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
+  // por nivel para acompanar lo que ensena cada S.
+  ambientarNivel(scene, 1);
 
   // Suelo invisible al ras del piso del garaje. No se ve, pero sigue
   // llamándose "suelo" porque main.ts lo busca por ese nombre para decirle

@@ -5,6 +5,7 @@ import { crearPuntoControl } from "../entities/AuditPoint";
 import { chispasDeAcierto } from "../entities/Particulas";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager } from "../core/GameManager";
 import { briefingsNiveles } from "../data/levelConfig";
@@ -51,6 +52,10 @@ export function cargarNivel5(
     { z: 0.8, intensidad: 0.85 },
     { z: 2.6, intensidad: 0.8 },
   ]);
+
+  // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
+  // por nivel para acompanar lo que ensena cada S.
+  ambientarNivel(scene, 5);
 
   // Suelo invisible al ras del piso del garaje. Conserva el nombre "sueloN5"
   // porque main.ts lo busca así para indicarle a WebXR dónde se puede

@@ -7,6 +7,7 @@ import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { crearShelfSlot } from "../entities/ShelfSlot";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
+import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel2 } from "../entities/Level2Shapes";
 import { moverMalla, luegoDe } from "../core/Animacion";
@@ -27,6 +28,10 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // interior a oscuras. La luz de adentro la resuelve iluminarInteriorGaraje.
   void cargarGaraje(scene).catch((error) => console.error("[nivel2] garaje:", error));
   iluminarInteriorGaraje(scene, [{ z: -0.5, intensidad: 0.9 }, { z: 1.8, intensidad: 0.75 }]);
+
+  // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
+  // por nivel para acompanar lo que ensena cada S.
+  ambientarNivel(scene, 2);
 
   // Suelo invisible al ras del piso del garaje. No se ve, pero sigue
   // llamándose "sueloN2" porque main.ts lo busca por ese nombre para decirle

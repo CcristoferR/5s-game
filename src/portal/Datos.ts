@@ -535,6 +535,66 @@ export async function crearAdministrador(datos: DatosRegistro): Promise<Resultad
   return { ok: true, perfil: { ...desdePerfil(fila as FilaPerfil), rol: "administrador" } };
 }
 
+export type ResultadoClave =
+  | { ok: true; clave: string }
+  | {
+      ok: false;
+      motivo:
+        | "sin_sesion"
+        | "sin_permiso"
+        | "sin_perfil"
+        | "sin_cuenta"
+        | "otro_administrador"
+        | "otro";
+    };
+
+/**
+ * Genera una contraseña temporal para una persona y la devuelve.
+ *
+ * No recibe la clave nueva: la inventa el servidor. Con gente de planta esto
+ * pasa seguido —se olvidan la contraseña— y lo que se necesita es que quien
+ * atiende pueda resolverlo en el momento, sin inventar una clave ni escribirla
+ * en ningún formulario. La lee en pantalla, se la dicta, y la persona entra.
+ *
+ * Va por función de base de datos porque cambiar la clave de otra cuenta exige
+ * la clave de servicio de Supabase, que no puede estar en el navegador.
+ */
+export async function restablecerClave(perfilId: string): Promise<ResultadoClave> {
+  const { data, error } = await supabase.rpc("restablecer_clave", {
+    p_perfil_id: perfilId,
+  });
+
+  if (error) {
+    avisarError("restablecerClave", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  const r = data as { ok: boolean; clave?: string; motivo?: string };
+  if (!r.ok || !r.clave) {
+    return { ok: false, motivo: (r.motivo as "otro") ?? "otro" };
+  }
+
+  return { ok: true, clave: r.clave };
+}
+
+/** Texto para el administrador cuando no se puede restablecer la clave. */
+export function explicarRechazoClave(motivo: Exclude<ResultadoClave, { ok: true }>["motivo"]): string {
+  switch (motivo) {
+    case "otro_administrador":
+      return "No puedes cambiar la clave de otro administrador. Que la restablezca él desde su propia sesión.";
+    case "sin_permiso":
+      return "Solo un administrador puede restablecer contraseñas.";
+    case "sin_cuenta":
+      return "Esa persona tiene perfil pero no cuenta de acceso. Hay que crearla de nuevo.";
+    case "sin_perfil":
+      return "Esa persona ya no existe. Actualiza la página.";
+    case "sin_sesion":
+      return "Tu sesión expiró. Vuelve a entrar.";
+    default:
+      return "No se pudo restablecer la clave. Revisa tu conexión.";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cursos
 // ---------------------------------------------------------------------------
