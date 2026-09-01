@@ -1,4 +1,9 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh, Matrix } from "@babylonjs/core";
+import {
+  crearEngrapadora as crearEngrapadoraComun,
+  crearCarpeta as crearCarpetaComun,
+  crearManual as crearManualComun,
+} from "./ObjetosComunes";
 import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 import type { ObjetoNivel2 } from "../data/levelConfig";
 
@@ -29,7 +34,16 @@ import type { ObjetoNivel2 } from "../data/levelConfig";
 // las piezas sueltas como hijas no se podrían agarrar.
 
 export function crearFormaNivel2(scene: Scene, datos: ObjetoNivel2): Mesh {
-  return apoyarSobreLaBase(construirForma(scene, datos));
+  const mesh = construirForma(scene, datos);
+
+  // Los exclusivos de este nivel se escalan; los compartidos ya vienen con la
+  // medida correcta desde ObjetosComunes y volver a escalarlos los deformaría
+  // respecto de su gemelo del Nivel 1.
+  if (PROPIOS.has(datos.id)) {
+    escalar(mesh, ESCALA_PROPIOS);
+  }
+
+  return apoyarSobreLaBase(mesh);
 }
 
 /**
@@ -54,14 +68,48 @@ function apoyarSobreLaBase(mesh: Mesh): Mesh {
   return mesh;
 }
 
+/**
+ * Aplica la escala del nivel y la deja horneada en la geometría.
+ *
+ * Se hornea en vez de dejar `scaling` puesto porque el sistema de arrastre y
+ * las siluetas del estante trabajan con las medidas reales de la malla: con un
+ * scaling colgando, las comprobaciones de "cabe en esta repisa" usarían el
+ * tamaño sin escalar y darían resultados equivocados.
+ */
+function escalar(mesh: Mesh, factor: number): Mesh {
+  mesh.bakeTransformIntoVertices(Matrix.Scaling(factor, factor, factor));
+  mesh.refreshBoundingInfo();
+  return mesh;
+}
+
+/**
+ * Escala de los objetos exclusivos del Nivel 2.
+ *
+ * Los compartidos con el Nivel 1 se construyen en ObjetosComunes.ts, ya con su
+ * medida real multiplicada por el factor de juego. Los de acá se modelaron
+ * antes y a ojo, y quedaron notoriamente más chicos: al ponerlos al lado de la
+ * engrapadora se notaba que pertenecían a escalas distintas.
+ *
+ * Escalarlos al final es más seguro que reescribir cada medida a mano: no toca
+ * la geometría, que ya estaba bien resuelta, y garantiza que el factor sea el
+ * mismo para todos.
+ */
+const ESCALA_PROPIOS = 1.3;
+
+/** Ids que se construyen acá y necesitan el ajuste de escala. */
+const PROPIOS = new Set(["telefono", "taza_lapices", "llavero", "tijeras"]);
+
 function construirForma(scene: Scene, datos: ObjetoNivel2): Mesh {
   switch (datos.id) {
     case "telefono":
       return crearTelefono(scene, datos.id);
     case "engrapadora2":
-      return crearEngrapadora(scene, datos.id);
+      // Misma construcción que en el Nivel 1: es el mismo objeto y el jugador
+      // acaba de verlo. Antes cada nivel tenía la suya y la del 1 medía más del
+      // doble que la del 2 — una diferencia imposible de no notar.
+      return crearEngrapadoraComun(scene, datos.id);
     case "carpeta_activa2":
-      return crearCarpeta(scene, datos.id);
+      return crearCarpetaComun(scene, datos.id, "PROYECTO ACTIVO");
     case "taza_lapices":
       return crearTazaLapices(scene, datos.id);
     case "llavero":
@@ -69,7 +117,8 @@ function construirForma(scene: Scene, datos: ObjetoNivel2): Mesh {
     case "tijeras":
       return crearTijeras(scene, datos.id);
     case "manual_referencia":
-      return crearManualReferencia(scene, datos.id);
+      // Mismo manual, otra portada: en el Nivel 2 es el de referencia rápida.
+      return crearManualComun(scene, datos.id, "REFERENCIA");
     default: {
       const mesh = MeshBuilder.CreateBox(datos.id, { size: 0.4 }, scene);
       mesh.material = plastico(scene, `mat_${datos.id}`, new Color3(0.6, 0.6, 0.65));
@@ -102,16 +151,6 @@ function metal(scene: Scene, nombre: string, color: Color3, rugosidad = 0.26): P
   mat.bumpTexture = normalMetalCepillado(scene);
   mat.invertNormalMapY = true;
   mat.microSurfaceTexture = texturaGrano(scene, 0.14);
-  return mat;
-}
-
-/** Papel y cartón: hojas, tapas, etiquetas. */
-function papel(scene: Scene, nombre: string, color: Color3): PBRMaterial {
-  const mat = new PBRMaterial(nombre, scene);
-  mat.albedoColor = color;
-  mat.roughness = 0.88;
-  mat.metallic = 0;
-  mat.microSurfaceTexture = texturaGrano(scene, 0.07);
   return mat;
 }
 
@@ -207,98 +246,9 @@ function crearTelefono(scene: Scene, id: string): Mesh {
 // Engrapadora
 // ---------------------------------------------------------------------------
 
-function crearEngrapadora(scene: Scene, id: string): Mesh {
-  const matCuerpo = plastico(scene, `matCuerpo_${id}`, new Color3(0.12, 0.14, 0.2), 0.4);
-  const matCromo = metal(scene, `matCromo_${id}`, new Color3(0.78, 0.79, 0.82), 0.16);
-
-  const partes: Mesh[] = [];
-
-  const base = MeshBuilder.CreateBox(`base_${id}`, { width: 0.21, height: 0.022, depth: 0.055 }, scene);
-  base.position.y = 0.011;
-  base.material = matCuerpo;
-  partes.push(base);
-
-  // Yunque cromado del frente: la placa metálica donde se dobla la grapa.
-  const yunque = MeshBuilder.CreateBox(`yunque_${id}`, { width: 0.05, height: 0.006, depth: 0.05 }, scene);
-  yunque.position.set(0.075, 0.025, 0);
-  yunque.material = matCromo;
-  partes.push(yunque);
-
-  const cargador = MeshBuilder.CreateBox(`cargador_${id}`, { width: 0.185, height: 0.028, depth: 0.045 }, scene);
-  cargador.position.set(-0.008, 0.038, 0);
-  cargador.material = matCuerpo;
-  partes.push(cargador);
-
-  // BRAZO INCLINADO: la silueta en cuña es lo que distingue una engrapadora de
-  // un bloque rectangular. Se apoya atrás en la bisagra y se levanta al frente.
-  const brazo = MeshBuilder.CreateBox(`brazo_${id}`, { width: 0.19, height: 0.024, depth: 0.042 }, scene);
-  brazo.position.set(0.002, 0.064, 0);
-  brazo.rotation.z = -0.1;
-  brazo.material = matCuerpo;
-  partes.push(brazo);
-
-  const bisagra = MeshBuilder.CreateCylinder(`bisagra_${id}`, { diameter: 0.026, height: 0.05, tessellation: 14 }, scene);
-  bisagra.rotation.x = Math.PI / 2;
-  bisagra.position.set(-0.095, 0.05, 0);
-  bisagra.material = matCromo;
-  partes.push(bisagra);
-
-  return fusionar(partes, id);
-}
-
 // ---------------------------------------------------------------------------
 // Carpeta de proyecto
 // ---------------------------------------------------------------------------
-
-function crearCarpeta(scene: Scene, id: string): Mesh {
-  const matCarpeta = papel(scene, `matCarpeta_${id}`, new Color3(0.8, 0.62, 0.26));
-  const matHojas = papel(scene, `matHojas_${id}`, new Color3(0.96, 0.96, 0.93));
-  const matEtiqueta = papel(scene, `matEtiqueta_${id}`, new Color3(0.94, 0.95, 0.96));
-  const matRenglon = papel(scene, `matRenglon_${id}`, new Color3(0.28, 0.33, 0.42));
-
-  const partes: Mesh[] = [];
-
-  const tapaInf = MeshBuilder.CreateBox(`tapaInf_${id}`, { width: 0.2, height: 0.008, depth: 0.26 }, scene);
-  tapaInf.position.y = 0.004;
-  tapaInf.material = matCarpeta;
-  partes.push(tapaInf);
-
-  // Hojas asomando: dicen que la carpeta está EN USO, que es el criterio por el
-  // que este objeto se queda cerca del puesto.
-  const hojas = MeshBuilder.CreateBox(`hojas_${id}`, { width: 0.185, height: 0.014, depth: 0.25 }, scene);
-  hojas.position.set(0.004, 0.015, 0.004);
-  hojas.material = matHojas;
-  partes.push(hojas);
-
-  const tapaSup = MeshBuilder.CreateBox(`tapaSup_${id}`, { width: 0.2, height: 0.008, depth: 0.26 }, scene);
-  tapaSup.position.set(0.002, 0.026, 0);
-  tapaSup.rotation.z = 0.02;
-  tapaSup.material = matCarpeta;
-  partes.push(tapaSup);
-
-  // Lomo: el canto grueso del lado izquierdo, que es como se reconoce una
-  // carpeta cerrada de perfil.
-  const lomo = MeshBuilder.CreateBox(`lomo_${id}`, { width: 0.016, height: 0.03, depth: 0.26 }, scene);
-  lomo.position.set(-0.1, 0.015, 0);
-  lomo.material = matCarpeta;
-  partes.push(lomo);
-
-  // ETIQUETA con renglones escritos: convierte una tapa lisa en una carpeta
-  // rotulada, que es lo que uno espera de un archivo de trabajo.
-  const etiqueta = MeshBuilder.CreateBox(`etiqueta_${id}`, { width: 0.085, height: 0.003, depth: 0.05 }, scene);
-  etiqueta.position.set(0.03, 0.031, 0.07);
-  etiqueta.material = matEtiqueta;
-  partes.push(etiqueta);
-
-  [0.012, -0.004].forEach((dz, i) => {
-    const renglon = MeshBuilder.CreateBox(`renglon_${id}_${i}`, { width: 0.06, height: 0.002, depth: 0.006 }, scene);
-    renglon.position.set(0.03, 0.033, 0.07 + dz);
-    renglon.material = matRenglon;
-    partes.push(renglon);
-  });
-
-  return fusionar(partes, id);
-}
 
 // ---------------------------------------------------------------------------
 // Taza con lápices
@@ -495,46 +445,3 @@ function crearTijeras(scene: Scene, id: string): Mesh {
 // ---------------------------------------------------------------------------
 // Manual de referencia
 // ---------------------------------------------------------------------------
-
-function crearManualReferencia(scene: Scene, id: string): Mesh {
-  const matPagina = papel(scene, `matPagina_${id}`, new Color3(0.94, 0.94, 0.91));
-  const matTapa = papel(scene, `matTapa_${id}`, new Color3(0.18, 0.45, 0.32));
-  const matEspiral = metal(scene, `matEspiral_${id}`, new Color3(0.66, 0.67, 0.7), 0.28);
-  const matTitulo = papel(scene, `matTitulo_${id}`, new Color3(0.93, 0.94, 0.92));
-
-  const partes: Mesh[] = [];
-
-  const ANCHO = 0.17;
-  const FONDO = 0.23;
-
-  for (let i = 0; i < 5; i++) {
-    const hoja = MeshBuilder.CreateBox(`hoja_${id}_${i}`, { width: ANCHO, height: 0.005, depth: FONDO }, scene);
-    hoja.position.y = 0.003 + i * 0.005;
-    hoja.material = matPagina;
-    partes.push(hoja);
-  }
-
-  const tapa = MeshBuilder.CreateBox(`tapa_${id}`, { width: ANCHO + 0.006, height: 0.006, depth: FONDO + 0.006 }, scene);
-  tapa.position.y = 0.031;
-  tapa.material = matTapa;
-  partes.push(tapa);
-
-  // Bloque de título en la tapa: un manual sin nada escrito es un ladrillo.
-  const titulo = MeshBuilder.CreateBox(`titulo_${id}`, { width: 0.1, height: 0.002, depth: 0.028 }, scene);
-  titulo.position.set(0.01, 0.035, 0.055);
-  titulo.material = matTitulo;
-  partes.push(titulo);
-
-  // ESPIRAL: anillos separados a lo largo del lomo. Es lo que distingue de un
-  // vistazo el manual de una carpeta o de un bloc — y en este nivel hay los
-  // tres, así que la diferencia importa.
-  for (let i = 0; i < 8; i++) {
-    const anillo = MeshBuilder.CreateTorus(`anillo_${id}_${i}`, { diameter: 0.026, thickness: 0.0035, tessellation: 12 }, scene);
-    anillo.rotation.y = Math.PI / 2;
-    anillo.position.set(-ANCHO / 2 - 0.002, 0.018, -FONDO / 2 + 0.02 + i * 0.026);
-    anillo.material = matEspiral;
-    partes.push(anillo);
-  }
-
-  return fusionar(partes, id);
-}
