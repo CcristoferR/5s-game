@@ -23,6 +23,7 @@ import {
   resumenPorArea,
   type ResumenArea,
 } from "./Reportes";
+import { mostrarVerificacion } from "./PantallaVerificacion";
 import { cerrarSesion } from "./Sesion";
 import { rankingCompleto, formatearDuracion, type FilaRankingAdmin } from "./Ranking";
 import { CURSO_ID } from "./Datos";
@@ -122,6 +123,14 @@ export function mostrarAdministracion(onSalir: () => void): void {
         await cambiarEstadoCodigo(codigo, activar);
         await pintar();
       });
+    });
+
+    raiz.querySelector<HTMLButtonElement>("#abrirVerificacion")?.addEventListener("click", () => {
+      // El panel se retira y se vuelve a pintar al cerrar el verificador: es
+      // más limpio que superponer pantallas, y garantiza que los datos que se
+      // ven al volver estén al día.
+      raiz.remove();
+      mostrarVerificacion({ onVolver: () => mostrarAdministracion(onSalir) });
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-reporte]").forEach((boton) => {
@@ -240,6 +249,20 @@ function plantilla(
         </div>
 
         <p class="portal__aviso" id="avisoAdmin" hidden></p>
+
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Verificar un certificado</h2>
+          <p class="portal__nota portal__nota--arriba">
+            Comprueba si un certificado presentado por alguien fue emitido por esta
+            plataforma. Basta el código impreso al pie del documento.
+          </p>
+          <button class="reporte" type="button" id="abrirVerificacion">
+            <span class="reporte__nombre">Abrir verificador</span>
+            <span class="reporte__desc">
+              Escribe el código y confirma nombre, curso, puntaje y fecha de emisión
+            </span>
+          </button>
+        </section>
 
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Reportes</h2>

@@ -6,6 +6,7 @@ import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir } from "./co
 import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
 import { mostrarCatalogo } from "./portal/PantallaCatalogo";
+import { mostrarVerificacion } from "./portal/PantallaVerificacion";
 import { registrarFaseCompletada, progresoDe, CURSO_ID } from "./portal/Datos";
 import { guardarResultadoDeFase } from "./portal/Ranking";
 import { leerSesion, cerrarSesion, rolVerificado } from "./portal/Sesion";
@@ -36,8 +37,7 @@ const engine = new Engine(canvas, true, undefined, true);
 //
 // La nitidez de la interfaz se resuelve por el lado de la GUI (idealWidth /
 // idealHeight en MainMenu), que no toca la geometria del puntero.
-engine.setHardwareScalingLevel(1);
-
+engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
 let sceneManager = new SceneManager(engine);
 
 // Quién está jugando. El progreso se guarda a su nombre, no al del equipo.
@@ -90,7 +90,20 @@ function mostrarMenu(): void {
           : undefined
       );
     },
-    () => mostrarRankingCurso(sceneManager.scene, () => mostrarMenu()),
+    () =>
+      mostrarRankingCurso(sceneManager.scene, () => {
+        // El menú se recrea en el tick siguiente, no en el mismo.
+        //
+        // La pantalla que se cierra libera su capa con un setTimeout diferido,
+        // porque destruirla dentro del propio evento de clic corta el reparto
+        // de controles de Babylon. Si el menú se creaba de inmediato, durante
+        // ese instante convivían dos capas a pantalla completa sobre la misma
+        // escena, cada una con su propio Layer: es lo que producía el
+        // parpadeo gris al volver del ranking.
+        //
+        // Un tick de espera basta para que la anterior ya no exista.
+        setTimeout(() => mostrarMenu(), 0);
+      }),
     perfilActivo?.nombreCompleto,
     () => void volverAlCatalogo()
   );
@@ -280,6 +293,24 @@ async function abrirSesionGuardada(): Promise<void> {
 }
 
 function arrancar(): void {
+  // VERIFICACIÓN PÚBLICA DE CERTIFICADOS.
+  //
+  // Se entra escribiendo #verificar al final de la dirección, sin cuenta y sin
+  // pasar por el acceso. Es deliberado: quien verifica un certificado suele ser
+  // alguien de afuera —un auditor, el área de personal de otra empresa— y
+  // pedirle que se registre solo para validar un papel haría que nadie lo
+  // verificara nunca.
+  //
+  // Admite además el código en la dirección, por ejemplo
+  // #verificar/5S-QY5P-VHHD, para poder enviar un enlace que abra el resultado
+  // directamente.
+  const ruta = window.location.hash.replace(/^#\/?/, "");
+  if (ruta.startsWith("verificar")) {
+    const codigo = ruta.split("/")[1];
+    mostrarVerificacion({ codigoInicial: codigo ? decodeURIComponent(codigo) : undefined });
+    return;
+  }
+
   // El rol de una sesión guardada NO se acepta tal cual: se revalida contra el
   // registro de perfiles antes de decidir a qué pantalla se entra.
   void abrirSesionGuardada();
@@ -288,6 +319,10 @@ function arrancar(): void {
 // Prepara los efectos y engancha el desbloqueo del audio al primer clic: los
 // navegadores no dejan sonar nada antes de que el usuario interactúe.
 iniciarAudio();
+
+// TEMPORAL: vigila si las capas de interfaz se acumulan al navegar entre
+// pantallas. Borrar esta línea y el archivo Diagnostico.ts cuando el
+// destello y el ruido estén resueltos.
 
 // Si algo falla al abrir, se limpia la sesión y se muestra la puerta.
 //

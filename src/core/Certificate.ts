@@ -231,7 +231,10 @@ function pie(ctx: CanvasRenderingContext2D, c: Certificado): void {
 
   ctx.fillStyle = "#7a8a80";
   ctx.font = "13px system-ui, sans-serif";
-  ctx.fillText("Verificable ante el área de capacitación", cx, sy + 32);
+  // Se indica DÓNDE comprobarlo, no solo que es comprobable. Un código sin
+  // instrucciones no lo verifica nadie: quien recibe el papel no tiene por qué
+  // saber que existe una página para eso.
+  ctx.fillText("Verifica este código en la plataforma de capacitación", cx, sy + 32);
 
   ctx.strokeStyle = "#d8d2c4";
   ctx.lineWidth = 1;
