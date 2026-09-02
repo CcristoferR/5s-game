@@ -1,0 +1,147 @@
+/* ---------------------------------------------------------------------------
+   Pantalla de carga del nivel
+   ---------------------------------------------------------------------------
+
+   Hoja aparte y no dentro de portal.css a propósito: esto no pertenece al
+   portal sino al juego, y no sigue el tema claro/oscuro. Aparece con el garaje
+   detrás y desemboca en él, así que su sitio es el oscuro industrial siempre —
+   una carga en blanco que abre a un galpón en penumbra sería un salto de luz
+   justo al entrar.
+   --------------------------------------------------------------------------- */
+
+.cargaNivel {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+
+  background: radial-gradient(circle at 50% 38%, #12171b 0%, #05070a 78%);
+  color: #f5f7f6;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.cargaNivel--visible {
+  opacity: 1;
+  /* Bloquea el puntero solo mientras tapa. */
+  pointer-events: auto;
+}
+
+.cargaNivel--saliendo {
+  opacity: 0;
+}
+
+.cargaNivel__caja {
+  --fase-color: #7fb495;
+  max-width: 560px;
+  text-align: center;
+}
+
+.cargaNivel__rotulo {
+  margin: 0 0 14px;
+  color: var(--fase-color);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* El término japonés es lo primero que se lee y lo que se tiene que recordar:
+   va grande y con la letra abierta, como el rótulo de una sección. */
+.cargaNivel__fase {
+  margin: 0;
+  font-size: 54px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+
+.cargaNivel__traduccion {
+  margin: 8px 0 0;
+  color: rgba(224, 230, 228, 0.62);
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.cargaNivel__contexto {
+  margin: 26px auto 0;
+  max-width: 520px;
+  color: rgba(224, 230, 228, 0.78);
+  font-size: 16px;
+  line-height: 1.62;
+}
+
+/* --- Señal de actividad ---
+
+   Tres puntos y no una barra de progreso. No hay forma honesta de saber qué
+   porcentaje del nivel lleva armado: una barra sería una animación inventada
+   que además se congelaría a mitad de camino, porque el hilo principal está
+   ocupado justo mientras se muestra. Los puntos no prometen ningún avance,
+   solo dicen que algo está pasando.
+
+   La animación va sobre transform y opacity a propósito: son las dos
+   propiedades que el navegador anima FUERA del hilo principal. Cualquier otra
+   —alto, color, posición— se congelaría durante la construcción del garaje, y
+   una señal de actividad detenida transmite lo contrario de lo que pretende. */
+.cargaNivel__pulso {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 34px;
+}
+
+.cargaNivel__pulso span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fase-color);
+  opacity: 0.35;
+  animation: cargaNivelPulso 1.15s ease-in-out infinite;
+}
+
+.cargaNivel__pulso span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.cargaNivel__pulso span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes cargaNivelPulso {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(0.82);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+/* Sin animación para quien pide reducir el movimiento. La pantalla y su texto
+   siguen igual: lo único que se detiene es el latido. */
+@media (prefers-reduced-motion: reduce) {
+  .cargaNivel__pulso span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+@media (max-width: 640px) {
+  .cargaNivel__fase {
+    font-size: 38px;
+  }
+
+  .cargaNivel__contexto {
+    font-size: 15px;
+  }
+}

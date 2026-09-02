@@ -43,6 +43,61 @@ export const PALETA = {
 };
 
 /**
+ * Colores de la interfaz en tema claro.
+ *
+ * Alcance: las pantallas que TAPAN la escena por completo —menú, ranking,
+ * certificado—. Los paneles que se abren durante un nivel siguen sobre el
+ * garaje, así que ahí el velo oscuro sigue siendo el correcto: aclararlo
+ * dejaría el texto ilegible sobre la geometría del galpón.
+ *
+ * No es el tema oscuro invertido. Los colores de estado se oscurecen: los
+ * mismos verdes y rojos suaves que se leen bien sobre negro quedan lavados
+ * sobre blanco y dejan de distinguirse entre sí.
+ */
+const PALETA_CLARA: typeof PALETA = {
+  velo: "rgba(238, 241, 244, 0.82)",
+
+  tarjeta: "#ffffff",
+  tarjetaSuave: "rgba(18,26,33,0.04)",
+  borde: "rgba(18,26,33,0.14)",
+  linea: "rgba(18,26,33,0.09)",
+
+  titulo: "#14191e",
+  cuerpo: "rgba(30,38,45,0.82)",
+  rotulo: "rgba(30,38,45,0.5)",
+  tenue: "rgba(30,38,45,0.38)",
+
+  acierto: "#2f7d55",
+  error: "#a8412f",
+  aviso: "#8a6415",
+  dato: "#2c5f7d",
+
+  accionFondo: "#1c242b",
+  accionFondoHover: "#2a343d",
+  accionTexto: "#f4f7f8",
+};
+
+const PALETA_OSCURA: typeof PALETA = { ...PALETA };
+
+/**
+ * Cambia la paleta de la interfaz del juego.
+ *
+ * Sobrescribe las propiedades del objeto en lugar de reemplazarlo: los ocho
+ * archivos que lo usan lo importan por referencia, y cambiar la referencia acá
+ * los dejaría leyendo el objeto viejo para siempre.
+ *
+ * Los colores se leen al construir cada pantalla, así que basta con llamar a
+ * esto antes de abrirla. Las que ya estén en pantalla no cambian solas — y no
+ * hace falta que lo hagan: el tema se cambia desde Mi cuenta, con el juego
+ * cerrado.
+ */
+export function aplicarTemaUI(tema: "oscuro" | "claro"): void {
+  Object.assign(PALETA, tema === "claro" ? PALETA_CLARA : PALETA_OSCURA);
+}
+
+
+
+/**
  * Escala tipográfica.
  *
  * Seis tamaños y ninguno más. Todos subieron respecto de lo que había: el

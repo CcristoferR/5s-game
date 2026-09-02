@@ -20,7 +20,98 @@
   --portal-error: #c98d80;
   --portal-aviso: #bda079;
   --portal-dato: #7ea3ba;
+
+  /* Capas de realce.
+     El portal usa por todas partes un blanco muy transparente para separar
+     superficies —el relleno de un botón, el fondo de una casilla, el hover de
+     una fila—. Sobre negro funciona; sobre blanco es invisible, y ese era el
+     motivo real de que el tema claro se viera plano y costara entenderlo.
+     Con estas variables cada tema aporta su propia capa: blanca sobre oscuro,
+     negra sobre claro. */
+  --portal-realce: rgba(255, 255, 255, 0.05);
+  --portal-realce-medio: rgba(255, 255, 255, 0.09);
+  --portal-realce-fuerte: rgba(255, 255, 255, 0.15);
+  --portal-realce-borde: rgba(255, 255, 255, 0.3);
+  --portal-apagado: rgba(255, 255, 255, 0.24);
+  --portal-sombra: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* El botón principal invierte el fondo del tema: claro sobre oscuro, oscuro
+     sobre claro. Con el color fijo que tenía, en tema claro quedaba un botón
+     casi blanco sobre una tarjeta blanca — invisible. */
+  --portal-boton-fondo: #eef0ef;
+  --portal-boton-texto: #12151a;
+
+  /* Le dice al navegador en qué tema está, para que dibuje los controles
+     NATIVOS a juego: la lista desplegable de un select, las casillas de
+     verificación y las barras de desplazamiento las pinta el sistema, no el
+     CSS. Sin esto salían en blanco sobre blanco —las opciones "Grande" y
+     "Mayor" eran ilegibles— porque el navegador asumía tema claro. */
+  color-scheme: dark;
+
+  /* Multiplicador del tamaño de texto. Lo fija Preferencias.ts sobre la raíz;
+     el valor de acá es el que rige si nunca se tocó el ajuste. */
+  --portal-escala: 1;
 }
+
+/* ---------------------------------------------------------------------------
+   Tema claro
+   ---------------------------------------------------------------------------
+
+   Solo cambian las variables: ninguna regla de más abajo necesita saber en qué
+   tema está. Por eso alternar el tema no reconstruye ni redibuja ninguna
+   pantalla — el navegador recalcula los colores y ya.
+
+   Los tonos NO son el tema oscuro invertido. Un blanco puro sobre una pantalla
+   de planta encandila, así que el fondo es un gris muy claro y las tarjetas
+   blancas se apoyan sobre él. Los colores de estado se oscurecen respecto del
+   tema oscuro: los mismos verdes y rojos suaves que se leen bien sobre negro
+   quedan lavados sobre blanco y dejan de distinguirse entre sí.
+
+   ALCANCE: esto cubre el portal —acceso, catálogo, panel, verificación y
+   ajustes—. El juego 5S no cambia: el garaje tiene su propia iluminación y
+   ponerlo en claro sería rehacerlo, no recolorearlo.
+   --------------------------------------------------------------------------- */
+:root[data-tema="claro"] {
+  color-scheme: light;
+  --portal-realce: rgba(18, 26, 33, 0.045);
+  --portal-realce-medio: rgba(18, 26, 33, 0.075);
+  --portal-realce-fuerte: rgba(18, 26, 33, 0.12);
+  --portal-realce-borde: rgba(18, 26, 33, 0.32);
+  --portal-apagado: rgba(18, 26, 33, 0.3);
+  /* Sobre claro la separación entre superficies la da una sombra suave, no un
+     borde: es lo que distingue una tarjeta blanca de un fondo casi blanco. */
+  --portal-sombra: 0 1px 3px rgba(18, 26, 33, 0.10), 0 8px 24px rgba(18, 26, 33, 0.06);
+  --portal-boton-fondo: #1c242b;
+  --portal-boton-texto: #f4f7f8;
+  --portal-fondo: #eef1f4;
+  --portal-tarjeta: #ffffff;
+  --portal-borde: rgba(18, 26, 33, 0.14);
+  --portal-linea: rgba(18, 26, 33, 0.09);
+  --portal-titulo: #14191e;
+  --portal-cuerpo: rgba(30, 38, 45, 0.82);
+  --portal-rotulo: rgba(30, 38, 45, 0.5);
+  --portal-acierto: #2f7d55;
+  --portal-error: #a8412f;
+  --portal-aviso: #8a6415;
+  --portal-dato: #2c5f7d;
+}
+
+/* ---------------------------------------------------------------------------
+   Escala de texto
+   ---------------------------------------------------------------------------
+
+   Cada tamaño de letra del portal se multiplica por --portal-escala. No es
+   zoom: crece la LETRA y no la caja. Con zoom se agrandaba todo por igual
+   —márgenes, botones, bordes— así que la tarjeta se hacía enorme y había que
+   desplazar mucho más para leer lo mismo; el texto no ganaba presencia
+   relativa, solo se acercaba la pantalla entera.
+
+   Multiplicando solo la tipografía, los espaciados se mantienen y el texto
+   ocupa proporcionalmente más: eso es lo que hace falta en una pantalla que se
+   mira desde lejos.
+
+   La variable vive en la raíz, así que hereda a todo. Con valor 1 el calc
+   devuelve exactamente el tamaño original y no cambia nada.
+   --------------------------------------------------------------------------- */
 
 .portal {
   position: fixed;
@@ -48,6 +139,26 @@
   border: 1px solid var(--portal-borde);
   border-radius: 12px;
   overflow: hidden;
+  /* En oscuro apenas se nota; en claro es lo que despega la tarjeta blanca del
+     fondo casi blanco, donde un borde solo no alcanza. */
+  box-shadow: var(--portal-sombra);
+}
+
+/* Tarjeta de formulario largo: más ancha que los 460 del acceso, porque acá
+   hay campos en pareja (empresa/área, las dos contraseñas) que a 460 quedan
+   demasiado apretados. */
+.portal__tarjeta--media {
+  max-width: 620px;
+}
+
+/* Pantalla para tarjetas altas.
+   El centrado vertical de .portal funciona con tarjetas cortas, pero cuando la
+   tarjeta supera el alto de la ventana el borde superior queda fuera del área
+   desplazable y no hay forma de llegar a él. Alineando arriba, la tarjeta
+   crece hacia abajo y siempre se puede recorrer entera. */
+.portal--alto {
+  align-items: flex-start;
+  padding: 40px 24px;
 }
 
 .portal__tarjeta--ancha {
@@ -71,7 +182,7 @@
 
 .portal__rotulo {
   margin: 0 0 10px;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--portal-rotulo);
@@ -79,14 +190,14 @@
 
 .portal__titulo {
   margin: 0 0 8px;
-  font-size: 27px;
+  font-size: calc(27px * var(--portal-escala));
   font-weight: 600;
   line-height: 1.2;
 }
 
 .portal__bajada {
   margin: 0 0 26px;
-  font-size: 16px;
+  font-size: calc(16px * var(--portal-escala));
   line-height: 1.5;
   color: var(--portal-cuerpo);
 }
@@ -108,7 +219,7 @@
   border-bottom: 2px solid transparent;
   color: var(--portal-rotulo);
   font: inherit;
-  font-size: 16px;
+  font-size: calc(16px * var(--portal-escala));
   font-weight: 600;
   cursor: pointer;
 }
@@ -131,7 +242,7 @@
 .portal__etiqueta {
   display: block;
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-weight: 600;
   color: var(--portal-rotulo);
 }
@@ -140,22 +251,22 @@
   width: 100%;
   box-sizing: border-box;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--portal-realce);
   border: 1px solid var(--portal-borde);
   border-radius: 8px;
   color: var(--portal-titulo);
   font: inherit;
-  font-size: 17px;
+  font-size: calc(17px * var(--portal-escala));
 }
 
 .portal__entrada:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--portal-realce-borde);
+  background: var(--portal-realce-medio);
 }
 
 .portal__entrada::placeholder {
-  color: rgba(255, 255, 255, 0.24);
+  color: var(--portal-apagado);
 }
 
 /* El código se escribe en mayúsculas y con separación: así se lee de una
@@ -179,7 +290,7 @@
    pertenece al campo que tiene encima. */
 .portal__ayuda {
   margin: -8px 0 18px;
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   line-height: 1.5;
   color: var(--portal-rotulo);
 }
@@ -197,12 +308,12 @@
   width: 100%;
   padding: 13px 18px;
   margin-top: 8px;
-  background: #eef0ef;
+  background: var(--portal-boton-fondo);
   border: none;
   border-radius: 8px;
-  color: #12151a;
+  color: var(--portal-boton-texto);
   font: inherit;
-  font-size: 16px;
+  font-size: calc(16px * var(--portal-escala));
   font-weight: 600;
   cursor: pointer;
 }
@@ -220,14 +331,14 @@
   width: auto;
   padding: 9px 16px;
   margin: 0;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--portal-realce-medio);
   border: 1px solid var(--portal-borde);
   color: var(--portal-cuerpo);
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
 }
 
 .portal__boton--secundario:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--portal-realce-fuerte);
 }
 
 .portal__enlace {
@@ -239,7 +350,7 @@
   border: none;
   color: var(--portal-rotulo);
   font: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   text-decoration: underline;
   cursor: pointer;
 }
@@ -254,7 +365,7 @@
   margin: 18px 0 0;
   padding: 12px 14px;
   border-radius: 8px;
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
   line-height: 1.45;
   border-left: 3px solid var(--portal-error);
   background: rgba(201, 141, 128, 0.10);
@@ -268,6 +379,150 @@
 
 .portal__aviso[hidden] {
   display: none;
+}
+
+/* --- Ajustes de Mi cuenta --- */
+
+/* Cada ajuste es una etiqueta completa, no un texto al lado de un control:
+   así el rótulo entero es zona de clic. En una pantalla táctil de planta
+   acertarle a una casilla de 16 px es incómodo; a una fila de 56 no. */
+.portal__ajuste {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--portal-linea);
+  cursor: pointer;
+}
+
+/* Primer ajuste separado de la nota que lo precede. */
+.portal__ajuste:first-of-type {
+  border-top: 1px solid var(--portal-linea);
+  margin-top: 16px;
+}
+
+.portal__ajuste:last-of-type {
+  border-bottom: 0;
+}
+
+.portal__ajuste > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--portal-titulo);
+  font-size: calc(15px * var(--portal-escala));
+}
+
+/* Casilla dibujada por nosotros y no por el sistema: la nativa cambia de
+   forma y de color en cada navegador, y al lado de los campos redondeados del
+   portal se veía como una pieza prestada de otra interfaz. */
+.portal__ajuste input[type="checkbox"] {
+  appearance: none;
+  width: 44px;
+  height: 26px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--portal-borde);
+  border-radius: 999px;
+  background: var(--portal-realce);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+/* El punto que se desliza. Un interruptor se entiende sin leer nada: se ve de
+   un vistazo si está encendido, cosa que una casilla marcada no logra a
+   distancia. */
+.portal__ajuste input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--portal-rotulo);
+  transition: transform 0.18s, background 0.18s;
+}
+
+.portal__ajuste input[type="checkbox"]:checked {
+  background: rgba(127, 180, 149, 0.28);
+  border-color: rgba(127, 180, 149, 0.55);
+}
+
+.portal__ajuste input[type="checkbox"]:checked::after {
+  transform: translateX(18px);
+  background: var(--portal-acierto);
+}
+
+.portal__ajuste input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--portal-dato);
+  outline-offset: 2px;
+}
+
+.portal__entrada--corta {
+  width: auto;
+  min-width: 150px;
+  flex: 0 0 auto;
+}
+
+/* Grupo de opciones excluyentes. Reemplaza al desplegable: se ve completo sin
+   abrir nada, lo dibuja la hoja de estilos (no el sistema, que era el problema
+   del select) y en pantalla táctil hay tres blancos grandes en vez de uno
+   chico que abre una lista. */
+.portal__grupoOpciones {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--portal-borde);
+  border-radius: 10px;
+  background: var(--portal-realce);
+}
+
+.portal__opcion {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--portal-cuerpo);
+  font: inherit;
+  font-size: calc(13px * var(--portal-escala));
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.portal__opcion:hover {
+  background: var(--portal-realce-medio);
+  color: var(--portal-titulo);
+}
+
+.portal__opcion--activa,
+.portal__opcion--activa:hover {
+  background: var(--portal-tarjeta);
+  color: var(--portal-titulo);
+  box-shadow: var(--portal-sombra);
+}
+
+.portal__opcion:focus-visible {
+  outline: 2px solid var(--portal-dato);
+  outline-offset: 1px;
+}
+
+/* Pie de la tarjeta: separa la acción de salida del último bloque de
+   contenido. Sin esta línea el botón Volver quedaba pegado al último ajuste y
+   parecía formar parte de él. */
+.portal__pie {
+  margin-top: 34px;
+  padding-top: 22px;
+  border-top: 1px solid var(--portal-linea);
+}
+
+.portal__pie .portal__boton {
+  margin-top: 0;
 }
 
 /* --- Vista de administración --- */
@@ -294,7 +549,7 @@
   justify-content: space-between;
   gap: 16px;
   margin: 0 0 14px;
-  font-size: 18px;
+  font-size: calc(18px * var(--portal-escala));
   font-weight: 600;
 }
 
@@ -324,12 +579,12 @@
   display: block;
   margin-top: 3px;
   color: var(--portal-rotulo);
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
 }
 
 .portal__subdato--codigo {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   letter-spacing: 0.05em;
 }
 
@@ -347,14 +602,14 @@
 .portal__tabla {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
 }
 
 .portal__tabla th {
   padding: 0 12px 10px;
   border-bottom: 1px solid var(--portal-linea);
   color: var(--portal-rotulo);
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
@@ -373,7 +628,7 @@
 
 .portal__codigo {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
   letter-spacing: 0.06em;
   color: var(--portal-titulo);
 }
@@ -382,7 +637,7 @@
   display: inline-block;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-weight: 600;
 }
 
@@ -404,7 +659,7 @@
 .portal__vacio {
   padding: 22px 12px;
   color: var(--portal-rotulo);
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
 }
 
 @media (max-width: 720px) {
@@ -430,7 +685,7 @@
   display: inline-block;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   line-height: 1.5;
   white-space: nowrap;
   border: 1px solid transparent;
@@ -473,10 +728,10 @@
   /* Un relleno muy tenue en vez de transparente: sobre el fondo de la tabla
      un borde solo se lee como un rectángulo dibujado, no como algo que se
      puede apretar. */
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--portal-realce);
   color: var(--portal-cuerpo);
   font-family: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-weight: 500;
   line-height: 1.2;
   cursor: pointer;
@@ -486,12 +741,12 @@
 
 .portal__accion:hover {
   color: var(--portal-titulo);
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--portal-realce-borde);
+  background: var(--portal-realce-medio);
 }
 
 .portal__accion:active {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--portal-realce-fuerte);
 }
 
 /* La columna de acciones de personas puede llevar hasta cuatro botones. En una
@@ -508,6 +763,20 @@
 
 /* El botón destructivo se separa del resto también en reposo, no solo al
    pasar por encima: es el único de la fila que no se puede deshacer. */
+/* Reactivar devuelve el acceso: se distingue en verde para que no se confunda
+   con las acciones que quitan algo. Mismo tamaño y forma que las demás — el
+   color es lo único que cambia. */
+.portal__accion--reactivar {
+  color: var(--portal-acierto);
+  border-color: rgba(127, 180, 149, 0.35);
+}
+
+.portal__accion--reactivar:hover {
+  color: var(--portal-acierto);
+  border-color: rgba(127, 180, 149, 0.6);
+  background: rgba(127, 180, 149, 0.12);
+}
+
 .portal__accion--riesgo {
   color: var(--portal-rotulo);
   border-color: rgba(201, 141, 128, 0.28);
@@ -529,7 +798,7 @@
 
 .portal__nota {
   margin: 14px 0 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   line-height: 1.6;
   color: var(--portal-rotulo);
 }
@@ -569,7 +838,7 @@
   height: 68px;
   border-bottom: 1px solid var(--portal-linea);
   /* Ligeramente más clara que el fondo: separa sin necesitar una línea gruesa. */
-  background: #0e1114;
+  background: var(--portal-hundido);
 }
 
 .barra__marca {
@@ -585,14 +854,14 @@
   height: 34px;
   border-radius: 9px;
   background: var(--portal-acierto);
-  color: #0b0d0f;
-  font-size: 14px;
+  color: var(--portal-sobre-color);
+  font-size: calc(14px * var(--portal-escala));
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 
 .barra__nombre {
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
   font-weight: 600;
   color: var(--portal-titulo);
 }
@@ -613,7 +882,7 @@
   border-radius: 50%;
   border: 1px solid var(--portal-borde);
   background: var(--portal-tarjeta);
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-weight: 600;
   color: var(--portal-cuerpo);
 }
@@ -625,13 +894,13 @@
 }
 
 .barra__datos strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   font-weight: 600;
   color: var(--portal-titulo);
 }
 
 .barra__datos small {
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   color: var(--portal-rotulo);
 }
 
@@ -653,7 +922,7 @@
 
 .lamina__titulo {
   margin: 0;
-  font-size: 30px;
+  font-size: calc(30px * var(--portal-escala));
   font-weight: 600;
   letter-spacing: -0.3px;
   color: var(--portal-titulo);
@@ -661,14 +930,14 @@
 
 .lamina__bajada {
   margin: 6px 0 0;
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
   color: var(--portal-cuerpo);
 }
 
 .lamina__resumen {
   display: flex;
   gap: 22px;
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   color: var(--portal-cuerpo);
   white-space: nowrap;
 }
@@ -684,7 +953,7 @@
   border-radius: 12px;
   text-align: center;
   color: var(--portal-rotulo);
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
 }
 
 /* Ancho mínimo de 300 px: por debajo de eso el texto de la tarjeta se parte
@@ -709,7 +978,7 @@
 }
 
 .curso:hover {
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: var(--portal-realce-borde);
   transform: translateY(-2px);
 }
 
@@ -717,7 +986,7 @@
   height: 3px;
 }
 
-.curso__filete--bloqueado { background: rgba(255, 255, 255, 0.14); }
+.curso__filete--bloqueado { background: var(--portal-realce-fuerte); }
 .curso__filete--nuevo     { background: var(--portal-dato); }
 .curso__filete--activo    { background: var(--portal-acierto); }
 .curso__filete--listo     { background: var(--portal-acierto); }
@@ -739,7 +1008,7 @@
 
 .curso__titulo h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: calc(18px * var(--portal-escala));
   font-weight: 600;
   line-height: 1.35;
   color: var(--portal-titulo);
@@ -747,7 +1016,7 @@
 
 .curso__desc {
   margin: 0 0 16px;
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   line-height: 1.6;
   color: var(--portal-cuerpo);
 }
@@ -757,7 +1026,7 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 18px;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   color: var(--portal-rotulo);
 }
 
@@ -783,7 +1052,7 @@
   padding: 4px 11px;
   border-radius: 999px;
   border: 1px solid transparent;
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   font-weight: 500;
   white-space: nowrap;
 }
@@ -809,7 +1078,7 @@
   display: flex;
   justify-content: space-between;
   margin-bottom: 7px;
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   color: var(--portal-rotulo);
 }
 
@@ -835,7 +1104,7 @@
   border-radius: 8px;
   border: 1px solid transparent;
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -850,7 +1119,7 @@
 
 .boton--principal {
   background: var(--portal-acierto);
-  color: #0b0d0f;
+  color: var(--portal-sobre-color);
 }
 
 .boton--principal:hover {
@@ -864,8 +1133,8 @@
 }
 
 .boton--borde:hover {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--portal-realce-borde);
+  background: var(--portal-realce);
   color: var(--portal-titulo);
 }
 
@@ -880,7 +1149,7 @@
 .canje__rotulo {
   display: block;
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   color: var(--portal-rotulo);
 }
 
@@ -895,10 +1164,10 @@
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--portal-borde);
-  background: #0e1114;
+  background: var(--portal-hundido);
   color: var(--portal-titulo);
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--portal-escala));
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
@@ -919,7 +1188,7 @@
   .barra__datos { display: none; }
   .lamina { padding: 28px 18px 48px; }
   .lamina__encabezado { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .lamina__titulo { font-size: 25px; }
+  .lamina__titulo { font-size: calc(25px * var(--portal-escala)); }
 }
 
 /* Las tablas del panel tienen muchas columnas y en un portátil no entran.
@@ -955,7 +1224,7 @@
   text-align: left;
   border: 1px solid var(--portal-borde);
   border-radius: 10px;
-  background: var(--portal-tarjetaSuave, rgba(255, 255, 255, 0.02));
+  background: var(--portal-tarjetaSuave, var(--portal-realce));
   font-family: inherit;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -972,13 +1241,13 @@
 }
 
 .reporte__nombre {
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
   font-weight: 600;
   color: var(--portal-titulo);
 }
 
 .reporte__desc {
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   line-height: 1.5;
   color: var(--portal-rotulo);
 }
@@ -1027,7 +1296,7 @@
 .cobertura__cifra {
   min-width: 38px;
   text-align: right;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   font-variant-numeric: tabular-nums;
   color: var(--portal-cuerpo);
 }
@@ -1069,10 +1338,10 @@
   padding: 14px 16px;
   border-radius: 9px;
   border: 1px solid var(--portal-borde);
-  background: #0e1114;
+  background: var(--portal-hundido);
   color: var(--portal-titulo);
   font-family: "Consolas", "SF Mono", monospace;
-  font-size: 19px;
+  font-size: calc(19px * var(--portal-escala));
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -1119,14 +1388,14 @@
 
 .verif__veredicto h2 {
   margin: 0 0 4px;
-  font-size: 20px;
+  font-size: calc(20px * var(--portal-escala));
   font-weight: 600;
   color: var(--portal-titulo);
 }
 
 .verif__veredicto p {
   margin: 0;
-  font-size: 15px;
+  font-size: calc(15px * var(--portal-escala));
   line-height: 1.6;
   color: var(--portal-cuerpo);
 }
@@ -1139,7 +1408,7 @@
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  font-size: 19px;
+  font-size: calc(19px * var(--portal-escala));
   font-weight: 700;
 }
 
@@ -1168,7 +1437,7 @@
 
 .verif__dato dt {
   margin-bottom: 3px;
-  font-size: 12px;
+  font-size: calc(12px * var(--portal-escala));
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--portal-rotulo);
@@ -1176,7 +1445,7 @@
 
 .verif__dato dd {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(16px * var(--portal-escala));
   color: var(--portal-titulo);
   overflow-wrap: anywhere;
 }
@@ -1188,7 +1457,7 @@
 
 .verif__pie {
   margin: 18px 0 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--portal-escala));
   line-height: 1.6;
   color: var(--portal-rotulo);
 }

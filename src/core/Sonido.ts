@@ -149,6 +149,18 @@ export function alternarSilencio(): boolean {
   return silenciado;
 }
 
+/**
+ * Fija el silencio a un valor concreto.
+ *
+ * Distinta de alternarSilencio: la pantalla de ajustes tiene un interruptor
+ * con dos estados definidos, y alternar desde ahí haría que el interruptor y
+ * el sonido se desincronizaran si algo más lo cambia por otro lado.
+ */
+export function establecerSilencio(valor: boolean): void {
+  silenciado = valor;
+  if (silenciado) detenerAmbiente();
+}
+
 export function estaSilenciado(): boolean {
   return silenciado;
 }

@@ -2,10 +2,13 @@ import { Engine, Mesh } from "@babylonjs/core";
 import { GameManager } from "./core/GameManager";
 import { SceneManager } from "./core/SceneManager";
 import { setupXR, cerrarXR } from "./core/XRManager";
-import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir } from "./core/Sonido";
+import { iniciarAudio, iniciarAmbiente, detenerAmbiente, reproducir, establecerSilencio } from "./core/Sonido";
 import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
 import { mostrarCatalogo } from "./portal/PantallaCatalogo";
+import { mostrarMiCuenta } from "./portal/PantallaMiCuenta";
+import { aplicarTemaUI } from "./ui/EstiloUI";
+import { iniciarPreferencias } from "./portal/Preferencias";
 import { mostrarVerificacion } from "./portal/PantallaVerificacion";
 import { registrarFaseCompletada, progresoDe, CURSO_ID } from "./portal/Datos";
 import { guardarResultadoDeFase } from "./portal/Ranking";
@@ -21,6 +24,7 @@ import { HUD } from "./ui/HUD";
 import { mostrarMenuPrincipal } from "./ui/MainMenu";
 import { mostrarCertificado } from "./ui/CertificateScreen";
 import { fundirEntrePantallas } from "./ui/Transicion";
+import { cargarConPantalla } from "./ui/PantallaCarga";
 import { mostrarRankingCurso } from "./ui/RankingScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
@@ -156,12 +160,12 @@ let cambiandoEscena = false;
  * elegir un nivel, y por el que el ranking arma el menú en el tick siguiente.
  * Este camino era el único que había quedado sin la misma protección.
  */
-function cambiarEscena(despues: () => void): void {
+function cambiarEscena(despues: () => void, tapar = fundirEntrePantallas): void {
   if (cambiandoEscena) return;
   cambiandoEscena = true;
 
   setTimeout(() => {
-    void fundirEntrePantallas(() => {
+    void tapar(() => {
       // Primero la experiencia XR y después la escena: al revés queda
       // enganchada al reparto de punteros de un lienzo que ya no tiene dueño.
       cerrarXR();
@@ -183,10 +187,18 @@ function volverAlMenu(): void {
 // Reinicia la escena y vuelve a cargar el mismo nivel (usado por el
 // botón "Reintentar auditoría" cuando el jugador reprueba el Nivel 5).
 function reintentarNivel(numeroNivel: number): void {
-  // construirNivel y no cargarNivel: cargarNivel abre su propio fundido, y
-  // acá ya estamos dentro de uno. El segundo se descartaría por el cerrojo del
-  // módulo y el nivel no llegaría a armarse — pantalla en negro.
-  cambiarEscena(() => construirNivel(numeroNivel));
+  // Reintentar destruye la escena y vuelve a armar el nivel: es la espera más
+  // larga del juego. Por eso quien tapa es la pantalla de carga y no el
+  // fundido — así se aprovecha para repasar de qué trataba la fase, que es
+  // justo lo que le hace falta a alguien que acaba de reprobar la auditoría.
+  //
+  // Una sola capa tapando, no dos: pasar la pantalla de carga COMO tapadera
+  // evita que el fundido y la carga se solapen, que era lo que ocurría al
+  // anidarlas.
+  cambiarEscena(
+    () => construirNivel(numeroNivel),
+    (accion) => cargarConPantalla(numeroNivel, accion)
+  );
 }
 
 /**
@@ -213,7 +225,11 @@ async function guardarConReintentos(fase: number, puntaje: number, segundos: num
 }
 
 function cargarNivel(numeroNivel: number): void {
-  void fundirEntrePantallas(() => construirNivel(numeroNivel));
+  // Entrar a un nivel usa la pantalla de carga, no el fundido suave: acá la
+  // espera es larga —se arma el garaje entero— y conviene ocuparla con el
+  // contexto de la fase en vez de dejar la pantalla apagada. El fundido queda
+  // para los saltos cortos, como volver al menú.
+  void cargarConPantalla(numeroNivel, () => construirNivel(numeroNivel));
 }
 
 // Armado del nivel. Separado de cargarNivel para que todo esto ocurra con la
@@ -349,7 +365,18 @@ function abrirCatalogo(perfil: Perfil): void {
       // existe. Cuando haya otros, acá se decide cuál cargar según el id.
       void iniciarCursoDelJugador();
     },
-    () => mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil))
+    () => mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil)),
+    () =>
+      mostrarMiCuenta(perfil, () => {
+        // Se relee el perfil del servidor en vez de reutilizar el que había en
+        // memoria: si la persona corrigió su nombre, el catálogo tiene que
+        // saludarla con el nuevo, no con el viejo.
+        void (async () => {
+          const sesion = await leerSesion();
+          if (sesion) abrirCatalogo(sesion.perfil);
+          else mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
+        })();
+      })
   );
 }
 
@@ -413,7 +440,20 @@ function arrancar(): void {
 
 // Prepara los efectos y engancha el desbloqueo del audio al primer clic: los
 // navegadores no dejan sonar nada antes de que el usuario interactúe.
+// Las preferencias del equipo van PRIMERO, antes de dibujar cualquier
+// pantalla. Aplicarlas después haría que el portal apareciera un instante con
+// el tema y el tamaño anteriores y saltara al correcto: ese parpadeo se nota
+// mucho más que el cambio en sí.
+const preferencias = iniciarPreferencias();
+// La interfaz del juego (menú, ranking, certificado) también sigue el tema.
+// Los niveles no: ahí manda la iluminación del garaje.
+aplicarTemaUI(preferencias.tema);
+
 iniciarAudio();
+// El silencio guardado se aplica sobre el audio ya iniciado: si el equipo
+// quedó en silencio la vez anterior, no debe sonar nada mientras alguien
+// busca dónde apagarlo.
+establecerSilencio(preferencias.silencio);
 
 // TEMPORAL: vigila si las capas de interfaz se acumulan al navegar entre
 // pantallas. Borrar esta línea y el archivo Diagnostico.ts cuando el

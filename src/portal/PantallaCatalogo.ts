@@ -29,7 +29,8 @@ import { cerrarSesion } from "./Sesion";
 export function mostrarCatalogo(
   perfil: Perfil,
   onEntrarCurso: (cursoId: string) => void,
-  onSalir: () => void
+  onSalir: () => void,
+  onMiCuenta?: () => void
 ): void {
   const raiz = document.createElement("div");
   raiz.className = "portal portal--pagina";
@@ -44,6 +45,14 @@ export function mostrarCatalogo(
   }
 
   function conectar(tarjetas: TarjetaCurso[]): void {
+    raiz.querySelector<HTMLButtonElement>("#miCuentaCatalogo")?.addEventListener("click", () => {
+      // El catálogo se retira mientras se está en Mi cuenta y se vuelve a
+      // pintar al volver: así los datos corregidos aparecen actualizados sin
+      // tener que sincronizar dos pantallas abiertas a la vez.
+      raiz.remove();
+      onMiCuenta?.();
+    });
+
     raiz.querySelector<HTMLButtonElement>("#salirCatalogo")?.addEventListener("click", () => {
       cerrarSesion();
       raiz.remove();
@@ -127,6 +136,7 @@ function plantilla(perfil: Perfil, tarjetas: TarjetaCurso[]): string {
           <strong>${escapar(perfil.nombreCompleto)}</strong>
           <small>${escapar(ubicacion(perfil))}</small>
         </span>
+        <button class="boton boton--borde" id="miCuentaCatalogo" type="button">Mi cuenta</button>
         <button class="boton boton--borde" id="salirCatalogo" type="button">Cerrar sesión</button>
       </div>
     </header>

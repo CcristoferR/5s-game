@@ -1,5 +1,6 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock, StackPanel, Rectangle, Control, Image, Button } from "@babylonjs/gui";
+import { leerPreferencias } from "../portal/Preferencias";
 
 export interface NivelMenuInfo {
   numero: number;
@@ -11,26 +12,89 @@ export interface NivelMenuInfo {
 const TITULO = "Operación 5S";
 const BAJADA = "Programa de formación en metodología 5S";
 
-const C = {
-  panel: "#181c20",
-  panelBorde: "#333b42",
-  linea: "#282f35",
+/**
+ * Colores del menú, por tema.
+ *
+ * El menú es interfaz dibujada sobre el lienzo, no geometría del garaje: lo
+ * tapa por completo con un fondo opaco, así que puede cambiar de tema sin
+ * tocar la escena 3D. Los niveles no cambian —ahí sí manda la iluminación del
+ * galpón— pero esta pantalla y las que se abren desde ella sí.
+ *
+ * El verde de acento se oscurece en claro. El mismo #4ec27a que resalta sobre
+ * negro sobre blanco queda lavado y deja de leerse como "esto está activo".
+ */
+/** La forma de una paleta: los mismos nombres, cualquier color. */
+type PaletaMenu = Record<
+  | "panel" | "panelBorde" | "linea"
+  | "titulo" | "texto" | "secundario" | "terciario"
+  | "bloqueadoFuerte" | "bloqueadoSuave"
+  | "acento" | "filaActiva" | "filaActivaBorde" | "filaHover" | "filaActivaHover"
+  | "huecoBarra"
+  | "fondoAlto" | "fondoBajo" | "destello",
+  string
+>;
 
-  titulo: "#ffffff",
-  texto: "#e8ecea",
-  secundario: "#a9b2b6",
-  terciario: "#7d868b",
+const PALETAS: Record<"oscuro" | "claro", PaletaMenu> = {
+  oscuro: {
+    panel: "#181c20",
+    panelBorde: "#333b42",
+    linea: "#282f35",
 
-  bloqueadoFuerte: "#939ca2",
-  bloqueadoSuave: "#7b858b",
+    titulo: "#ffffff",
+    texto: "#e8ecea",
+    secundario: "#a9b2b6",
+    terciario: "#7d868b",
 
-  acento: "#4ec27a",
-  filaActiva: "#1d2a23",
-  filaActivaBorde: "#2f5a41",
-  filaHover: "#242b31",
+    bloqueadoFuerte: "#939ca2",
+    bloqueadoSuave: "#7b858b",
 
-  huecoBarra: "#2a3238",
+    acento: "#4ec27a",
+    filaActiva: "#1d2a23",
+    filaActivaBorde: "#2f5a41",
+    filaHover: "#242b31",
+    filaActivaHover: "#25352b",
+
+    huecoBarra: "#2a3238",
+
+    fondoAlto: "#0d1013",
+    fondoBajo: "#06080a",
+    destello: "120,140,150",
+  },
+  claro: {
+    panel: "#ffffff",
+    panelBorde: "#ccd4da",
+    linea: "#e2e7eb",
+
+    titulo: "#12181d",
+    texto: "#28323a",
+    secundario: "#5a666e",
+    terciario: "#7d888f",
+
+    bloqueadoFuerte: "#9aa4ab",
+    bloqueadoSuave: "#aab3b9",
+
+    acento: "#1f8a4c",
+    filaActiva: "#e6f4ea",
+    filaActivaBorde: "#9dcfae",
+    filaHover: "#eef1f4",
+    filaActivaHover: "#d9edde",
+
+    huecoBarra: "#dde3e8",
+
+    fondoAlto: "#f2f5f7",
+    fondoBajo: "#e2e7ec",
+    destello: "255,255,255",
+  },
 };
+
+/**
+ * Paleta vigente.
+ *
+ * Se fija al abrir el menú, no al cargar el módulo: así basta con volver al
+ * menú para que el cambio de tema surta efecto, sin ningún aviso entre
+ * módulos. Y como el menú se reconstruye en cada entrada, siempre está al día.
+ */
+let C: PaletaMenu = PALETAS.oscuro;
 
 const ANCHO = 780;
 const ALTO_FILA = 76;
@@ -47,6 +111,10 @@ export function mostrarMenuPrincipal(
   /** Si se pasa, aparece el boton para salir de la sesion. */
   onCerrarSesion?: () => void
 ): { ocultar: () => void } {
+  // La paleta se fija acá, al construir. El tema puede haber cambiado desde
+  // Mi cuenta mientras el menú no estaba en pantalla.
+  C = PALETAS[leerPreferencias().tema];
+
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("menuPrincipal", true, scene);
 
   // 1. La capa del menu queda fuera del post-proceso de la escena. Sin esto,
@@ -193,14 +261,14 @@ function crearFondo(): Image {
   const ctx = canvas.getContext("2d")!;
 
   const base = ctx.createLinearGradient(0, 0, 0, 900);
-  base.addColorStop(0, "#0d1013");
-  base.addColorStop(1, "#06080a");
+  base.addColorStop(0, C.fondoAlto);
+  base.addColorStop(1, C.fondoBajo);
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 1600, 900);
 
   const luz = ctx.createRadialGradient(800, 300, 0, 800, 300, 900);
-  luz.addColorStop(0, "rgba(120,140,150,0.10)");
-  luz.addColorStop(1, "rgba(120,140,150,0)");
+  luz.addColorStop(0, `rgba(${C.destello},0.10)`);
+  luz.addColorStop(1, `rgba(${C.destello},0)`);
   ctx.fillStyle = luz;
   ctx.fillRect(0, 0, 1600, 900);
 
@@ -525,7 +593,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
   if (nivel.desbloqueado) {
     zona.hoverCursor = "pointer";
     zona.onPointerEnterObservable.add(() => {
-      zona.background = estado === "disponible" ? "#25352b" : C.filaHover;
+      zona.background = estado === "disponible" ? C.filaActivaHover : C.filaHover;
       icono.left = "-15px";
     });
     zona.onPointerOutObservable.add(() => {

@@ -8,6 +8,8 @@ import {
   explicarRechazoRol,
   crearAdministrador,
   restablecerClave,
+  cambiarSuspension,
+  explicarRechazoSuspension,
   explicarRechazoClave,
   LARGO_MINIMO_CLAVE,
   type ResultadoAltaAdmin,
@@ -239,6 +241,48 @@ export function mostrarAdministracion(onSalir: () => void): void {
         await reactivarInscripcion(boton.dataset.reactivar!);
         await pintar();
         avisar("Inscripción reactivada.", "ok");
+      });
+    });
+
+    // Suspender pide confirmación; reactivar no.
+    //
+    // No es asimetría por descuido: suspender deja a una persona fuera del
+    // sistema de inmediato, y si estaba jugando pierde la sesión en el acto.
+    // Reactivar solo devuelve lo que ya tenía, así que exigir un segundo clic
+    // sería fricción sin motivo.
+    raiz.querySelectorAll<HTMLButtonElement>("[data-suspender]").forEach((boton) => {
+      const etiqueta = boton.textContent ?? "";
+      const suspender = boton.dataset.estado === "suspender";
+      let confirmando = false;
+
+      boton.addEventListener("click", async () => {
+        if (suspender && !confirmando) {
+          confirmando = true;
+          boton.textContent = "Confirmar";
+          boton.classList.add("portal__accion--confirma");
+          return;
+        }
+
+        boton.disabled = true;
+        const resultado = await cambiarSuspension(boton.dataset.suspender!, suspender);
+
+        if (!resultado.ok) {
+          confirmando = false;
+          boton.disabled = false;
+          boton.textContent = etiqueta;
+          boton.classList.remove("portal__accion--confirma");
+          avisar(explicarRechazoSuspension(resultado.motivo), "error");
+          return;
+        }
+
+        const nombre = boton.closest("tr")?.querySelector("strong")?.textContent ?? "La cuenta";
+        await pintar();
+        avisar(
+          suspender
+            ? `${nombre} ya no puede entrar. Su avance y su certificado se conservan.`
+            : `${nombre} vuelve a tener acceso.`,
+          "ok"
+        );
       });
     });
 
@@ -746,9 +790,14 @@ function tablaPersonas(
       const esAdmin = p.rol === "administrador";
       const esUnoMismo = p.id === perfilPropio;
 
-      const rol = esAdmin
-        ? `<span class="portal__estado portal__estado--activo">Administrador</span>`
-        : `<span class="portal__estado portal__estado--neutro">Trabajador</span>`;
+      // La suspensión se muestra junto al rol y no en una columna aparte: es
+      // el dato que manda sobre todos los demás. Alguien suspendido no entra,
+      // da igual qué rol tenga o en qué curso esté inscrito.
+      const rol = p.suspendido
+        ? `<span class="portal__estado portal__estado--baja">Suspendida</span>`
+        : esAdmin
+          ? `<span class="portal__estado portal__estado--activo">Administrador</span>`
+          : `<span class="portal__estado portal__estado--neutro">Trabajador</span>`;
 
       const estado = !inscripcion
         ? `<span class="portal__estado portal__estado--neutro">Sin inscripci\u00f3n</span>`
@@ -779,6 +828,17 @@ function tablaPersonas(
         `<button class="portal__accion" data-clave="${p.id}">Restablecer clave</button>`
       );
 
+      // Suspender no se ofrece sobre la propia fila ni sobre otro
+      // administrador: la función del servidor rechaza ambos casos, y es mejor
+      // que el botón no esté a que aparezca y falle.
+      if (!esUnoMismo && !esAdmin) {
+        acciones.push(
+          p.suspendido
+            ? `<button class="portal__accion portal__accion--reactivar" data-suspender="${p.id}" data-estado="activar">Reactivar cuenta</button>`
+            : `<button class="portal__accion" data-suspender="${p.id}" data-estado="suspender">Suspender</button>`
+        );
+      }
+
       // Dar de baja es lo cotidiano y es reversible; eliminar borra el
       // registro y solo se ofrece cuando no hay nada que perder.
       if (inscripcion && activa) {
@@ -802,7 +862,7 @@ function tablaPersonas(
       // van apilados en una sola celda. No se pierde ning\u00fan dato y la tabla
       // entra en la tarjeta sin barra de desplazamiento.
       return `
-        <tr class="${activa || !inscripcion ? "" : "portal__fila--baja"}">
+        <tr class="${p.suspendido ? "portal__fila--baja" : activa || !inscripcion ? "" : "portal__fila--baja"}">
           <td class="portal__apilada">
             <strong>${escapar(p.nombreCompleto)}</strong>
             <span class="portal__subdato">${escapar(p.identificador)}</span>

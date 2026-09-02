@@ -45,6 +45,10 @@ export interface Perfil {
   empresa: string;
   area: string;
   rol: RolUsuario;
+  /** Cuenta suspendida: conserva su historial pero no puede entrar. */
+  suspendido: boolean;
+  /** Cuándo se suspendió. Null si nunca se suspendió o si se reactivó. */
+  suspendidoEn: string | null;
   creadoEn: string;
 }
 
@@ -118,7 +122,7 @@ export type ResultadoAltaAdmin =
 
 export type ResultadoIngreso =
   | { ok: true; perfil: Perfil }
-  | { ok: false; motivo: "credenciales" | "sin_perfil" | "otro" };
+  | { ok: false; motivo: "credenciales" | "sin_perfil" | "suspendido" | "otro" };
 
 export type EstadoCurso = "sin_inscribir" | "sin_empezar" | "en_curso" | "completado";
 
@@ -141,6 +145,8 @@ type FilaPerfil = {
   empresa: string;
   area: string;
   rol: RolUsuario;
+  suspendido: boolean | null;
+  suspendido_en: string | null;
   creado_en: string;
 };
 
@@ -152,6 +158,10 @@ function desdePerfil(f: FilaPerfil): Perfil {
     empresa: f.empresa ?? "",
     area: f.area ?? "",
     rol: f.rol,
+    // El valor por defecto es "no suspendido": una fila antigua sin el campo
+    // no debe dejar a nadie afuera.
+    suspendido: f.suspendido ?? false,
+    suspendidoEn: f.suspendido_en ?? null,
     creadoEn: f.creado_en,
   };
 }
@@ -345,6 +355,16 @@ export async function ingresar(identificador: string, clave: string): Promise<Re
     // la mitad; se cierra la sesión para no dejar a alguien a medio entrar.
     await supabase.auth.signOut();
     return { ok: false, motivo: "sin_perfil" };
+  }
+
+  // Cuenta suspendida: la contraseña era correcta, pero no entra.
+  //
+  // Se cierra la sesión que Supabase acaba de abrir. Si no, quedaría un token
+  // válido en el navegador y bastaría con recargar para estar adentro: el
+  // rechazo sería solo un cartel, no un bloqueo.
+  if (perfil.suspendido) {
+    await supabase.auth.signOut();
+    return { ok: false, motivo: "suspendido" };
   }
 
   return { ok: true, perfil };
@@ -592,6 +612,172 @@ export function explicarRechazoClave(motivo: Exclude<ResultadoClave, { ok: true 
       return "Tu sesión expiró. Vuelve a entrar.";
     default:
       return "No se pudo restablecer la clave. Revisa tu conexión.";
+  }
+}
+
+export type ResultadoSuspension =
+  | { ok: true; suspendido: boolean }
+  | {
+      ok: false;
+      motivo:
+        | "sin_sesion"
+        | "sin_permiso"
+        | "sin_perfil"
+        | "auto_suspension"
+        | "otro_administrador"
+        | "otro";
+    };
+
+/**
+ * Suspende o reactiva una cuenta.
+ *
+ * Es el punto medio que faltaba entre dar de baja la inscripción —que saca del
+ * curso pero deja entrar— y eliminar, que destruye el registro. La persona
+ * conserva avance, puntaje y certificado, pero no puede iniciar sesión.
+ *
+ * El bloqueo lo aplica el servidor en dos lugares: al iniciar sesión y al
+ * releer la sesión. Lo segundo es lo que hace efecto sobre alguien que ya
+ * estaba conectado, porque el token de Supabase se renueva solo y dura días.
+ */
+export async function cambiarSuspension(
+  perfilId: string,
+  suspender: boolean
+): Promise<ResultadoSuspension> {
+  const { data, error } = await supabase.rpc("cambiar_suspension", {
+    p_perfil_id: perfilId,
+    p_suspender: suspender,
+  });
+
+  if (error) {
+    avisarError("cambiarSuspension", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  const r = data as { ok: boolean; suspendido?: boolean; motivo?: string };
+  return r.ok
+    ? { ok: true, suspendido: r.suspendido ?? suspender }
+    : { ok: false, motivo: (r.motivo as "otro") ?? "otro" };
+}
+
+/** Texto para el administrador cuando la suspensión no procede. */
+export function explicarRechazoSuspension(
+  motivo: Exclude<ResultadoSuspension, { ok: true }>["motivo"]
+): string {
+  switch (motivo) {
+    case "auto_suspension":
+      return "No puedes suspender tu propia cuenta.";
+    case "otro_administrador":
+      return "No puedes suspender a otro administrador. Quítale el rol primero.";
+    case "sin_permiso":
+      return "Solo un administrador puede suspender cuentas.";
+    case "sin_perfil":
+      return "Esa persona ya no existe. Actualiza la página.";
+    case "sin_sesion":
+      return "Tu sesión expiró. Vuelve a entrar.";
+    default:
+      return "No se pudo cambiar el estado de la cuenta. Revisa tu conexión.";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mi cuenta
+// ---------------------------------------------------------------------------
+
+export type ResultadoMiPerfil =
+  | { ok: true; perfil: Perfil }
+  | { ok: false; motivo: "sin_sesion" | "nombre_vacio" | "otro" };
+
+/**
+ * Corrige los datos de la propia cuenta.
+ *
+ * Importa más de lo que parece: el nombre, la empresa y el área se copian tal
+ * cual al certificado en el momento de emitirlo. Si alguien se equivoca al
+ * registrarse, hasta ahora ese error viajaba al documento y no había forma de
+ * arreglarlo sin entrar a la consola de la base.
+ *
+ * Escribe solo esos tres campos. El rol y la suspensión NO se tocan, y
+ * tampoco podrían: los disparadores de la base rechazan cualquier cambio a
+ * esas dos columnas que no venga de sus funciones. Aunque alguien alterara
+ * esta llamada desde el navegador para colar un rol, la base la rebota.
+ *
+ * El identificador tampoco se edita: es la identidad con la que se inicia
+ * sesión —de él sale el correo interno— así que cambiarlo acá dejaría la
+ * cuenta sin poder entrar.
+ */
+export async function actualizarMiPerfil(datos: {
+  nombreCompleto: string;
+  empresa: string;
+  area: string;
+}): Promise<ResultadoMiPerfil> {
+  const { data: sesion } = await supabase.auth.getUser();
+  if (!sesion.user) return { ok: false, motivo: "sin_sesion" };
+
+  const nombre = datos.nombreCompleto.trim();
+  if (nombre.length < 3) return { ok: false, motivo: "nombre_vacio" };
+
+  const { data, error } = await supabase
+    .from("perfiles")
+    .update({
+      nombre_completo: nombre,
+      empresa: datos.empresa.trim(),
+      area: datos.area.trim(),
+    })
+    .eq("id", sesion.user.id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    avisarError("actualizarMiPerfil", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  return { ok: true, perfil: desdePerfil(data as FilaPerfil) };
+}
+
+export type ResultadoMiClave =
+  | { ok: true }
+  | { ok: false; motivo: "clave_corta" | "no_coinciden" | "igual_a_la_anterior" | "otro" };
+
+/**
+ * Cambia la contraseña de la propia cuenta.
+ *
+ * Es la única operación de contraseña que no necesita nada del servidor
+ * propio: Supabase permite que cada quien cambie la suya sobre su sesión
+ * abierta. No hace falta función, ni clave de servicio, ni permisos de
+ * administrador — y por eso mismo es la que más llamadas al supervisor evita.
+ */
+export async function cambiarMiClave(nueva: string, repetida: string): Promise<ResultadoMiClave> {
+  if (nueva.length < LARGO_MINIMO_CLAVE) return { ok: false, motivo: "clave_corta" };
+  if (nueva !== repetida) return { ok: false, motivo: "no_coinciden" };
+
+  const { error } = await supabase.auth.updateUser({ password: nueva });
+
+  if (error) {
+    // Supabase rechaza repetir la contraseña vigente. Merece su propio
+    // mensaje: "no se pudo" dejaría a la persona probando lo mismo otra vez.
+    if (/same|different from the old/i.test(error.message)) {
+      return { ok: false, motivo: "igual_a_la_anterior" };
+    }
+    avisarError("cambiarMiClave", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  return { ok: true };
+}
+
+/** Texto para la persona cuando el cambio de contraseña no procede. */
+export function explicarRechazoMiClave(
+  motivo: Exclude<ResultadoMiClave, { ok: true }>["motivo"]
+): string {
+  switch (motivo) {
+    case "clave_corta":
+      return `La contraseña necesita al menos ${LARGO_MINIMO_CLAVE} caracteres.`;
+    case "no_coinciden":
+      return "Las dos contraseñas no coinciden.";
+    case "igual_a_la_anterior":
+      return "Esa es la contraseña que ya tenías. Elige una distinta.";
+    default:
+      return "No se pudo cambiar la contraseña. Revisa tu conexión.";
   }
 }
 
@@ -948,7 +1134,13 @@ export async function catalogoDe(perfilId: string): Promise<TarjetaCurso[]> {
  * el nombre técnico del error no le dice nada.
  */
 export function explicarRechazo(
-  motivo: MotivoRechazo | "identificador_repetido" | "clave_corta" | "credenciales" | "sin_perfil"
+  motivo:
+    | MotivoRechazo
+    | "identificador_repetido"
+    | "clave_corta"
+    | "credenciales"
+    | "sin_perfil"
+    | "suspendido"
 ): string {
   switch (motivo) {
     case "inexistente":
@@ -967,6 +1159,10 @@ export function explicarRechazo(
       return "El RUT o la contraseña no coinciden.";
     case "sin_perfil":
       return "Tu cuenta está incompleta. Pide a tu supervisor que la revise.";
+    case "suspendido":
+      // Se dice que está suspendida y no que la contraseña esté mal: la
+      // persona tiene que saber que el problema no se resuelve reintentando.
+      return "Tu cuenta está suspendida. Habla con tu supervisor.";
     default:
       return "No se pudo completar la operación. Revisa tu conexión e intenta de nuevo.";
   }
