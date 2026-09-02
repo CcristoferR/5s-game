@@ -9,6 +9,20 @@ import { TEXTO, PALETA, desvanecer } from "./EstiloUI";
 // e instrucciones de cada nivel usan ESTA MISMA capa (hud.gui), en vez
 // de crear cada una la suya. Eso es lo que corrige el bug de las
 // etiquetas atravesando el panel de resultado.
+// Medidas del panel de resultados. Están acá y no sueltas en el constructor
+// porque el alto del panel se calcula a partir de ellas cada vez que se
+// muestra: el texto de cierre cambia de largo según el nivel.
+const ANCHO_PANEL_FINAL = 460;
+const ALTO_CABECERA_FINAL = 70;
+/** Distancia del borde superior del panel al inicio del texto. */
+const DESDE_ARRIBA_STATS = 96;
+/** Botón (46) + separación por arriba (26) + margen inferior (22). */
+const ESPACIO_BOTONES_FINAL = 94;
+/** Alto mínimo, para que un resultado sin frase de cierre no quede apretado. */
+const ALTO_MINIMO_FINAL = 340;
+/** Aire extra bajo el texto: la medida que informa la interfaz queda justa. */
+const COLCHON_FINAL = 18;
+
 export class HUD {
   readonly gui: AdvancedDynamicTexture;
 
@@ -160,8 +174,8 @@ export class HUD {
     this.gui.addControl(this.fondoOverlay);
 
     this.pantallaFinal = new Rectangle("pantallaFinal");
-    this.pantallaFinal.width = "460px";
-    this.pantallaFinal.height = "340px";
+    this.pantallaFinal.width = `${ANCHO_PANEL_FINAL}px`;
+    this.pantallaFinal.height = `${ALTO_MINIMO_FINAL}px`;
     this.pantallaFinal.cornerRadius = 18;
     this.pantallaFinal.thickness = 1;
     this.pantallaFinal.color = "rgba(255,255,255,0.2)";
@@ -171,8 +185,8 @@ export class HUD {
     this.gui.addControl(this.pantallaFinal);
 
     this.cabeceraFinal = new Rectangle("cabeceraFinal");
-    this.cabeceraFinal.width = "460px";
-    this.cabeceraFinal.height = "70px";
+    this.cabeceraFinal.width = `${ANCHO_PANEL_FINAL}px`;
+    this.cabeceraFinal.height = `${ALTO_CABECERA_FINAL}px`;
     this.cabeceraFinal.thickness = 0;
     this.cabeceraFinal.cornerRadius = 18;
     this.cabeceraFinal.background = "#2e7d46";
@@ -191,8 +205,28 @@ export class HUD {
     this.textoStatsFinal = new TextBlock("statsFinal", "");
     this.textoStatsFinal.color = PALETA.cuerpo;
     this.textoStatsFinal.fontSize = TEXTO.cuerpo;
-    this.textoStatsFinal.top = "20px";
-    this.textoStatsFinal.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+
+    // Ajuste de línea y ancho fijo.
+    //
+    // Sin esto la frase de cierre —que puede tener bastante texto— salía en un
+    // solo renglón, más ancho que el panel, y el panel la recortaba por los
+    // dos costados. Se veía media frase con los bordes cortados.
+    this.textoStatsFinal.textWrapping = true;
+    this.textoStatsFinal.width = `${ANCHO_PANEL_FINAL - 64}px`;
+    // resizeToFit con textWrapping ajusta solo el alto: el ancho ya está
+    // fijado arriba. Es lo que permite saber cuánto ocupa el texto de verdad
+    // para dimensionar el panel.
+    // Sin lineSpacing a propósito: resizeToFit NO lo suma al alto que
+    // informa. Con separación de 4 px y nueve renglones, el panel quedaba
+    // 36 px corto y cortaba justo la última línea. Es preferible el
+    // interlineado por defecto y una medida que cierre.
+    this.textoStatsFinal.resizeToFit = true;
+
+    // Anclado bajo la cabecera en vez de centrado en el panel: centrado, al
+    // crecer el texto se metía debajo del botón. Desde arriba la posición es
+    // predecible y el alto del panel se calcula con una suma.
+    this.textoStatsFinal.top = `${DESDE_ARRIBA_STATS}px`;
+    this.textoStatsFinal.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.pantallaFinal.addControl(this.textoStatsFinal);
 
     this.botonVolverMenu = Button.CreateSimpleButton("btnVolverMenu", "Volver al menú");
@@ -331,6 +365,44 @@ export class HUD {
    *   antes, se lo llevaba por delante. Puesta acá, el resultado aparece
    *   enseguida y la explicación se puede leer con calma.
    */
+  /**
+   * Ajusta el alto del panel a lo que ocupa el texto.
+   *
+   * El alto real de un bloque con ajuste de línea solo se conoce DESPUÉS de
+   * que la interfaz lo mide, y eso ocurre al dibujar. Por eso el cálculo va en
+   * el cuadro siguiente y no acá mismo: si se leyera ahora, se leería la
+   * medida del texto anterior.
+   *
+   * Sin esto el panel tenía alto fijo y la frase de cierre —que cambia de
+   * largo en cada nivel— se metía debajo del botón o se cortaba abajo.
+   */
+  private ajustarAltoPanelFinal(pasadasRestantes = 3): void {
+    this.scene.onAfterRenderObservable.addOnce(() => {
+      if (!this.pantallaFinal.isVisible) return;
+
+      const altoTexto = this.textoStatsFinal.heightInPixels;
+      if (!altoTexto) return;
+
+      const necesario =
+        DESDE_ARRIBA_STATS + altoTexto + ESPACIO_BOTONES_FINAL + COLCHON_FINAL;
+      // Tope por si algún día una frase de cierre se va de largo: más alto que
+      // esto no entra en pantallas bajas, y es preferible un panel apretado a
+      // uno que se sale del borde.
+      const alto = Math.min(620, Math.max(ALTO_MINIMO_FINAL, Math.ceil(necesario)));
+
+      const actual = this.pantallaFinal.heightInPixels;
+      this.pantallaFinal.height = `${alto}px`;
+
+      // Red de seguridad: si con el panel más grande el texto resulta medir
+      // más que antes, se vuelve a calcular. Con la medida ya correcta esto
+      // no llega a dispararse, pero evita que una frase inesperadamente larga
+      // vuelva a quedar cortada.
+      if (pasadasRestantes > 0 && alto > actual + 1) {
+        this.ajustarAltoPanelFinal(pasadasRestantes - 1);
+      }
+    });
+  }
+
   mostrarResultadoFinal(
     nombreNivel: string,
     puntosBase: number,
@@ -361,6 +433,7 @@ export class HUD {
 
     this.fondoOverlay.isVisible = true;
     this.pantallaFinal.isVisible = true;
+    this.ajustarAltoPanelFinal();
 
     this.botonVolverMenu.onPointerUpObservable.clear();
     this.botonVolverMenu.onPointerUpObservable.add(() => {
@@ -405,6 +478,7 @@ export class HUD {
 
     this.fondoOverlay.isVisible = true;
     this.pantallaFinal.isVisible = true;
+    this.ajustarAltoPanelFinal();
 
     this.botonReintentar.isVisible = !aprobado;
     this.botonVolverMenu.left = aprobado ? "0px" : "-115px";

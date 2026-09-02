@@ -5,6 +5,7 @@ import {
 import { itemsNivel4, senalesNivel4, zonasSenalNivel4, type ZonaChecklist, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
+import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { crearFormaNivel4, crearFormaSenal } from "../entities/Level4Shapes";
 import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/ChecklistZones";
 import { crearZonaSenal } from "../entities/SignageZone";
@@ -115,6 +116,14 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // en su propia zona del cuarto (z=3.0 spawn / z=4.2 zonas), lejos del
   // checklist, para que no se vean encimadas. ---
   const senales = senalesNivel4.map((datos) => crearObjetoInteractable(scene, datos, crearFormaSenal));
+
+  // Realce al pasar el cursor, igual que en los Niveles 1 y 2. Las tarjetas y
+  // las senales se apoyan sobre mobiliario que tambien responde al puntero:
+  // sin el contorno hay que probar cual de todo lo que se ve se puede tomar.
+  const realce = habilitarRealceAlPasar(scene, [
+    ...items.map((o) => o.mesh),
+    ...senales.map((o) => o.mesh),
+  ]);
   zonasSenalNivel4.forEach((z) => crearZonaSenal(scene, gui, z.id, z.posicionX, Z_ZONA_SENAL, z.descripcion));
 
   // Nombre del color sobre cada ficha, como cartelito colgado de la propia
@@ -274,6 +283,8 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
       // hija volvia a habilitar el arrastre de un objeto ya colocado.
       item.fijar();
+      // Ya clasificada: deja de ofrecerse como agarrable.
+      realce.quitar(item.mesh);
 
       // "Click" real: la tarjeta salta a un lugar ordenado junto a su
       // zona, en vez de quedarse donde se soltó al azar.
@@ -311,6 +322,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
       // hija volvia a habilitar el arrastre de un objeto ya colocado.
       senal.fijar();
+      realce.quitar(senal.mesh);
 
       // "Click" real: la ficha encaja exactamente en el centro del
       // círculo punteado, como una pieza de shadow board de verdad.

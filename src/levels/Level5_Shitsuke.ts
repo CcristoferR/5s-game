@@ -2,6 +2,7 @@ import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
 import { Button, TextBlock, Control } from "@babylonjs/gui";
 import { generarPuntosControlNivel5 } from "../core/AuditGenerator";
 import { crearPuntoControl } from "../entities/AuditPoint";
+import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { chispasDeAcierto } from "../entities/Particulas";
 import { mostrarInformeAuditoria } from "../ui/AuditReport";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -106,8 +107,27 @@ export function cargarNivel5(
   gui.addControl(contador);
 
   const puntos = datosControl.map((datos) =>
-    crearPuntoControl(scene, gui, datos.id, datos.posicion[0], datos.posicion[1], datos.descripcionControl, datos.tipoEvidencia)
+    crearPuntoControl(
+      scene,
+      gui,
+      datos.id,
+      datos.posicion[0],
+      datos.posicion[1],
+      datos.descripcionControl,
+      datos.tipoEvidencia,
+      // El objeto que se exhibe tiene que ser el que nombra la descripción:
+      // un punto que dice "ubicación del teléfono" mostrando una caja gris no
+      // se puede auditar mirando, solo leyendo.
+      datos.objeto ?? "engrapadora"
+    )
   );
+
+  // Los puntos de control se marcan con un clic, no se arrastran, asi que sin
+  // realce no hay forma de saber que la esfera responde. Es el nivel donde el
+  // "esto se toca o no" mas molesta: hay cinco puntos repartidos por el galpon
+  // entre utileria que no hace nada.
+  habilitarRealceAlPasar(scene, puntos.map((p) => p.mesh));
+
 
   let marcados = 0;
   puntos.forEach((punto, i) => {

@@ -177,6 +177,15 @@ export interface PuntoControlNivel5 {
   descripcionControl: string;
   tieneDesviacion: boolean;
   tipoEvidencia: TipoEvidencia;
+  /**
+   * Qué objeto se ve en el pedestal.
+   *
+   * Sin esto, todos los puntos "sinProblema" dibujaban la misma caja gris,
+   * dijera lo que dijera su descripción: uno hablaba del teléfono, otro de la
+   * carpeta, y en pantalla eran idénticos. Para auditar hay que poder mirar el
+   * punto y reconocer QUÉ se está evaluando, no leer un rótulo para saberlo.
+   */
+  objeto?: "telefono" | "carpeta" | "engrapadora";
   // Calificación real del punto de control en escala 1-5, como en un
   // checklist de auditoría de industria: 1-2 = incumple, 4-5 = cumple.
   // Es independiente de si el jugador acierta o no al marcarlo.
@@ -185,11 +194,11 @@ export interface PuntoControlNivel5 {
 }
 
 export const puntosControlRespaldoNivel5: PuntoControlNivel5[] = [
-  { id: "resp_p1", posicion: [-4, 0.4], descripcionControl: "Ubicación del teléfono según estándar", tieneDesviacion: false, tipoEvidencia: "sinProblema", calificacion: 5, explicacion: "El teléfono está en su lugar asignado — sin desviación." },
+  { id: "resp_p1", posicion: [-4, 0.4], descripcionControl: "Ubicación del teléfono según estándar", tieneDesviacion: false, tipoEvidencia: "sinProblema", objeto: "telefono", calificacion: 5, explicacion: "El teléfono está en su lugar asignado — sin desviación." },
   { id: "resp_p2", posicion: [-2, -0.3], descripcionControl: "Vigencia de la tarjeta roja del área", tieneDesviacion: true, tipoEvidencia: "tarjetaVencida", calificacion: 1, explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse." },
   { id: "resp_p3", posicion: [0, 0.5], descripcionControl: "Estado de limpieza del área de trabajo", tieneDesviacion: true, tipoEvidencia: "manchaVisible", calificacion: 2, explicacion: "Apareció una mancha nueva desde la última auditoría." },
-  { id: "resp_p4", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", calificacion: 4, explicacion: "La carpeta está archivada correctamente según el estándar." },
-  { id: "resp_p5", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", calificacion: 2, explicacion: "Un objeto quedó fuera de su casilla asignada." },
+  { id: "resp_p4", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", objeto: "carpeta", calificacion: 4, explicacion: "La carpeta está archivada correctamente según el estándar." },
+  { id: "resp_p5", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", objeto: "engrapadora", calificacion: 2, explicacion: "Un objeto quedó fuera de su casilla asignada." },
 ];
 
 // ---------------------------------------------------------------------------

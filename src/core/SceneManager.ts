@@ -25,7 +25,23 @@ export class SceneManager {
   }
 
   private configurarAmbiente(): ShadowGenerator {
-    this.scene.clearColor = new Color4(0.85, 0.87, 0.9, 1);
+    // Fondo del lienzo, oscuro a propósito.
+    //
+    // En los niveles no se ve nunca: el garaje y la esfera de cielo encierran
+    // la escena. Donde sí asoma es en el menú, el ranking y el certificado,
+    // porque esas pantallas corren sobre una escena vacía y lo único que tapa
+    // el lienzo es la interfaz. Basta con que la interfaz falte un cuadro
+    // —entre que se libera una capa y se dibuja la siguiente— para que quede
+    // el lienzo pelado.
+    //
+    // Con el celeste claro que había antes, ese cuadro salía como un fogonazo
+    // blanco contra el negro del menú: el "parpadeo de luz" al abrir el
+    // ranking o volver de un nivel. El velo del ranking, además, es
+    // translúcido, así que dejaba pasar ese mismo claro de fondo.
+    //
+    // Con el fondo oscuro el hueco sigue existiendo, pero es del mismo tono
+    // que la interfaz y no se percibe.
+    this.scene.clearColor = new Color4(0.05, 0.06, 0.07, 1);
 
     // PROFUNDIDAD ATMOSFÉRICA. El garaje tiene 19 m de fondo y hasta ahora la
     // pared del fondo se veía con la misma nitidez y el mismo contraste que el

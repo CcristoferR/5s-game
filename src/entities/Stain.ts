@@ -108,6 +108,12 @@ export function crearMancha(
   mesh.position.set(x, 0.012, z);
   mesh.rotation.y = Math.random() * Math.PI * 2;
 
+  // Necesario para que el aclarado al pasar el cursor funcione: sin esta
+  // bandera, Babylon no informa que malla hay bajo el puntero en los eventos
+  // de movimiento, y la mancha nunca se enteraba de que el cursor estaba
+  // encima. Es el mismo motivo por el que el realce de objetos no encendia.
+  mesh.enablePointerMoveEvents = true;
+
   // --- Aviso de que se puede limpiar ---
   //
   // Antes esto era un aro luminoso alrededor. Se veía como un círculo blanco

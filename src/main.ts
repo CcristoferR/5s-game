@@ -20,6 +20,7 @@ import { cargarNivel5 } from "./levels/Level5_Shitsuke";
 import { HUD } from "./ui/HUD";
 import { mostrarMenuPrincipal } from "./ui/MainMenu";
 import { mostrarCertificado } from "./ui/CertificateScreen";
+import { fundirEntrePantallas } from "./ui/Transicion";
 import { mostrarRankingCurso } from "./ui/RankingScreen";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
@@ -160,16 +161,16 @@ function cambiarEscena(despues: () => void): void {
   cambiandoEscena = true;
 
   setTimeout(() => {
-    try {
+    void fundirEntrePantallas(() => {
       // Primero la experiencia XR y después la escena: al revés queda
       // enganchada al reparto de punteros de un lienzo que ya no tiene dueño.
       cerrarXR();
       sceneManager.scene.dispose();
       sceneManager = new SceneManager(engine);
       despues();
-    } finally {
+    }).finally(() => {
       cambiandoEscena = false;
-    }
+    });
   }, 0);
 }
 
@@ -182,7 +183,10 @@ function volverAlMenu(): void {
 // Reinicia la escena y vuelve a cargar el mismo nivel (usado por el
 // botón "Reintentar auditoría" cuando el jugador reprueba el Nivel 5).
 function reintentarNivel(numeroNivel: number): void {
-  cambiarEscena(() => cargarNivel(numeroNivel));
+  // construirNivel y no cargarNivel: cargarNivel abre su propio fundido, y
+  // acá ya estamos dentro de uno. El segundo se descartaría por el cerrojo del
+  // módulo y el nivel no llegaría a armarse — pantalla en negro.
+  cambiarEscena(() => construirNivel(numeroNivel));
 }
 
 /**
@@ -209,6 +213,13 @@ async function guardarConReintentos(fase: number, puntaje: number, segundos: num
 }
 
 function cargarNivel(numeroNivel: number): void {
+  void fundirEntrePantallas(() => construirNivel(numeroNivel));
+}
+
+// Armado del nivel. Separado de cargarNivel para que todo esto ocurra con la
+// pantalla ya oscurecida: montar el garaje y los objetos toma varios cuadros y
+// sin el fundido se veía aparecer por partes.
+function construirNivel(numeroNivel: number): void {
   gameManager.reiniciarNivel();
   gameManager.onPuntajeCambiado.clear();
 
@@ -290,9 +301,11 @@ async function volverAlCatalogo(): Promise<void> {
   // capa del menú, y destruirla en ese momento deja el puntero tomado.
   await new Promise<void>((listo) => setTimeout(listo, 0));
 
-  cerrarXR();
-  sceneManager.scene.dispose();
-  sceneManager = new SceneManager(engine);
+  await fundirEntrePantallas(() => {
+    cerrarXR();
+    sceneManager.scene.dispose();
+    sceneManager = new SceneManager(engine);
+  });
 
   // Se relee del servidor en vez de reutilizar el perfil que había en memoria:
   // si al administrador se le dio de baja mientras jugaba, corresponde que se

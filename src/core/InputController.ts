@@ -1,5 +1,6 @@
 import { Mesh, PointerDragBehavior, Vector3, Observable } from "@babylonjs/core";
 import { reproducir } from "./Sonido";
+import { actualizarSombraContacto, ocultarSombraContacto } from "../entities/SombraContacto";
 
 export interface ResultadoSoltar {
   mesh: Mesh;
@@ -51,10 +52,15 @@ export function hacerArrastrable(
       mesh.position.x = Math.min(limites.xMax, Math.max(limites.xMin, mesh.position.x));
       mesh.position.z = Math.min(limites.zMax, Math.max(limites.zMin, mesh.position.z));
     }
+
+    // Va despues de aplicar los limites: si se calculara antes, la sombra
+    // quedaria adelantada al objeto contra los bordes del recinto.
+    actualizarSombraContacto(mesh.getScene(), mesh);
   });
 
   comportamiento.onDragEndObservable.add(() => {
     mesh.scaling.setAll(1);
+    ocultarSombraContacto(mesh.getScene());
     const distancia = Vector3.Distance(
       new Vector3(posicionAlAgarrar.x, 0, posicionAlAgarrar.z),
       new Vector3(mesh.position.x, 0, mesh.position.z)

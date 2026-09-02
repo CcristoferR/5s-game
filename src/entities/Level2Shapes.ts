@@ -174,7 +174,14 @@ function fusionar(partes: Mesh[], id: string): Mesh {
 // Teléfono de oficina
 // ---------------------------------------------------------------------------
 
-function crearTelefono(scene: Scene, id: string): Mesh {
+/**
+ * Telefono de escritorio.
+ *
+ * Se exporta porque el Nivel 5 tambien lo necesita: uno de los puntos de
+ * auditoria dice "ubicacion del telefono segun estandar", y ahi hay que ver un
+ * telefono, no una caja generica.
+ */
+export function crearTelefono(scene: Scene, id: string): Mesh {
   const matCuerpo = plastico(scene, `matCuerpo_${id}`, new Color3(0.11, 0.11, 0.13), 0.5);
   const matTecla = plastico(scene, `matTecla_${id}`, new Color3(0.52, 0.53, 0.56), 0.45);
   const matCable = plastico(scene, `matCable_${id}`, new Color3(0.09, 0.09, 0.11), 0.6);

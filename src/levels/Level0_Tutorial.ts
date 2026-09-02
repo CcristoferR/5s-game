@@ -1,6 +1,7 @@
 import { Scene, MeshBuilder, ArcRotateCamera, Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { Rectangle, TextBlock, Control } from "@babylonjs/gui";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
+import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
@@ -76,6 +77,11 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
     { id: "taza_cafe", posicionInicial: POSICION_OBJETO },
     crearFormaNivel1 as never
   );
+
+  // El tutorial es donde mas hace falta: es la primera vez que alguien ve la
+  // escena y no sabe todavia que hay algo que se pueda tomar.
+  habilitarRealceAlPasar(scene, [objeto.mesh]);
+
 
   habilitarEtiquetasAlPasar(scene, gui, [{ mesh: objeto.mesh, texto: "Taza con café viejo" }]);
 
