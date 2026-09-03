@@ -16,7 +16,29 @@ export interface AuditPointResult {
   meshesSombra: Mesh[];
 }
 
-const ALTURA_PEDESTAL = 0.5;
+/**
+ * Altura del pedestal.
+ *
+ * Subido de 0,5 a 0,95: a media altura los objetos quedaban muy por debajo de
+ * la linea de vision de la camara y se veian en escorzo, casi de canto. A la
+ * altura de una mesa se ven de frente, que es como se mira algo que hay que
+ * juzgar.
+ */
+const ALTURA_PEDESTAL = 0.95;
+
+/**
+ * Aumento de las evidencias.
+ *
+ * Los objetos venian a tamano real —un telefono de 15 cm, una carpeta de 30—
+ * y a la distancia a la que se recorre el galpon eso son unos pocos pixeles:
+ * imposible reconocer QUE es, que era justamente lo que habia que arreglar.
+ *
+ * Estas piezas no son utileria del taller, son piezas EXHIBIDAS para que
+ * alguien las evalue. Como en una vitrina, se muestran mas grandes que en la
+ * vida real. El unico punto que se entendia sin esfuerzo era la tarjeta roja,
+ * y era por lo mismo: grande y de un color que no se puede ignorar.
+ */
+const ESCALA_EXHIBE = 2.1;
 
 export function crearPuntoControl(
   scene: Scene,
@@ -31,8 +53,11 @@ export function crearPuntoControl(
   const pedestal = crearPedestal(scene, id, x, z);
   const evidencia = crearEvidencia(scene, id, x, z, tipoEvidencia, objeto);
 
-  const mesh = MeshBuilder.CreateSphere(`punto_${id}`, { diameter: 0.28 }, scene);
-  mesh.position.set(x, ALTURA_PEDESTAL + 0.8, z);
+  // Marcador mas grande y mas bajo. Flotando a 80 cm sobre el pedestal quedaba
+  // desligado de lo que representa: se veia una bola blanca en el aire y la
+  // evidencia aparte. Justo encima se lee como "esta es la marca DE esto".
+  const mesh = MeshBuilder.CreateSphere(`punto_${id}`, { diameter: 0.38 }, scene);
+  mesh.position.set(x, ALTURA_PEDESTAL + 0.62, z);
 
   const colorNeutro = new Color3(0.55, 0.55, 0.6);
   const colorMarcado = new Color3(0.85, 0.45, 0.1);
@@ -50,9 +75,12 @@ export function crearPuntoControl(
   // texto 2D anclado: con varios puntos repartidos por el garaje, las
   // descripciones se apilaban en el centro de la pantalla y no se sabía
   // cuál pertenecía a cuál.
-  crearRotulo3D(scene, `punto_${id}`, descripcion, new Vector3(x, ALTURA_PEDESTAL + 1.28, z), {
-    ancho: 1.25,
-    alto: 0.34,
+  crearRotulo3D(scene, `punto_${id}`, descripcion, new Vector3(x, ALTURA_PEDESTAL + 1.1, z), {
+    // Mas angosto y mas bajo: los rotulos anchos se solapaban entre si y
+    // tapaban la escena, que es lo que hay que mirar. El texto acompana a la
+    // evidencia, no la reemplaza.
+    ancho: 1.05,
+    alto: 0.3,
     lineasMax: 3,
     colorFondo: "#1d2227",
     colorBorde: "rgba(255,255,255,0.3)",
@@ -86,7 +114,7 @@ function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
   mat.roughness = 0.6;
   mat.metallic = 0.1;
 
-  const pedestal = MeshBuilder.CreateCylinder(`pedestal_${id}`, { diameterTop: 0.5, diameterBottom: 0.42, height: ALTURA_PEDESTAL }, scene);
+  const pedestal = MeshBuilder.CreateCylinder(`pedestal_${id}`, { diameterTop: 0.78, diameterBottom: 0.66, height: ALTURA_PEDESTAL }, scene);
   pedestal.position.set(x, ALTURA_PEDESTAL / 2, z);
   pedestal.material = mat;
   pedestal.receiveShadows = true;
@@ -123,14 +151,19 @@ function crearMarcaDeSitio(
   // El interior va casi transparente para que se siga viendo el pedestal: es
   // pintura sobre la superficie, no una bandeja apoyada encima.
   ctx.clearRect(0, 0, LADO, LADO);
-  ctx.fillStyle = vacia ? "rgba(196,142,44,0.16)" : "rgba(120,170,140,0.12)";
+  // Relleno mas presente que antes: al 12% de opacidad la marca se perdia a la
+  // distancia a la que se recorre el galpon y el punto quedaba en "dos
+  // cuadrados" indistinguibles.
+  ctx.fillStyle = vacia ? "rgba(214,150,40,0.3)" : "rgba(120,190,150,0.2)";
   ctx.fillRect(0, 0, LADO, LADO);
 
-  ctx.strokeStyle = vacia ? "rgba(232,176,70,0.95)" : "rgba(150,205,170,0.85)";
-  ctx.lineWidth = 14;
+  ctx.strokeStyle = vacia ? "rgba(245,186,72,1)" : "rgba(150,215,175,0.95)";
+  // Linea mas gruesa: una demarcacion de piso real se ve desde el otro lado
+  // de la nave, no es un detalle que haya que buscar de cerca.
+  ctx.lineWidth = 24;
   // Linea cortada: asi es la cinta de demarcacion real, y ademas distingue la
   // marca de cualquier borde de la geometria.
-  ctx.setLineDash([34, 20]);
+  ctx.setLineDash([44, 26]);
   ctx.strokeRect(16, 16, LADO - 32, LADO - 32);
 
   textura.update();
@@ -139,7 +172,9 @@ function crearMarcaDeSitio(
   mat.albedoTexture = textura;
   mat.opacityTexture = textura;
   mat.emissiveTexture = textura;
-  mat.emissiveColor = new Color3(0.35, 0.35, 0.35);
+  // Algo de emision propia para que la marca no dependa de que le llegue luz:
+  // los pedestales estan repartidos y algunos quedan en penumbra.
+  mat.emissiveColor = new Color3(0.55, 0.55, 0.55);
   mat.roughness = 0.85;
   mat.metallic = 0;
   mat.backFaceCulling = false;
@@ -152,16 +187,30 @@ function crearMarcaDeSitio(
   return marca;
 }
 
-/** Construye el objeto que nombra la descripcion del punto. */
+/**
+ * Apoya una malla sobre una superficie, sea cual sea su escala.
+ *
+ * Con las evidencias aumentadas ya no sirve un desplazamiento fijo en Y: cada
+ * objeto tiene su altura y al escalarlo cambia. Se mide su caja envolvente ya
+ * escalada y se corrige, asi que ninguno queda flotando ni hundido.
+ */
+function apoyarSobre(malla: Mesh, alturaSuperficie: number): void {
+  malla.computeWorldMatrix(true);
+  const base = malla.getBoundingInfo().boundingBox.minimumWorld.y;
+  malla.position.y += alturaSuperficie - base;
+}
+
+/** Construye el objeto que nombra la descripcion del punto, ya exhibible. */
 function objetoDelPunto(scene: Scene, id: string, cual: ObjetoAuditado): Mesh {
-  switch (cual) {
-    case "telefono":
-      return crearTelefono(scene, `auditTel_${id}`);
-    case "carpeta":
-      return crearCarpeta(scene, `auditCar_${id}`, "PROYECTO ACTIVO");
-    case "engrapadora":
-      return crearEngrapadora(scene, `auditEng_${id}`);
-  }
+  const malla =
+    cual === "telefono"
+      ? crearTelefono(scene, `auditTel_${id}`)
+      : cual === "carpeta"
+        ? crearCarpeta(scene, `auditCar_${id}`, "PROYECTO ACTIVO")
+        : crearEngrapadora(scene, `auditEng_${id}`);
+
+  malla.scaling.setAll(ESCALA_EXHIBE);
+  return malla;
 }
 
 function crearEvidencia(
@@ -182,8 +231,9 @@ function crearEvidencia(
     // observado. Sin el alambre ni el objeto, el plano rojo anterior no se
     // leia como tarjeta: parecia un cartel suelto en el aire.
     const soporte = objetoDelPunto(scene, id, objeto);
-    soporte.position.set(x, y + 0.06, z);
+    soporte.position.set(x, y, z);
     soporte.rotation.y = -0.35;
+    apoyarSobre(soporte, y);
     creados.push(soporte);
 
     const matAlambre = new PBRMaterial(`matAlambre_${id}`, scene);
@@ -257,10 +307,11 @@ function crearEvidencia(
     // El area SI tiene su marca de sitio y su objeto en orden: el problema no
     // es el desorden, es la suciedad. Distinguir una cosa de la otra es
     // justamente lo que se audita.
-    creados.push(crearMarcaDeSitio(scene, id, x - 0.02, y, z - 0.06, 0.46, 0.4, false));
+    creados.push(crearMarcaDeSitio(scene, id, x - 0.02, y, z - 0.06, 0.62, 0.56, false));
 
     const soporte = objetoDelPunto(scene, id, objeto);
-    soporte.position.set(x - 0.02, y + 0.06, z - 0.06);
+    soporte.position.set(x - 0.02, y, z - 0.06);
+    apoyarSobre(soporte, y);
     creados.push(soporte);
 
     const matMancha = new PBRMaterial(`matManchaAudit_${id}`, scene);
@@ -270,9 +321,9 @@ function crearEvidencia(
     matMancha.roughness = 0.12;
     matMancha.metallic = 0.1;
 
-    const mancha = MeshBuilder.CreateDisc(`manchaAudit_${id}`, { radius: 0.19, tessellation: 24 }, scene);
+    const mancha = MeshBuilder.CreateDisc(`manchaAudit_${id}`, { radius: 0.3, tessellation: 24 }, scene);
     mancha.rotation.x = Math.PI / 2;
-    mancha.position.set(x + 0.16, y + 0.002, z + 0.16);
+    mancha.position.set(x + 0.2, y + 0.002, z + 0.2);
     mancha.scaling.z = 0.72;
     mancha.material = matMancha;
     creados.push(mancha);
@@ -280,9 +331,10 @@ function crearEvidencia(
     // Salpicaduras alrededor: un derrame real no es un circulo perfecto, y sin
     // ellas la mancha se lee como una calcomania.
     const salpicaduras: Array<[number, number, number]> = [
-      [0.3, 0.08, 0.055],
-      [0.06, 0.28, 0.04],
-      [0.26, 0.3, 0.03],
+      [0.44, 0.1, 0.085],
+      [0.08, 0.42, 0.07],
+      [0.38, 0.44, 0.05],
+      [-0.12, 0.3, 0.045],
     ];
     salpicaduras.forEach(([dx, dz, radio], i) => {
       const gota = MeshBuilder.CreateDisc(`salpAudit_${id}_${i}`, { radius: radio, tessellation: 10 }, scene);
@@ -297,12 +349,13 @@ function crearEvidencia(
     // Dos marcas y un solo objeto. La de la izquierda esta vacia en ambar
     // —falta lo que deberia estar ahi— y el objeto aparece FUERA de la suya,
     // apoyado de cualquier forma. Se entiende de un vistazo, sin leer nada.
-    creados.push(crearMarcaDeSitio(scene, id, x - 0.2, y, z, 0.32, 0.34, true));
-    creados.push(crearMarcaDeSitio(scene, id + "_b", x + 0.2, y, z, 0.32, 0.34, false));
+    creados.push(crearMarcaDeSitio(scene, id, x - 0.21, y, z, 0.36, 0.44, true));
+    creados.push(crearMarcaDeSitio(scene, id + "_b", x + 0.21, y, z, 0.36, 0.44, false));
 
     const fuera = objetoDelPunto(scene, id, objeto);
     // Corrido hacia adelante y torcido: apoyado al voleo, no colocado.
-    fuera.position.set(x + 0.22, y + 0.06, z + 0.26);
+    fuera.position.set(x + 0.26, y, z + 0.3);
+    apoyarSobre(fuera, y);
     fuera.rotation.y = 0.9;
     fuera.rotation.z = 0.06;
     creados.push(fuera);
@@ -311,10 +364,11 @@ function crearEvidencia(
     // dentro de su marca. Es la referencia de "asi se ve un punto que cumple",
     // y por eso importa que sea reconocible: si es una caja gris, el jugador
     // no tiene con que comparar los demas.
-    creados.push(crearMarcaDeSitio(scene, id, x, y, z, 0.46, 0.42, false));
+    creados.push(crearMarcaDeSitio(scene, id, x, y, z, 0.62, 0.58, false));
 
     const enSuSitio = objetoDelPunto(scene, id, objeto);
-    enSuSitio.position.set(x, y + 0.06, z);
+    enSuSitio.position.set(x, y, z);
+    apoyarSobre(enSuSitio, y);
     creados.push(enSuSitio);
   }
 

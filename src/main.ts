@@ -160,18 +160,24 @@ let cambiandoEscena = false;
  * elegir un nivel, y por el que el ranking arma el menú en el tick siguiente.
  * Este camino era el único que había quedado sin la misma protección.
  */
-function cambiarEscena(despues: () => void, tapar = fundirEntrePantallas): void {
+function cambiarEscena(
+  despues: () => void | Promise<void>,
+  tapar = fundirEntrePantallas
+): void {
   if (cambiandoEscena) return;
   cambiandoEscena = true;
 
   setTimeout(() => {
-    void tapar(() => {
+    void tapar(async () => {
       // Primero la experiencia XR y después la escena: al revés queda
       // enganchada al reparto de punteros de un lienzo que ya no tiene dueño.
       cerrarXR();
       sceneManager.scene.dispose();
       sceneManager = new SceneManager(engine);
-      despues();
+      // Con await: si "despues" arma un nivel, la tapadera tiene que seguir
+      // puesta hasta que esté listo. Sin esperar la promesa se retiraría al
+      // crear las mallas, que es varios segundos antes de poder dibujarlas.
+      await despues();
     }).finally(() => {
       cambiandoEscena = false;
     });
@@ -196,7 +202,7 @@ function reintentarNivel(numeroNivel: number): void {
   // evita que el fundido y la carga se solapen, que era lo que ocurría al
   // anidarlas.
   cambiarEscena(
-    () => construirNivel(numeroNivel),
+    () => construirYEsperar(numeroNivel),
     (accion) => cargarConPantalla(numeroNivel, accion)
   );
 }
@@ -224,12 +230,42 @@ async function guardarConReintentos(fase: number, puntaje: number, segundos: num
   );
 }
 
+/**
+ * Arma el nivel y espera a que esté REALMENTE listo para dibujarse.
+ *
+ * construirNivel crea las mallas y devuelve enseguida, pero en ese momento
+ * Babylon todavía no compiló los sombreadores de cada material ni terminó de
+ * subir las texturas a la placa: eso ocurre durante los primeros cuadros que
+ * se dibujan. Por eso la pantalla de carga se iba y el garaje seguía
+ * apareciendo por partes unos segundos más.
+ *
+ * scene.whenReadyAsync espera justamente eso. El argumento en true incluye
+ * además los destinos de render del postprocesado (bloom, SSAO), que son de lo
+ * más caro de preparar.
+ *
+ * EL TOPE NO ES OPCIONAL. Si por cualquier motivo un material no llegara a
+ * estar listo —una textura que no carga, una placa que no soporta algo— la
+ * promesa no se resolvería nunca y la pantalla de carga se quedaría puesta
+ * para siempre. Con el tope, en el peor caso se entra al nivel algo antes de
+ * tiempo, que es exactamente lo que pasaba antes y nunca fue grave.
+ */
+async function construirYEsperar(numeroNivel: number): Promise<void> {
+  construirNivel(numeroNivel);
+
+  const TOPE_MS = 8000;
+
+  await Promise.race([
+    sceneManager.scene.whenReadyAsync(true),
+    new Promise<void>((listo) => setTimeout(listo, TOPE_MS)),
+  ]);
+}
+
 function cargarNivel(numeroNivel: number): void {
   // Entrar a un nivel usa la pantalla de carga, no el fundido suave: acá la
   // espera es larga —se arma el garaje entero— y conviene ocuparla con el
   // contexto de la fase en vez de dejar la pantalla apagada. El fundido queda
   // para los saltos cortos, como volver al menú.
-  void cargarConPantalla(numeroNivel, () => construirNivel(numeroNivel));
+  void cargarConPantalla(numeroNivel, () => construirYEsperar(numeroNivel));
 }
 
 // Armado del nivel. Separado de cargarNivel para que todo esto ocurra con la
