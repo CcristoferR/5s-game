@@ -443,29 +443,54 @@ function mostrarInformeEstandar(
 ): void {
   const fondo = new Rectangle("fondoInformeEstandar");
   fondo.width = "600px";
-  fondo.height = "540px";
+  fondo.height = "560px";
   fondo.cornerRadius = 14;
   fondo.thickness = 1;
-  fondo.color = "rgba(255,255,255,0.15)";
-  fondo.background = "rgba(15, 18, 22, 0.98)";
+  fondo.color = PALETA.borde;
+  fondo.background = PALETA.tarjeta;
   fondo.zIndex = 45;
   gui.addControl(fondo);
 
   const tasaPct = Math.round((totalCorrectos / filas.length) * 100);
-  const titulo = new TextBlock("tituloInformeEstandar", `Tasa de éxito del operario: ${tasaPct}% (${totalCorrectos}/${filas.length})`);
-  titulo.color = "white";
-  titulo.fontSize = TEXTO.titulo;
-  titulo.textWrapping = true;
-  titulo.height = "55px";
-  titulo.top = "16px";
+  // Encabezado en dos alturas: el rótulo dice QUÉ se está midiendo y la cifra
+  // es el dato. Antes iba todo en una sola frase larga, así que el porcentaje
+  // —lo único que se busca al abrir esto— quedaba enterrado en el medio.
+  const rotuloInforme = new TextBlock("rotuloInformeEstandar", "TASA DE ÉXITO DEL OPERARIO");
+  rotuloInforme.color = PALETA.rotulo;
+  rotuloInforme.fontSize = TEXTO.rotulo;
+  rotuloInforme.fontWeight = "700";
+  rotuloInforme.height = "18px";
+  rotuloInforme.top = "22px";
+  rotuloInforme.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  fondo.addControl(rotuloInforme);
+
+  const titulo = new TextBlock("tituloInformeEstandar", `${tasaPct}%`);
+  titulo.color = tasaPct >= 70 ? PALETA.acierto : PALETA.aviso;
+  titulo.fontSize = TEXTO.mayor;
+  titulo.fontWeight = "700";
+  titulo.height = "42px";
+  titulo.top = "44px";
   titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   fondo.addControl(titulo);
 
+  const detalle = new TextBlock(
+    "detalleInformeEstandar",
+    `${totalCorrectos} de ${filas.length} elementos bien ubicados`
+  );
+  detalle.color = PALETA.cuerpo;
+  detalle.fontSize = TEXTO.menor;
+  detalle.height = "22px";
+  detalle.top = "88px";
+  detalle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  fondo.addControl(detalle);
+
   const scroll = new ScrollViewer("scrollInformeEstandar");
   scroll.width = "560px";
-  scroll.height = "350px";
-  scroll.barColor = "rgba(255,255,255,0.4)";
-  scroll.top = "78px";
+  scroll.height = "336px";
+  scroll.barColor = PALETA.tenue;
+  scroll.barBackground = PALETA.tarjetaSuave;
+  scroll.thickness = 0;
+  scroll.top = "124px";
   scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   fondo.addControl(scroll);
 
@@ -475,41 +500,116 @@ function mostrarInformeEstandar(
   scroll.addControl(lista);
 
   filas.forEach((fila, i) => {
+    const color = fila.correcto ? PALETA.acierto : PALETA.error;
+
     const fondoFila = new Rectangle(`filaInformeEstandar_${i}`);
     fondoFila.width = "530px";
-    fondoFila.height = "72px";
     fondoFila.thickness = 0;
-    fondoFila.cornerRadius = 8;
-    // Fondo neutro con franja de color al costado, igual que el informe de
-    // auditoría y el cartel del HUD. Teñir la fila entera hacía competir el
-    // color con el texto, que es lo que hay que leer.
-    fondoFila.background = "rgba(255,255,255,0.045)";
-    fondoFila.paddingBottom = "8px";
+    fondoFila.cornerRadius = 10;
+    // Fondo TEÑIDO segun el resultado, no neutro.
+    //
+    // Antes las dos clases de fila compartian el mismo gris y se distinguian
+    // por una franja de 4 px: en una lista de ocho renglones eso no se ve, y
+    // era imposible saber de un vistazo cuantas estaban bien. Un tinte muy
+    // suave separa los dos grupos sin taparle el sitio al texto.
+    fondoFila.background = fila.correcto ? "rgba(127,180,149,0.10)" : "rgba(201,141,128,0.10)";
+    fondoFila.paddingBottom = "10px";
     lista.addControl(fondoFila);
 
     const franjaFila = new Rectangle(`franjaInformeEstandar_${i}`);
     franjaFila.width = "4px";
     franjaFila.height = "100%";
     franjaFila.thickness = 0;
-    franjaFila.background = fila.correcto ? PALETA.acierto : PALETA.error;
+    franjaFila.background = color;
     franjaFila.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     franjaFila.isHitTestVisible = false;
     fondoFila.addControl(franjaFila);
 
-    // El tipo se dice con palabras en vez de con un icono: "Instrucción" y
-    // "Señal" se entienden sin tener que interpretar un dibujo.
+    // Columna interna: cada dato en su bloque, alineados a la izquierda.
+    //
+    // Antes los tres datos iban en un solo TextBlock separados por saltos de
+    // linea, y como los TextBlock se centran por defecto, las tres lineas
+    // quedaban centradas y de largos distintos. Una lista se recorre bajando
+    // por un borde comun; centrada obliga a leerla entera.
+    const columna = new StackPanel(`columnaInformeEstandar_${i}`);
+    columna.isVertical = true;
+    columna.width = "486px";
+    columna.paddingTop = "14px";
+    columna.paddingBottom = "14px";
+    columna.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    columna.left = "22px";
+    columna.isHitTestVisible = false;
+    fondoFila.addControl(columna);
+
+    // Encabezado: simbolo, tipo y veredicto. El simbolo primero porque es lo
+    // unico que hay que leer para contar aciertos, y no depende del color —
+    // quien no distinga verde de rojo lo sigue viendo.
     const tipo = fila.tipo === "checklist" ? "Instrucción" : "Señal";
     const veredicto = fila.correcto ? "Bien ubicada" : "Mal ubicada";
-    const textoFila = new TextBlock(
-      `textoInformeEstandar_${i}`,
-      `${tipo} · ${veredicto}\n${fila.texto}\n${fila.explicacion}`
+
+    const encabezado = new TextBlock(
+      `encabezadoInformeEstandar_${i}`,
+      `${fila.correcto ? "\u2713" : "\u2715"}  ${tipo} · ${veredicto}`
     );
-    textoFila.color = "white";
-    textoFila.fontSize = TEXTO.menor;
-    textoFila.textWrapping = true;
-    textoFila.paddingLeft = "20px";
-    textoFila.paddingRight = "10px";
-    fondoFila.addControl(textoFila);
+    encabezado.color = color;
+    encabezado.fontSize = TEXTO.rotulo;
+    encabezado.fontWeight = "700";
+    encabezado.textWrapping = true;
+    encabezado.resizeToFit = true;
+    encabezado.width = "486px";
+    encabezado.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    encabezado.isHitTestVisible = false;
+    columna.addControl(encabezado);
+
+    const separacionA = new Rectangle(`aireInformeA_${i}`);
+    separacionA.width = "1px";
+    separacionA.height = "7px";
+    separacionA.thickness = 0;
+    separacionA.background = "transparent";
+    columna.addControl(separacionA);
+
+    // El item, que es el dato principal: mas grande y en blanco.
+    const texto = new TextBlock(`textoInformeEstandar_${i}`, fila.texto);
+    texto.color = PALETA.titulo;
+    texto.fontSize = TEXTO.menor;
+    texto.fontWeight = "600";
+    texto.textWrapping = true;
+    texto.resizeToFit = true;
+    texto.width = "486px";
+    texto.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    texto.isHitTestVisible = false;
+    columna.addControl(texto);
+
+    const separacionB = new Rectangle(`aireInformeB_${i}`);
+    separacionB.width = "1px";
+    separacionB.height = "5px";
+    separacionB.thickness = 0;
+    separacionB.background = "transparent";
+    columna.addControl(separacionB);
+
+    // El porque, en gris: acompana pero no compite con el item.
+    const explicacion = new TextBlock(`explicacionInformeEstandar_${i}`, fila.explicacion);
+    explicacion.color = PALETA.cuerpo;
+    explicacion.fontSize = TEXTO.rotulo;
+    explicacion.textWrapping = true;
+    explicacion.resizeToFit = true;
+    explicacion.width = "486px";
+    explicacion.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    explicacion.isHitTestVisible = false;
+    columna.addControl(explicacion);
+
+    // Alto de la fila SEGUN su contenido.
+    //
+    // Estaba fijo en 72 px con tres bloques de texto que se ajustan: cualquier
+    // explicacion de dos renglones desbordaba y se recortaba por arriba, que
+    // es por lo que se veian encabezados cortados a la mitad.
+    fondoFila.height =
+      encabezado.heightInPixels +
+      texto.heightInPixels +
+      explicacion.heightInPixels +
+      12 +
+      38 +
+      "px";
   });
 
   const boton = Button.CreateSimpleButton("btnContinuarInformeEstandar", "Ver puntaje final");

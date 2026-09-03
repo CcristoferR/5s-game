@@ -175,6 +175,16 @@ export interface PuntoControlNivel5 {
   id: string;
   posicion: [number, number];
   descripcionControl: string;
+  /**
+   * Rótulo corto de la estación, para el cartel que se ve en el galpón.
+   *
+   * La descripción larga sigue existiendo y es la que aparece en el informe
+   * final, donde hay sitio para leerla. En la escena no: cinco frases de tres
+   * renglones flotando a la vez tapan justo lo que hay que mirar y compiten
+   * entre ellas. En el galpón basta con saber QUÉ se audita en cada estación;
+   * el juicio se hace mirando la evidencia, no leyendo.
+   */
+  tituloControl: string;
   tieneDesviacion: boolean;
   tipoEvidencia: TipoEvidencia;
   /**
@@ -194,11 +204,11 @@ export interface PuntoControlNivel5 {
 }
 
 export const puntosControlRespaldoNivel5: PuntoControlNivel5[] = [
-  { id: "resp_p1", posicion: [-4, 0.4], descripcionControl: "Ubicación del teléfono según estándar", tieneDesviacion: false, tipoEvidencia: "sinProblema", objeto: "telefono", calificacion: 5, explicacion: "El teléfono está en su lugar asignado — sin desviación." },
-  { id: "resp_p2", posicion: [-2, -0.3], descripcionControl: "Vigencia de la tarjeta roja del área", tieneDesviacion: true, tipoEvidencia: "tarjetaVencida", calificacion: 1, explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse." },
-  { id: "resp_p3", posicion: [0, 0.5], descripcionControl: "Estado de limpieza del área de trabajo", tieneDesviacion: true, tipoEvidencia: "manchaVisible", calificacion: 2, explicacion: "Apareció una mancha nueva desde la última auditoría." },
-  { id: "resp_p4", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", objeto: "carpeta", calificacion: 4, explicacion: "La carpeta está archivada correctamente según el estándar." },
-  { id: "resp_p5", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", objeto: "engrapadora", calificacion: 2, explicacion: "Un objeto quedó fuera de su casilla asignada." },
+  { id: "resp_p1", tituloControl: "Teléfono", posicion: [-4, 0.4], descripcionControl: "Ubicación del teléfono según estándar", tieneDesviacion: false, tipoEvidencia: "sinProblema", objeto: "telefono", calificacion: 5, explicacion: "El teléfono está en su lugar asignado — sin desviación." },
+  { id: "resp_p2", tituloControl: "Tarjeta roja", posicion: [-2, -0.3], descripcionControl: "Vigencia de la tarjeta roja del área", tieneDesviacion: true, tipoEvidencia: "tarjetaVencida", calificacion: 1, explicacion: "La tarjeta roja está vencida hace 2 semanas — debía renovarse." },
+  { id: "resp_p3", tituloControl: "Puesto", posicion: [0, 0.5], descripcionControl: "Estado de limpieza del área de trabajo", tieneDesviacion: true, tipoEvidencia: "manchaVisible", calificacion: 2, explicacion: "Apareció una mancha nueva desde la última auditoría." },
+  { id: "resp_p4", tituloControl: "Carpeta", posicion: [2, -0.2], descripcionControl: "Ubicación de la carpeta de proyecto", tieneDesviacion: false, tipoEvidencia: "sinProblema", objeto: "carpeta", calificacion: 4, explicacion: "La carpeta está archivada correctamente según el estándar." },
+  { id: "resp_p5", tituloControl: "Estante", posicion: [4, 0.3], descripcionControl: "Organización general del estante", tieneDesviacion: true, tipoEvidencia: "objetoFueraDeLugar", objeto: "engrapadora", calificacion: 2, explicacion: "Un objeto quedó fuera de su casilla asignada." },
 ];
 
 // ---------------------------------------------------------------------------

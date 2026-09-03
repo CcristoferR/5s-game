@@ -98,15 +98,23 @@ export function ambientarNivel(scene: Scene, numeroNivel: number): void {
       break;
 
     case 5:
-      // Shitsuke: el taller terminado. Es el más poblado después del Nivel 1,
-      // pero al revés — ahí era desorden, acá es un espacio completo y en
-      // orden. Los puntos de control viven en z -0.7 a 0.5, así que todo esto
-      // queda por detrás y no tapa ninguno.
+      // Shitsuke: el taller terminado y en uso. Es el nivel más poblado, pero
+      // al revés que el 1 — allá era desorden, acá es un espacio completo y en
+      // orden. También es el que más lo necesita: las estaciones de auditoría
+      // están repartidas por el centro y sin nada alrededor el galpón se veía
+      // como una sala vacía con cinco muebles sueltos.
+      //
+      // Los puntos de control viven entre z -0,7 y 0,5, así que todo esto va
+      // por detrás y contra las paredes: acompaña sin taparlos.
       crearEstanteriaTaller(scene, 5.1, 2.2, -Math.PI / 2);
+      crearEstanteriaTaller(scene, 5.1, 4.3, -Math.PI / 2);
       crearEstanteriaTaller(scene, -5.1, 2.2, Math.PI / 2);
-      crearTableroHerramientas(scene, 5.85, 4.4, -Math.PI / 2);
-      crearPalletConCajas(scene, -5.0, 4.7);
-      crearTamboresAceite(scene, 4.4, 4.5);
+      crearEstanteriaTaller(scene, -5.1, 4.3, Math.PI / 2);
+      crearTableroHerramientas(scene, 5.85, 0.6, -Math.PI / 2);
+      crearTableroHerramientas(scene, -5.85, 0.6, Math.PI / 2);
+      crearPalletConCajas(scene, -4.6, 6.1);
+      crearTamboresAceite(scene, 4.5, 6.0);
+      crearCarroDeLimpieza(scene, 2.6, 5.6, Math.PI);
       break;
   }
 }

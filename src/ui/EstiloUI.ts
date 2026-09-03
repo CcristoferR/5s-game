@@ -270,15 +270,131 @@ export function crearBotonPrincipal(nombre: string, texto: string, ancho = 160):
 /**
  * Botón de opción: una alternativa entre varias.
  *
- * A diferencia del principal va sin relleno, porque cuando hay tres opciones
- * ninguna debe verse como "la correcta" antes de que el jugador decida.
+ * ─── POR QUÉ SE REHIZO ────────────────────────────────────────────────────
+ *
+ * La versión anterior era un rectángulo con relleno blanco al 4,5% sobre una
+ * tarjeta gris oscuro: la diferencia entre el botón y el fondo era de un par
+ * de valores, así que las opciones se leían como bloques de texto y no como
+ * cosas que se pueden apretar. Encima el texto iba centrado y el alto era fijo
+ * en 56 px, de modo que una opción de dos renglones quedaba apretada contra
+ * los bordes.
+ *
+ * Sigue sin tener relleno fuerte —con tres alternativas ninguna debe parecer
+ * "la correcta" antes de que el jugador decida— pero ahora se distingue por
+ * DÓNDE está el peso visual, no por el color: una letra en un recuadro a la
+ * izquierda, una barra de acento, y el texto alineado a la izquierda a partir
+ * de ahí. La forma dice "botón" sin que ningún color diga "elige este".
  */
 export function crearBotonOpcion(nombre: string, texto: string, ancho: number): Button {
+  const ALTO_MIN = 60;
+  const SANGRIA = 62;
+
+  const boton = Button.CreateSimpleButton(nombre, "");
+  boton.width = ancho + "px";
+  boton.cornerRadius = 10;
+  boton.thickness = 1;
+  boton.color = PALETA.borde;
+  boton.background = PALETA.tarjetaSuave;
+  boton.hoverCursor = "pointer";
+  neutralizarAnimaciones(boton);
+
+  // El texto va como control propio y no como textBlock del botón: el de
+  // fábrica se centra y no deja controlar la sangría izquierda, que es
+  // justamente lo que hace falta para dejar sitio a la letra.
+  if (boton.textBlock) boton.textBlock.isVisible = false;
+
+  const etiqueta = new TextBlock(`${nombre}_texto`, texto);
+  etiqueta.color = PALETA.titulo;
+  etiqueta.fontSize = TEXTO.destacado;
+  etiqueta.fontWeight = "500";
+  etiqueta.textWrapping = true;
+  etiqueta.resizeToFit = true;
+  etiqueta.width = ancho - SANGRIA - 20 + "px";
+  etiqueta.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  etiqueta.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  etiqueta.left = SANGRIA + "px";
+  etiqueta.isHitTestVisible = false;
+  boton.addControl(etiqueta);
+
+  // Alto segun el texto, con un minimo. Una opcion de tres renglones ya no
+  // desborda ni se recorta, y una de uno no queda flotando en una caja alta.
+  const alto = Math.max(ALTO_MIN, etiqueta.heightInPixels + 30);
+  boton.height = alto + "px";
+
+  // Recuadro de la letra. Da un ancla fija a la izquierda: con tres opciones
+  // apiladas, el ojo baja por esa columna en vez de recorrer tres bloques de
+  // texto centrados de largos distintos.
+  const casilla = new Rectangle(`${nombre}_casilla`);
+  casilla.width = "30px";
+  casilla.height = "30px";
+  casilla.cornerRadius = 7;
+  casilla.thickness = 1;
+  casilla.color = PALETA.borde;
+  casilla.background = "transparent";
+  casilla.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  casilla.left = "18px";
+  casilla.isHitTestVisible = false;
+  boton.addControl(casilla);
+
+  const letra = new TextBlock(`${nombre}_letra`, "");
+  letra.color = PALETA.rotulo;
+  letra.fontSize = TEXTO.rotulo;
+  letra.fontWeight = "700";
+  letra.isHitTestVisible = false;
+  casilla.addControl(letra);
+
+  // Barra de acento pegada al borde izquierdo. En reposo es apenas una linea;
+  // al pasar por encima se enciende. Es la senal de "esto responde" mas barata
+  // que hay: no cambia el color del boton, asi que no sugiere una respuesta.
+  const acento = new Rectangle(`${nombre}_acento`);
+  acento.width = "3px";
+  acento.height = alto - 18 + "px";
+  acento.thickness = 0;
+  acento.background = PALETA.linea;
+  acento.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  acento.left = "1px";
+  acento.isHitTestVisible = false;
+  boton.addControl(acento);
+
+  boton.onPointerEnterObservable.add(() => {
+    boton.background = PALETA.tarjetaSuave;
+    boton.color = PALETA.tenue;
+    acento.background = PALETA.dato;
+    casilla.color = PALETA.tenue;
+    letra.color = PALETA.titulo;
+  });
+  boton.onPointerOutObservable.add(() => {
+    boton.background = PALETA.tarjetaSuave;
+    boton.color = PALETA.borde;
+    acento.background = PALETA.linea;
+    casilla.color = PALETA.borde;
+    letra.color = PALETA.rotulo;
+  });
+
+  // El clic suena desde acá: cualquier botón construido con el sistema de
+  // diseño queda cubierto, sin tener que tocar pantalla por pantalla.
+  boton.onPointerUpObservable.add(() => reproducir("boton"));
+
+  return boton;
+}
+
+/**
+ * Botón secundario: una acción, no una alternativa.
+ *
+ * Existe separado de crearBotonOpcion porque son cosas distintas aunque se
+ * parezcan. Un botón de opción forma parte de una lista donde hay que elegir,
+ * y por eso lleva letra, sangría y texto a la izquierda. "Volver al menú" no
+ * es una alternativa entre varias: es una acción suelta, y con el recuadro de
+ * la letra vacío al costado se veía como un elemento de lista al que le falta
+ * algo.
+ */
+export function crearBotonSecundario(nombre: string, texto: string, ancho: number): Button {
   const boton = Button.CreateSimpleButton(nombre, texto);
   boton.width = ancho + "px";
-  boton.height = "56px";
-  boton.fontSize = TEXTO.destacado;
-  boton.cornerRadius = 10;
+  boton.height = "46px";
+  boton.fontSize = TEXTO.menor;
+  boton.fontWeight = "600";
+  boton.cornerRadius = 9;
   boton.thickness = 1;
   boton.color = PALETA.borde;
   boton.background = PALETA.tarjetaSuave;
@@ -287,26 +403,68 @@ export function crearBotonOpcion(nombre: string, texto: string, ancho: number): 
 
   if (boton.textBlock) {
     boton.textBlock.color = PALETA.titulo;
-    boton.textBlock.textWrapping = true;
-    boton.textBlock.paddingLeft = "18px";
-    boton.textBlock.paddingRight = "18px";
     boton.textBlock.isHitTestVisible = false;
   }
 
   boton.onPointerEnterObservable.add(() => {
-    boton.background = "rgba(255,255,255,0.10)";
-    boton.color = "rgba(255,255,255,0.28)";
+    boton.color = PALETA.tenue;
+    if (boton.textBlock) boton.textBlock.color = PALETA.titulo;
   });
   boton.onPointerOutObservable.add(() => {
-    boton.background = PALETA.tarjetaSuave;
     boton.color = PALETA.borde;
   });
 
-  // El clic suena desde acá: cualquier botón construido con el sistema de
-  // diseño queda cubierto, sin tener que tocar pantalla por pantalla.
   boton.onPointerUpObservable.add(() => reproducir("boton"));
 
   return boton;
+}
+
+/**
+ * Escribe la letra del recuadro de un botón de opción.
+ *
+ * Va aparte de crearBotonOpcion porque la letra depende de la POSICIÓN en la
+ * lista, y eso lo sabe quien arma el panel, no el botón.
+ */
+export function rotularOpcion(boton: Button, letra: string): void {
+  const bloque = boton.getChildByName(`${boton.name}_casilla`) as Rectangle | null;
+  const texto = bloque?.getChildByName(`${boton.name}_letra`) as TextBlock | null;
+  if (texto) texto.text = letra;
+}
+
+/**
+ * Marca un botón de opción como acertado o errado.
+ *
+ * Concentrado acá para que todos los paneles del juego señalen igual. Antes
+ * cada pantalla lo resolvía a su manera —o no lo resolvía— y en el informe del
+ * Nivel 4 no se distinguía un ítem bien clasificado de uno mal.
+ */
+export function marcarOpcion(boton: Button, correcta: boolean): void {
+  const color = correcta ? PALETA.acierto : PALETA.error;
+
+  boton.color = color;
+  boton.background = correcta ? "rgba(127,180,149,0.16)" : "rgba(201,141,128,0.16)";
+
+  const acento = boton.getChildByName(`${boton.name}_acento`) as Rectangle | null;
+  if (acento) acento.background = color;
+
+  const casilla = boton.getChildByName(`${boton.name}_casilla`) as Rectangle | null;
+  if (casilla) {
+    casilla.color = color;
+    casilla.background = correcta ? "rgba(127,180,149,0.2)" : "rgba(201,141,128,0.2)";
+
+    const letra = casilla.getChildByName(`${boton.name}_letra`) as TextBlock | null;
+    if (letra) {
+      // El símbolo reemplaza a la letra: se reconoce sin leer y sin depender
+      // del color, que es lo que hace falta para quien no distingue verde de
+      // rojo.
+      letra.text = correcta ? "\u2713" : "\u2715";
+      letra.color = color;
+      letra.fontSize = TEXTO.menor;
+    }
+  }
+
+  const etiqueta = boton.getChildByName(`${boton.name}_texto`) as TextBlock | null;
+  if (etiqueta) etiqueta.color = PALETA.titulo;
 }
 
 /**

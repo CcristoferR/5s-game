@@ -106,7 +106,7 @@ export function cargarNivel5(
   contador.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(contador);
 
-  const puntos = datosControl.map((datos) =>
+  const puntos = datosControl.map((datos, indice) =>
     crearPuntoControl(
       scene,
       gui,
@@ -118,7 +118,11 @@ export function cargarNivel5(
       // El objeto que se exhibe tiene que ser el que nombra la descripción:
       // un punto que dice "ubicación del teléfono" mostrando una caja gris no
       // se puede auditar mirando, solo leyendo.
-      datos.objeto ?? "engrapadora"
+      datos.objeto ?? "engrapadora",
+      // El número va impreso en la estación: permite recorrer el galpón
+      // sabiendo cuántas faltan, y hablar de "el 3" en el informe final.
+      indice + 1,
+      datos.tituloControl
     )
   );
 

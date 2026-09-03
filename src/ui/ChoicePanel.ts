@@ -11,6 +11,8 @@ import {
   crearEspacio,
   crearDivisor,
   crearBotonOpcion,
+  rotularOpcion,
+  marcarOpcion,
   desvanecer,
 } from "./EstiloUI";
 
@@ -45,7 +47,10 @@ export function mostrarPanelOpciones(
 
   // El alto lo define el contenido: encabezado, pregunta y una fila por opción.
   // Fijarlo a mano obligaba a encoger el texto cuando la pregunta era larga.
-  const altoEstimado = 150 + 62 * opciones.length + 74;
+  // Se estima alto por opción: los botones ahora crecen con su texto, así que
+  // una pregunta con opciones largas necesita más tarjeta. 82 cubre dos
+  // renglones cómodos; con uno solo sobra un poco de aire, que no molesta.
+  const altoEstimado = 150 + 82 * opciones.length + 74;
   const tarjeta = crearTarjeta(velo, "tarjetaOpciones", ANCHO_TARJETA, altoEstimado);
   crearFilete(tarjeta, "fileteOpciones", ANCHO_TARJETA, PALETA.aviso);
 
@@ -75,6 +80,10 @@ export function mostrarPanelOpciones(
     boton.onPointerUpObservable.add(() => onElegir(opcion.id));
     columna.addControl(boton);
 
+    // La letra se pone DESPUÉS de agregar el botón: antes de estar en el árbol
+    // sus controles hijos todavía no se pueden buscar por nombre.
+    rotularOpcion(boton, String.fromCharCode(65 + i));
+
     if (i < opciones.length - 1) {
       columna.addControl(crearEspacio(`aireOpcion_${i}`, 10));
     }
@@ -99,9 +108,7 @@ export function mostrarPanelOpciones(
       const elegido = botonesPorOpcion.get(idOpcion);
       if (!elegido) return;
 
-      elegido.background = "rgba(127,180,149,0.22)";
-      elegido.color = PALETA.acierto;
-      if (elegido.textBlock) elegido.textBlock.color = PALETA.acierto;
+      marcarOpcion(elegido, true);
 
       // Las demás se apagan para que la vista quede en la elegida.
       botonesPorOpcion.forEach((boton, id) => {

@@ -3,7 +3,7 @@ import { texturaGrano, texturaConcreto } from "./TexturasSuperficie";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui";
 import { crearRotulo3D } from "./Rotulo3D";
 import { crearTelefono } from "./Level2Shapes";
-import { crearCarpeta, crearEngrapadora } from "./ObjetosComunes";
+import { crearCarpeta, crearEngrapadora, materialPintado } from "./ObjetosComunes";
 import type { TipoEvidencia } from "../data/levelConfig";
 
 /** Objetos que puede exhibir un punto de control. */
@@ -48,9 +48,11 @@ export function crearPuntoControl(
   z: number,
   descripcion: string,
   tipoEvidencia: TipoEvidencia,
-  objeto: ObjetoAuditado = "engrapadora"
+  objeto: ObjetoAuditado = "engrapadora",
+  numero = 1,
+  titulo = descripcion
 ): AuditPointResult {
-  const pedestal = crearPedestal(scene, id, x, z);
+  const pedestal = crearPedestal(scene, id, x, z, numero);
   const evidencia = crearEvidencia(scene, id, x, z, tipoEvidencia, objeto);
 
   // Marcador mas grande y mas bajo. Flotando a 80 cm sobre el pedestal quedaba
@@ -75,16 +77,23 @@ export function crearPuntoControl(
   // texto 2D anclado: con varios puntos repartidos por el garaje, las
   // descripciones se apilaban en el centro de la pantalla y no se sabía
   // cuál pertenecía a cuál.
-  crearRotulo3D(scene, `punto_${id}`, descripcion, new Vector3(x, ALTURA_PEDESTAL + 1.1, z), {
-    // Mas angosto y mas bajo: los rotulos anchos se solapaban entre si y
-    // tapaban la escena, que es lo que hay que mirar. El texto acompana a la
-    // evidencia, no la reemplaza.
-    ancho: 1.05,
-    alto: 0.3,
-    lineasMax: 3,
-    colorFondo: "#1d2227",
-    colorBorde: "rgba(255,255,255,0.3)",
+  // Cartel corto anclado a la estación, no una frase flotando.
+  //
+  // Antes cada punto colgaba su descripción completa en el aire: cinco frases
+  // de tres renglones a la vez tapaban justo la escena que hay que auditar, se
+  // solapaban entre ellas y no se sabía cuál iba con cuál. Ahora el cartel dice
+  // solo QUÉ se audita, y la frase completa vive en el informe final, donde hay
+  // sitio para leerla y donde de verdad hace falta.
+  crearRotulo3D(scene, `punto_${id}`, titulo, new Vector3(x, ALTURA_PEDESTAL + 0.98, z), {
+    ancho: 0.78,
+    alto: 0.2,
+    lineasMax: 1,
+    colorFondo: "#1a1f24",
+    colorBorde: "rgba(255,255,255,0.22)",
     mirarCamara: true,
+    // Letra grande pese al cartel chico: es la medida que decide si se lee
+    // desde donde se recorre el galpón. Con una sola palabra entra holgada.
+    alturaTextoMin: 0.1,
   });
 
   let marcado = false;
@@ -104,22 +113,100 @@ export function crearPuntoControl(
   return { mesh, estaMarcado: () => marcado, onCambio, meshesSombra: [pedestal, ...evidencia, mesh] };
 }
 
-function crearPedestal(scene: Scene, id: string, x: number, z: number): Mesh {
-  // Concreto texturado, igual que los pedestales y muebles del resto del
-  // juego. Antes era gris plano: al lado de los objetos texturados de los
-  // niveles 1 a 4, el Nivel 5 se veía de otra época.
-  const mat = new PBRMaterial(`matPedestal_${id}`, scene);
-  mat.albedoTexture = texturaConcreto(scene);
-  mat.albedoColor = new Color3(0.72, 0.7, 0.66);
-  mat.roughness = 0.6;
-  mat.metallic = 0.1;
+/**
+ * Estacion de inspeccion.
+ *
+ * Antes era un cilindro de concreto, y con la evidencia encima se leia como un
+ * tacho de basura con cosas apoyadas: la forma redonda y el gris sucio no
+ * dicen "esto es un puesto de control", dicen "esto es un tambor".
+ *
+ * Ahora es un mueble: base metalica, cuerpo de concreto, sobre claro con canto
+ * y un numero grande al frente. Eso hace tres cosas a la vez —le da identidad
+ * de estacion, la separa visualmente de la utileria del galpon, y numera los
+ * puntos para poder hablar de "el 3" en el informe.
+ */
+function crearPedestal(scene: Scene, id: string, x: number, z: number, numero: number): Mesh {
+  const ALTO_BASE = 0.1;
+  const ALTO_SOBRE = 0.06;
+  const ALTO_CUERPO = ALTURA_PEDESTAL - ALTO_BASE - ALTO_SOBRE;
+  const LADO = 0.72;
 
-  const pedestal = MeshBuilder.CreateCylinder(`pedestal_${id}`, { diameterTop: 0.78, diameterBottom: 0.66, height: ALTURA_PEDESTAL }, scene);
-  pedestal.position.set(x, ALTURA_PEDESTAL / 2, z);
-  pedestal.material = mat;
-  pedestal.receiveShadows = true;
+  const concreto = new PBRMaterial(`matPedestal_${id}`, scene);
+  concreto.albedoTexture = texturaConcreto(scene);
+  concreto.albedoColor = new Color3(0.62, 0.62, 0.6);
+  concreto.roughness = 0.65;
+  concreto.metallic = 0.05;
 
-  return pedestal;
+  const metal = new PBRMaterial(`matPedestalMetal_${id}`, scene);
+  metal.albedoColor = new Color3(0.26, 0.29, 0.32);
+  metal.roughness = 0.42;
+  metal.metallic = 0.75;
+  metal.microSurfaceTexture = texturaGrano(scene, 0.06);
+
+  // Cuerpo. Prismatico y no cilindrico: una cara plana al frente es lo que
+  // permite montarle el numero, y ademas quita el parecido con un tambor.
+  const cuerpo = MeshBuilder.CreateBox(
+    `pedestal_${id}`,
+    { width: LADO, height: ALTO_CUERPO, depth: LADO },
+    scene
+  );
+  cuerpo.position.set(x, ALTO_BASE + ALTO_CUERPO / 2, z);
+  cuerpo.material = concreto;
+  cuerpo.receiveShadows = true;
+
+  // Base: apoya el mueble en el piso en vez de dejarlo brotando de el.
+  const base = MeshBuilder.CreateBox(
+    `pedestalBase_${id}`,
+    { width: LADO + 0.08, height: ALTO_BASE, depth: LADO + 0.08 },
+    scene
+  );
+  base.position.set(x, ALTO_BASE / 2, z);
+  base.material = metal;
+  base.receiveShadows = true;
+
+  // Sobre: mas claro que el cuerpo para que la evidencia se recorte contra el.
+  // Con todo del mismo gris, los objetos oscuros desaparecian sobre la tapa.
+  const sobreMat = new PBRMaterial(`matPedestalSobre_${id}`, scene);
+  sobreMat.albedoColor = new Color3(0.82, 0.82, 0.79);
+  sobreMat.roughness = 0.5;
+  sobreMat.metallic = 0.08;
+  sobreMat.microSurfaceTexture = texturaGrano(scene, 0.05);
+
+  const sobre = MeshBuilder.CreateBox(
+    `pedestalSobre_${id}`,
+    { width: LADO + 0.06, height: ALTO_SOBRE, depth: LADO + 0.06 },
+    scene
+  );
+  sobre.position.set(x, ALTURA_PEDESTAL - ALTO_SOBRE / 2, z);
+  sobre.material = sobreMat;
+  sobre.receiveShadows = true;
+
+  // Numero al frente. Se lee desde lejos sin ocupar espacio en el aire, y es
+  // lo que permite recorrer el galpon sabiendo cuantas estaciones faltan.
+  const chapa = materialPintado(scene, `matPedestalNumero_${id}`, 256, 256, (ctx, w, h) => {
+    ctx.fillStyle = "#20262b";
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = "#586570";
+    ctx.lineWidth = 12;
+    ctx.strokeRect(14, 14, w - 28, h - 28);
+
+    ctx.fillStyle = "#e8edf0";
+    ctx.font = "bold 150px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(numero).padStart(2, "0"), w / 2, h / 2 + 6);
+  });
+
+  const numeroChapa = MeshBuilder.CreateBox(
+    `pedestalChapa_${id}`,
+    { width: 0.26, height: 0.26, depth: 0.014 },
+    scene
+  );
+  numeroChapa.position.set(x, ALTO_BASE + ALTO_CUERPO * 0.62, z - LADO / 2 - 0.007);
+  numeroChapa.material = chapa;
+
+  return cuerpo;
 }
 
 /**

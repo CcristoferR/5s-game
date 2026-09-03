@@ -37,6 +37,24 @@ function evidenciaAlAzar(): TipoEvidencia {
 // entrar o reintentar el nivel), así las desviaciones cambian cada vez —
 // cumpliendo lo que pide la guía: "desviaciones introducidas
 // aleatoriamente".
+/**
+ * Acorta el texto de un item del checklist para el cartel de la estacion.
+ *
+ * Los items los define el jugador en el Nivel 4, asi que no hay rotulos
+ * curados para ellos como si los hay para los puntos de respaldo. Se toman las
+ * primeras palabras sin cortar ninguna por la mitad: el cartel solo tiene que
+ * decir QUE se audita ahi, y la frase completa sigue estando en el informe
+ * final, donde hay sitio para leerla.
+ */
+function tituloCorto(texto: string): string {
+  const limpio = texto.trim();
+  if (limpio.length <= 22) return limpio;
+
+  const corte = limpio.slice(0, 22);
+  const ultimoEspacio = corte.lastIndexOf(" ");
+  return `${(ultimoEspacio > 10 ? corte.slice(0, ultimoEspacio) : corte).trim()}…`;
+}
+
 export function generarPuntosControlNivel5(estandar: EstandarNivel4): PuntoControlNivel5[] {
   const puntos: PuntoControlNivel5[] = [];
 
@@ -57,6 +75,7 @@ export function generarPuntosControlNivel5(estandar: EstandarNivel4): PuntoContr
         id: `chk_${item.id}`,
         posicion,
         descripcionControl: item.texto,
+        tituloControl: tituloCorto(item.texto),
         tieneDesviacion: true,
         tipoEvidencia: evidenciaAlAzar(),
         calificacion: 1,
@@ -72,6 +91,7 @@ export function generarPuntosControlNivel5(estandar: EstandarNivel4): PuntoContr
       id: `chk_${item.id}`,
       posicion,
       descripcionControl: item.texto,
+      tituloControl: tituloCorto(item.texto),
       tieneDesviacion: !cumple,
       tipoEvidencia: cumple ? "sinProblema" : evidenciaAlAzar(),
       calificacion,
@@ -96,6 +116,7 @@ export function generarPuntosControlNivel5(estandar: EstandarNivel4): PuntoContr
         id: `sen_${zona.zonaId}`,
         posicion,
         descripcionControl: `Código de color — ${zona.zonaDescripcion}`,
+        tituloControl: tituloCorto(`Código de color — ${zona.zonaDescripcion}`),
         tieneDesviacion: true,
         tipoEvidencia: "objetoFueraDeLugar",
         calificacion: 1,
@@ -110,6 +131,7 @@ export function generarPuntosControlNivel5(estandar: EstandarNivel4): PuntoContr
       id: `sen_${zona.zonaId}`,
       posicion,
       descripcionControl: `Código de color — ${zona.zonaDescripcion}`,
+      tituloControl: tituloCorto(`Código de color — ${zona.zonaDescripcion}`),
       tieneDesviacion: !cumple,
       tipoEvidencia: cumple ? "sinProblema" : "objetoFueraDeLugar",
       calificacion,

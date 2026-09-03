@@ -2,7 +2,7 @@ import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, Image, TextBlock } from "@babylonjs/gui";
 import { generarCertificado, descargarCertificado, compartirCertificado } from "../core/Certificate";
 import { emitirCertificado, explicarRechazo } from "../portal/Datos";
-import { PALETA, TEXTO, crearBotonPrincipal, crearBotonOpcion } from "./EstiloUI";
+import { PALETA, TEXTO, crearBotonPrincipal, crearBotonSecundario } from "./EstiloUI";
 
 /**
  * Pantalla del certificado.
@@ -53,7 +53,7 @@ export function mostrarCertificado(
     onCerrar();
   }
 
-  const botonCerrar = crearBotonOpcion("btnCerrarCert", "Volver al menú", 180);
+  const botonCerrar = crearBotonSecundario("btnCerrarCert", "Volver al menú", 180);
   botonCerrar.top = "398px";
   botonCerrar.onPointerUpObservable.add(cerrar);
   fondo.addControl(botonCerrar);
@@ -112,7 +112,7 @@ export function mostrarCertificado(
     );
     fondo.addControl(botonDescargar);
 
-    const botonCompartir = crearBotonOpcion("btnCompartirCert", "Compartir", 180);
+    const botonCompartir = crearBotonSecundario("btnCompartirCert", "Compartir", 180);
     botonCompartir.top = "338px";
     botonCompartir.left = "130px";
     botonCompartir.onPointerUpObservable.add(() =>
