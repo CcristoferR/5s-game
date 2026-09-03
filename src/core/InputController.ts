@@ -38,9 +38,19 @@ export function hacerArrastrable(
 
   let posicionAlAgarrar = mesh.position.clone();
 
+  // Escala del objeto antes de tomarlo, para devolvérsela al soltar.
+  let escalaBase = mesh.scaling.x;
+
   comportamiento.onDragStartObservable.add(() => {
     posicionAlAgarrar = mesh.position.clone();
-    mesh.scaling.setAll(1.15);
+    // La escala de agarre se calcula sobre la que TENGA el objeto, no sobre 1.
+    //
+    // Antes se fijaba 1,15 al tomar y 1 al soltar, dando por hecho que todos
+    // los objetos venían a tamaño natural. Desde que el Nivel 1 los agranda
+    // para que se distingan en el galpón, eso los encogía de golpe al primer
+    // clic y los dejaba diminutos para siempre.
+    escalaBase = mesh.scaling.x;
+    mesh.scaling.setAll(escalaBase * 1.15);
     reproducir("agarrar");
     onAgarrar.notifyObservers(mesh);
   });
@@ -59,7 +69,7 @@ export function hacerArrastrable(
   });
 
   comportamiento.onDragEndObservable.add(() => {
-    mesh.scaling.setAll(1);
+    mesh.scaling.setAll(escalaBase);
     ocultarSombraContacto(mesh.getScene());
     const distancia = Vector3.Distance(
       new Vector3(posicionAlAgarrar.x, 0, posicionAlAgarrar.z),

@@ -10,7 +10,11 @@ export interface DropZoneResult<T extends string> {
 // Medidas de la zona. Mas grandes que antes: en el garaje (12 x 19 m) los
 // cuadrados de 1.6 m se perdian en el piso; a 2.2 m leen como demarcacion de
 // area real, que es lo que son en una planta con 5S aplicado.
-const LADO = 2.2;
+// Ampliado de 2,2 a 2,8 m. Desde que los objetos se reparten por todo el
+// galpón y llegan a la zona en tamaño grande, el cuadro de 2,2 quedaba chico:
+// la docena de piezas clasificadas lo llenaba hasta el borde y el área se leía
+// apretada en vez de ordenada.
+const LADO = 2.8;
 const ANCHO_BORDE = 0.13;
 const Z_ZONA = 2.4;
 

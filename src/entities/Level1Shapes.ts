@@ -28,7 +28,7 @@ import {
  *
  *   NECESARIO   engrapadora, carpeta activa, cinta métrica, manual
  *   DESCARTAR   taza con café viejo, diario vencido, casco agrietado, chatarra
- *   DUDOSO      caja sin etiqueta, guantes de uso ocasional
+ *   TARJETA ROJA  caja sin etiqueta, guantes de uso ocasional
  *
  * La engrapadora, la carpeta y el manual se construyen en ObjetosComunes.ts,
  * porque también aparecen en el Nivel 2 y tienen que ser idénticos.

@@ -1,25 +1,241 @@
 // Datos del Nivel 1 (Seiri / Clasificar).
-export type ZonaClasificacion = "necesario" | "dudoso" | "descartar";
+// ---------------------------------------------------------------------------
+// Nivel 1 — Seiri (Seleccionar)
+// ---------------------------------------------------------------------------
+//
+// REESTRUCTURADO SEGÚN EL CURSO. Tres cambios de fondo respecto de la versión
+// anterior, cada uno con su fundamento en el material:
+//
+// 1. EL DESORDEN NO ESPERA ORDENADO SOBRE UNA MESA.
+//    Antes los diez objetos estaban alineados sobre el banco de trabajo, a la
+//    vista y al alcance. El curso dice lo contrario: el video 1.1 habla de
+//    "artículos inútiles o en desuso que están guardados en nuestros cajones o
+//    gavetas y a los cuales ya nos hemos acostumbrado", y el 3.1 muestra el
+//    caso del cajón lleno de cosas guardadas "por si acaso". El desorden se
+//    oculta y estorba: bloquea puertas, ocupa pasillos, llena repisas. Ahora
+//    los objetos están repartidos por el taller y hay que buscarlos.
+//
+// 2. NO EXISTE LA CATEGORÍA "DUDOSO".
+//    Era una invención que retrasa la decisión, y Seiri trata justamente de
+//    decidir. Lo que el curso plantea para lo que no se resuelve en el momento
+//    es la TARJETA ROJA, que no es una tercera pila: es un objeto marcado, con
+//    responsable y plazo, que se lleva al área de descarte.
+//
+// 3. LO PESADO NO SE MUEVE.
+//    Video 3.1: si un objeto innecesario es muy pesado, se le pone la tarjeta
+//    y se deja en su sitio, con un plazo para gestionar el traslado. Por eso
+//    algunos objetos no se pueden arrastrar y solo aceptan tarjeta.
+//
+// Y el metraje: el área de descarte "nos ayudará a medir en metros cuadrados
+// el área de innecesarios que hemos liberado" (3.1). De ahí que cada objeto
+// declare cuánto espacio libera.
+
+export type DestinoSeiri = "necesario" | "descartar" | "tarjetaRoja";
 
 export interface ObjetoNivel1 {
   id: string;
   nombreVisible: string;
   posicionInicial: [number, number, number];
-  zonaCorrecta: ZonaClasificacion;
+  /** Giro inicial. Lo tirado al voleo no está alineado con nada. */
+  rotacionY?: number;
+  /**
+   * Escala propia, si necesita destacar sobre las demás.
+   *
+   * La usa la caja que bloquea el portón: tiene que leerse como un bulto que
+   * impide el paso, no como un objeto más tirado en el suelo.
+   */
+  escala?: number;
+  destino: DestinoSeiri;
   explicacion: string;
+  /**
+   * No se puede arrastrar: solo admite tarjeta roja en su sitio.
+   *
+   * Video 3.1: "si un objeto innecesario es muy pesado, se le pone la tarjeta
+   * y se deja en su lugar, dando un plazo no mayor a un mes para gestionar su
+   * traslado".
+   */
+  pesado?: boolean;
+  /** Metros cuadrados de piso que libera al retirarse. */
+  metros: number;
+  /** Dónde estorbaba. Se muestra al examinarlo. */
+  donde: string;
 }
 
 export const objetosNivel1: ObjetoNivel1[] = [
-  { id: "engrapadora", nombreVisible: "Engrapadora", posicionInicial: [-1.7, 0.945, -0.82], zonaCorrecta: "necesario", explicacion: "Herramienta de uso diario en el puesto de trabajo." },
-  { id: "taza_cafe", nombreVisible: "Taza con café viejo", posicionInicial: [-0.85, 0.945, -0.82], zonaCorrecta: "descartar", explicacion: "Residuo que no debe permanecer en el área de trabajo." },
-  { id: "carpeta_activa", nombreVisible: "Carpeta 'Proyecto Activo'", posicionInicial: [0, 0.945, -0.82], zonaCorrecta: "necesario", explicacion: "Documentación en uso, se consulta con frecuencia." },
-  { id: "diario_viejo", nombreVisible: "Diario de hace 6 meses", posicionInicial: [0.85, 0.945, -0.82], zonaCorrecta: "descartar", explicacion: "Información desactualizada — ya no aporta valor vigente." },
-  { id: "caja_sin_etiqueta", nombreVisible: "Caja sin etiqueta", posicionInicial: [1.7, 0.945, -0.82], zonaCorrecta: "dudoso", explicacion: "No se sabe su contenido — requiere una tarjeta roja (red tag) para revisión antes de decidir si se mantiene o se descarta." },
-  { id: "casco_agrietado", nombreVisible: "Casco de seguridad agrietado", posicionInicial: [-1.7, 0.945, -0.18], zonaCorrecta: "descartar", explicacion: "Tiene una grieta visible en el domo — compromete la protección, no cumple norma de seguridad." },
-  { id: "cinta_metrica", nombreVisible: "Cinta métrica", posicionInicial: [-0.85, 0.945, -0.18], zonaCorrecta: "necesario", explicacion: "Herramienta de medición de uso frecuente en tareas de mantenimiento." },
-  { id: "guantes_ocasionales", nombreVisible: "Guantes de trabajo (uso ocasional)", posicionInicial: [0, 0.945, -0.18], zonaCorrecta: "dudoso", explicacion: "Están en buen estado pero se usan pocas veces al mes — requieren tarjeta roja para confirmar si siguen siendo necesarios en este puesto." },
-  { id: "chatarra_metal", nombreVisible: "Pieza de metal sin identificar", posicionInicial: [0.85, 0.945, -0.18], zonaCorrecta: "descartar", explicacion: "No corresponde a ningún equipo del área — chatarra sin función identificada." },
-  { id: "manual_procedimientos", nombreVisible: "Manual de procedimientos del área", posicionInicial: [1.7, 0.945, -0.18], zonaCorrecta: "necesario", explicacion: "Documento de referencia activa, se consulta para tareas del puesto." },
+  // --- Estorbando el paso al portón ---
+  {
+    id: "caja_sin_etiqueta",
+    nombreVisible: "Caja sin etiqueta",
+    // Delante del portón, apoyada sobre el pallet obsoleto. Es lo primero que
+    // se ve al entrar y lo que hace evidente que el paso está bloqueado.
+    // En el vano del portón. Es lo primero que se ve al mirar la salida y lo
+    // que hace evidente que el paso está tomado.
+    // Metida en el vano del portón, contra el marco. Bajada de escala 3,4 a
+    // 2,4: a 3,4 no cabía en el cuadro del área de descarte al clasificarla, y
+    // una vez etiquetada se encimaba con lo demás.
+    posicionInicial: [-0.5, 0, 5.75],
+    rotacionY: 0.22,
+    escala: 2.4,
+    destino: "tarjetaRoja",
+    metros: 0.55,
+    donde: "Bloqueando el acceso al portón",
+    explicacion:
+      "Nadie sabe qué contiene ni de quién es. No se puede decidir sin abrirla, así que lleva tarjeta roja con responsable y plazo — pero no se queda ocupando el paso mientras tanto.",
+  },
+  {
+    id: "chatarra_metal",
+    nombreVisible: "Pieza de metal sin identificar",
+    posicionInicial: [-1.95, 0, 3.95],
+    rotacionY: 1.1,
+    destino: "descartar",
+    metros: 0.14,
+    donde: "Tirada en el pasillo de circulación",
+    explicacion:
+      "No corresponde a ningún equipo del área y está en zona de paso. Chatarra sin función identificada: se descarta.",
+  },
+
+  // --- Acumulado sobre los pallets del fondo ---
+  {
+    id: "diario_viejo",
+    nombreVisible: "Diario de hace 6 meses",
+    posicionInicial: [1.15, 0, 4.4],
+    rotacionY: -0.25,
+    destino: "descartar",
+    metros: 0.1,
+    donde: "Tirado en el suelo, cerca del portón",
+    explicacion: "Información desactualizada — ya no aporta valor vigente.",
+  },
+  {
+    id: "guantes_ocasionales",
+    nombreVisible: "Guantes de trabajo (uso ocasional)",
+    posicionInicial: [-3.95, 0, 0.5],
+    rotacionY: -0.4,
+    destino: "tarjetaRoja",
+    metros: 0.08,
+    donde: "Olvidados en un rincón 'por si acaso'",
+    explicacion:
+      "Están en buen estado pero se usan pocas veces al mes. Es el caso del cajón del curso: se guarda por si acaso. Lleva tarjeta roja para que un responsable decida en plazo si sigue haciendo falta aquí.",
+  },
+
+  // --- Olvidado sobre los tambores ---
+  {
+    id: "taza_cafe",
+    nombreVisible: "Taza con café viejo",
+    // Al suelo: el tambor que la sostenía se quitó al reordenar la
+    // ambientación, y encima quedaba dentro del volumen de clic de la pila
+    // registrable, que se llevaba el clic antes que ella.
+    posicionInicial: [1.35, 0, -0.75],
+    destino: "descartar",
+    metros: 0.05,
+    donde: "Olvidada en el suelo del taller",
+    explicacion:
+      "Residuo que no debe permanecer en el área. El curso lo dice sin rodeos: la basura es basura, no hace falta evaluarla ni etiquetarla.",
+  },
+
+  // --- En la estantería, mezclado bueno con malo ---
+  {
+    id: "engrapadora",
+    nombreVisible: "Engrapadora",
+    posicionInicial: [3.75, 0, 0.45],
+    destino: "necesario",
+    metros: 0,
+    donde: "Tirada en medio del taller",
+    explicacion: "Herramienta de uso diario en el puesto de trabajo.",
+  },
+  {
+    id: "manual_procedimientos",
+    nombreVisible: "Manual de procedimientos del área",
+    posicionInicial: [-2.45, 0, -0.45],
+    rotacionY: 0.1,
+    destino: "necesario",
+    metros: 0,
+    donde: "En el suelo, junto al puesto",
+    explicacion: "Documento de referencia activa: se consulta para tareas del puesto.",
+  },
+  {
+    id: "casco_agrietado",
+    nombreVisible: "Casco de seguridad agrietado",
+    posicionInicial: [2.05, 0, -0.6],
+    rotacionY: 0.8,
+    destino: "descartar",
+    metros: 0.12,
+    donde: "Tirado en el suelo del taller",
+    explicacion:
+      "Tiene una grieta visible en el domo — compromete la protección y no cumple norma de seguridad. Un equipo dañado no se guarda 'por si acaso': se descarta.",
+  },
+
+  // --- Caído donde nadie mira ---
+  {
+    id: "cinta_metrica",
+    nombreVisible: "Cinta métrica",
+    posicionInicial: [-4.9, 0, 0.15],
+    rotacionY: 1.4,
+    destino: "necesario",
+    metros: 0,
+    donde: "Caída junto a la pared, donde nadie mira",
+    explicacion:
+      "Herramienta de medición de uso frecuente. Está en mal sitio, pero es necesaria: va a la zona de necesarios, no a la basura.",
+  },
+  {
+    id: "carpeta_activa",
+    nombreVisible: "Carpeta 'Proyecto Activo'",
+    posicionInicial: [0.45, 0, 0.85],
+    rotacionY: -0.6,
+    destino: "necesario",
+    metros: 0,
+    donde: "En el suelo, en plena zona de paso",
+    explicacion: "Documentación en uso, se consulta con frecuencia.",
+  },
+];
+
+/**
+ * Objetos pesados: no se arrastran, solo aceptan tarjeta roja en su sitio.
+ *
+ * Se declaran aparte porque no comparten mecánica con los demás y porque su
+ * forma sale de la utilería del taller que ya existe — un pallet cargado y una
+ * pila de tambores— en vez de modelarse otra vez.
+ */
+export interface PesadoNivel1 {
+  id: string;
+  nombreVisible: string;
+  posicion: [number, number];
+  forma: "pallet" | "tambores" | "pila";
+  metros: number;
+  donde: string;
+  explicacion: string;
+}
+
+export const pesadosNivel1: PesadoNivel1[] = [
+  {
+    id: "pallet_obsoleto",
+    nombreVisible: "Pallet con material obsoleto",
+    posicion: [-2.6, 5.45],
+    forma: "pallet",
+    metros: 1.44,
+    donde: "Atravesado en el pasillo del fondo",
+    explicacion:
+      "Material de una línea que ya no se produce. Es demasiado pesado para retirarlo ahora, así que se etiqueta en su sitio con un plazo no mayor a un mes para gestionar el traslado.",
+  },
+  {
+    id: "tambores_vacios",
+    nombreVisible: "Tambores vacíos (6 unidades)",
+    posicion: [2.9, 5.15],
+    forma: "tambores",
+    metros: 0.9,
+    donde: "Apilados delante del portón lateral",
+    explicacion:
+      "Están vacíos desde hace meses y nadie los reclama. Se marcan con una sola tarjeta para el conjunto: son el mismo material, con el mismo destino y el mismo responsable. Retirarlos requiere transporte, no se resuelve moviéndolos a mano.",
+  },
+  {
+    id: "cajas_apiladas",
+    nombreVisible: "Pila de cajas sin identificar",
+    posicion: [5.25, 4.4],
+    forma: "pila",
+    metros: 0.81,
+    donde: "Amontonadas contra la pared derecha",
+    explicacion:
+      "Ninguna tiene rótulo y llevan meses ahí. Una tarjeta para toda la pila: no tiene sentido etiquetar caja por caja cuando comparten origen, destino y responsable — eso solo multiplica el papeleo sin acelerar la decisión.",
+  },
 ];
 
 // Datos del Nivel 2 (Seiton / Ordenar).
@@ -305,7 +521,7 @@ export const microLeccionesNiveles: Record<number, MicroLeccionNivel> = {
   1: {
     titulo: "¿Qué es una tarjeta roja?",
     texto:
-      "En la metodología 5S, la zona 'Dudoso' representa objetos que reciben una tarjeta roja física: quedan marcados para revisión, en vez de decidir su destino a la ligera.",
+      "Es la etiqueta que se pone a lo innecesario que no se puede resolver en el momento. Siempre lleva dos datos: un responsable que le haga seguimiento y un plazo para tomar acción. Sin ellos la etiqueta se queda puesta para siempre, y eso es el mismo desorden con otro nombre. Si el objeto es muy pesado, se etiqueta en su sitio con un plazo no mayor a un mes.",
   },
   2: {
     titulo: "¿Qué es un shadow board?",

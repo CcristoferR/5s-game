@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3 } from "@babylonjs/core";
-import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
+import { texturaGrano, texturaCarton, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 
 // ---------------------------------------------------------------------------
 // Utilería de taller
@@ -471,4 +471,62 @@ export function crearTableroHerramientas(scene: Scene, x: number, z: number, gir
   repisa.rotation.y = giroY;
   repisa.material = material(scene, `matRepisaHerr_${id}`, new Color3(0.34, 0.38, 0.41), 0.5, 0.4);
   repisa.receiveShadows = true;
+}
+
+/**
+ * Pila de cajas amontonadas en el suelo, sin pallet.
+ *
+ * Pieza pensada para el Nivel 1 y para el desorden en general. Todo lo que
+ * habia hasta ahora estaba ORDENADO —cajas sobre pallets, bultos en baldas,
+ * tambores alineados— porque servia para ambientar un taller en uso. Para
+ * Seiri hace falta lo contrario: material apilado donde cayo, torcido y sin
+ * base, que es como se acumula lo que nadie decidio que hacer.
+ *
+ * @param cantidad  Cuantas cajas. Entre tres y seis se lee como monton; mas
+ *                  arriba parece una torre construida a proposito.
+ */
+export function crearPilaDeCajas(scene: Scene, x: number, z: number, cantidad = 4): void {
+  const id = `${x}_${z}`;
+
+  const carton = new PBRMaterial(`matPilaCarton_${id}`, scene);
+  carton.albedoTexture = texturaCarton(scene);
+  carton.albedoColor = new Color3(0.76, 0.63, 0.45);
+  carton.roughness = 0.92;
+  carton.metallic = 0;
+
+  const cintaMat = material(scene, `matPilaCinta_${id}`, new Color3(0.82, 0.76, 0.62), 0.8, 0);
+
+  let altura = 0;
+
+  for (let i = 0; i < cantidad; i++) {
+    // Cada caja mide distinto: una pila de cajas iguales se lee como un
+    // bloque repetido, no como material acumulado con el tiempo.
+    const ancho = 0.42 + Math.random() * 0.3;
+    const alto = 0.26 + Math.random() * 0.16;
+    const fondo = 0.36 + Math.random() * 0.24;
+
+    const caja = MeshBuilder.CreateBox(`pilaCaja_${id}_${i}`, { width: ancho, height: alto, depth: fondo }, scene);
+
+    // Cada una desplazada y girada respecto de la de abajo. El desalineado es
+    // lo que distingue un monton de una estiba.
+    caja.position.set(
+      x + (Math.random() - 0.5) * 0.3,
+      altura + alto / 2,
+      z + (Math.random() - 0.5) * 0.3
+    );
+    caja.rotation.y = (Math.random() - 0.5) * 0.9;
+    // Inclinacion minima: apenas la suficiente para que no parezca apilado a
+    // escuadra, sin llegar a verse flotando.
+    caja.rotation.z = (Math.random() - 0.5) * 0.06;
+    caja.material = carton;
+    caja.receiveShadows = true;
+
+    // Cinta de embalaje cruzando la tapa.
+    const cinta = MeshBuilder.CreateBox(`pilaCinta_${id}_${i}`, { width: 0.07, height: 0.004, depth: fondo + 0.01 }, scene);
+    cinta.position.set(caja.position.x, altura + alto + 0.002, caja.position.z);
+    cinta.rotation.y = caja.rotation.y;
+    cinta.material = cintaMat;
+
+    altura += alto;
+  }
 }

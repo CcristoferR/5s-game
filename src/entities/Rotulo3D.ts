@@ -51,7 +51,20 @@ export interface OpcionesRotulo {
 // píxeles de los que el cartel ocupa en pantalla cuando la cámara se acerca
 // a su límite (4,5 m), y el texto se veía estirado y pixelado. A 512 sobra
 // resolución en todo el rango de zoom.
-const RESOLUCION = 640;
+/**
+ * Píxeles de textura por metro de cartel.
+ *
+ * Subido de 640 a 1400. A 640 un rótulo de 1,5 m se dibujaba con 960 px de
+ * ancho, y como el lienzo del juego se muestra sobre más píxeles físicos de
+ * los que tiene —la escala de Windows—, esa textura se agrandaba dos veces
+ * seguidas: la del cartel y la del lienzo. El resultado era texto blando que
+ * no mejoraba ni acercándose.
+ *
+ * A 1400 el mismo cartel se dibuja con 2100 px y aguanta el acercamiento.
+ * Cuesta memoria de vídeo, pero son unos pocos carteles por nivel y son
+ * justamente lo que hay que poder leer.
+ */
+const RESOLUCION = 1400;
 
 export function crearRotulo3D(
   scene: Scene,

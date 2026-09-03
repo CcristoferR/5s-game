@@ -6,6 +6,7 @@ import {
   crearCarroDeLimpieza,
   crearSenalPisoMojado,
   crearTableroHerramientas,
+  crearPilaDeCajas,
 } from "./WorkshopProps";
 
 // ---------------------------------------------------------------------------
@@ -56,12 +57,45 @@ export function ambientarNivel(scene: Scene, numeroNivel: number): void {
       break;
 
     case 1:
-      // Seiri: acumulación. Dos pallets, tambores y estantería llena — la sala
-      // tiene que dar la sensación de que sobra material antes de clasificar.
-      crearPalletConCajas(scene, -5.0, 4.6);
-      crearPalletConCajas(scene, -5.1, 2.9);
-      crearTamboresAceite(scene, 5.0, 3.4);
-      crearEstanteriaTaller(scene, 5.1, 0.9, -Math.PI / 2);
+      // Seiri: SATURADO. Es el único nivel donde el exceso es el mensaje.
+      //
+      // El curso arranca pidiendo visualizar el desorden acumulado —cajones
+      // llenos de cosas guardadas "por si acaso", material que estorba y al
+      // que uno ya se acostumbró—. Si la sala se ve despejada, el ejercicio
+      // pierde sentido antes de empezar: no hay nada que seleccionar.
+      //
+      // Por eso acá hay el doble de utilería que en los demás niveles, y
+      // apretada contra los pasillos en vez de ordenada contra las paredes.
+      // Los objetos de juego se reparten ENTRE estas piezas.
+      // NADA PROLIJO EN ESTE NIVEL.
+      //
+      // Las estanterías con sus bultos alineados y los pallets bien estibados
+      // sirven para los niveles 2 a 5, donde el taller ya está en orden. Acá
+      // contradicen el ejercicio: si el fondo se ve organizado, el desorden
+      // parece limitado a las diez piezas que hay que clasificar.
+      //
+      // Por eso el Nivel 1 se arma casi solo con pilas sueltas —cajas
+      // amontonadas donde cayeron, giradas y de medidas distintas— y deja una
+      // sola estantería, medio vacía, contra la pared.
+      crearEstanteriaTaller(scene, -5.1, 0.9, Math.PI / 2);
+
+      crearPilaDeCajas(scene, -4.9, 4.5, 5);
+      crearPilaDeCajas(scene, -3.6, 5.3, 4);
+      crearPilaDeCajas(scene, -1.7, 5.6, 3);
+      crearPilaDeCajas(scene, 1.3, 5.6, 4);
+      crearPilaDeCajas(scene, 4.6, 4.3, 5);
+      crearPilaDeCajas(scene, 5.3, 1.4, 3);
+      crearPilaDeCajas(scene, -5.2, 2.6, 4);
+      crearPilaDeCajas(scene, 4.2, 0.4, 2);
+
+      // El carro abandonado en medio del paso, no estacionado contra la pared:
+      // en un taller sin Seiri, los medios auxiliares también estorban.
+      // Fuera de las zonas de clasificación.
+      //
+      // Estaba en (3.3, 3.0), que cae DENTRO del cuadro del área de descarte
+      // —x de 1,5 a 3,7 y z de 1,3 a 3,5—. Se veía una escoba plantada en
+      // medio de la zona roja, como si formara parte del ejercicio.
+      crearCarroDeLimpieza(scene, 4.6, -0.9, 0.7);
       break;
 
     case 2:

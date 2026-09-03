@@ -1,6 +1,7 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, Color3, Vector3, Mesh, ActionManager, ExecuteCodeAction } from "@babylonjs/core";
+import { TextBlock, Control } from "@babylonjs/gui";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
-import { objetosNivel1, type ZonaClasificacion, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import { objetosNivel1, pesadosNivel1, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
@@ -9,25 +10,44 @@ import { moverMalla, luegoDe } from "../core/Animacion";
 import { crearDropZone } from "../entities/DropZone";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { ambientarNivel } from "../entities/AmbienteNivel";
-import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
+import { crearRotulo3D } from "../entities/Rotulo3D";
+import { crearPalletConCajas, crearTamboresAceite, crearPilaDeCajas } from "../entities/WorkshopProps";
+import { pedirDatosTarjeta, colocarTarjetaRoja, crearAreaDescarte } from "../entities/TarjetaRoja";
+import { reproducir } from "../core/Sonido";
+import { TEXTO } from "../ui/EstiloUI";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 
-// Separacion entre zonas. Se abrio de 2 a 2.7 m porque las zonas ahora miden
-// 2.2 m de lado (antes 1.6): a la separacion vieja las demarcaciones quedaban
-// pegadas una con otra y no se leian como areas distintas.
-const posicionesZonas: Record<ZonaClasificacion, number> = {
-  necesario: -2.7,
-  dudoso: 0,
-  descartar: 2.7,
-};
+/**
+ * Profundidad de las dos zonas de clasificación.
+ *
+ * Se mantienen adelante, cerca de la cámara: los objetos ahora vienen de todo
+ * el galpón, así que las zonas son el punto de llegada y conviene que estén
+ * siempre a la vista mientras se recorre el fondo buscando.
+ */
+const Z_ZONA = 2.4;
 
-const etiquetasZonas: Record<ZonaClasificacion, string> = {
-  necesario: "NECESARIO",
-  dudoso: "DUDOSO",
-  descartar: "DESCARTAR",
-};
+/**
+ * Aumento de los objetos del nivel.
+ *
+ * Subido de 1,7 a 2,2 tras probarlo en el galpón: a 1,7 las piezas chicas
+ * —cinta métrica, engrapadora— seguían costando de distinguir desde el otro
+ * extremo, y en este nivel hay que ENCONTRARLAS antes de clasificarlas.
+ */
+const ESCALA_OBJETO = 2.2;
+
+/**
+ * Apoya una malla sobre una superficie, sea cual sea su escala.
+ *
+ * Mide la caja envolvente ya escalada y corrige la altura, así que ningún
+ * objeto queda flotando ni hundido en la balda.
+ */
+function apoyarSobre(malla: Mesh, alturaSuperficie: number): void {
+  malla.computeWorldMatrix(true);
+  const base = malla.getBoundingInfo().boundingBox.minimumWorld.y;
+  malla.position.y += alturaSuperficie - base;
+}
 
 export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
@@ -57,203 +77,432 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   suelo.position.y = -0.02;
   suelo.isVisible = false;
 
-  crearBancoDeTrabajo(scene);
+  // SIN BANCO DE TRABAJO EN ESTE NIVEL.
+  //
+  // La mesa era el centro de la escena y con ella los objetos volvían a
+  // ordenarse solos encima. Seiri no empieza con todo dispuesto sobre una
+  // superficie: empieza con el material donde estorba. Quitarla libera el
+  // centro para las dos zonas y obliga a recorrer el galpón.
+  //
+  // Los demás niveles la conservan: en el 2 es la estación de trabajo.
 
-  crearSenalTarjetaRoja(scene, posicionesZonas.dudoso);
+  // Panel de apertura: explica de qué va la S antes de empezar.
+  // Panel de apertura: explica de qué va la S antes de empezar. El cronómetro
+  // no arranca acá — arranca con el primer objeto que se toca, así que leer no
+  // cuesta puntos.
+  // El callback va VACÍO a propósito.
+  //
+  // Antes daba una indicación con hud.mostrarFeedback(true, ...), y esa
+  // función no solo escribe un cartel: reproduce el sonido de acierto y lanza
+  // las chispas de celebración. O sea que el juego felicitaba al jugador al
+  // cerrar el panel de apertura, antes de que hubiera hecho absolutamente
+  // nada — y encima gastaba el efecto que debería marcar el primer acierto.
+  //
+  // El objetivo del nivel ya está permanente en el panel del HUD, así que no
+  // hace falta anunciarlo por otra vía.
+  mostrarAperturaNivel(scene, 1, briefingsNiveles[1], microLeccionesNiveles[1], () => {});
 
-  const objetos = objetosNivel1.map((datos) => crearObjetoInteractable(scene, datos, crearFormaNivel1));
+  // ===================================================================
+  // OBJETOS REPARTIDOS POR EL TALLER
+  // ===================================================================
+  //
+  // Ya no hay una fila de objetos sobre el banco. Cada uno está donde
+  // estorbaría de verdad —bloqueando el portón, tirado en el pasillo,
+  // olvidado en una repisa, caído detrás de la estantería— y el jugador
+  // tiene que recorrer el galpón para encontrarlos.
+  //
+  // El banco sigue en escena, pero como mueble: sostiene dos objetos, no diez.
+  const objetos = objetosNivel1.map((datos) => {
+    const objeto = crearObjetoInteractable(scene, datos, crearFormaNivel1);
 
-  // Realce al pasar el cursor: solo sobre los objetos agarrables, nunca
-  // sobre el piso ni el mobiliario del garaje. Se le pasa la lista para
-  // eso — si detectara solo lo seleccionable, marcaría media escena.
+    // Aumentados respecto de su tamaño real.
+    //
+    // A escala 1:1 una engrapadora mide 15 cm y el galpón mide 12 x 19 m: en
+    // pantalla eran motas, y peor todavía repartidas por todo el recinto en
+    // vez de alineadas sobre una mesa. Agrandados se reconocen desde el otro
+    // extremo, que es condición para poder buscarlos.
+    objeto.mesh.scaling.setAll(datos.escala ?? ESCALA_OBJETO);
+
+    const [px, superficieY, pz] = datos.posicionInicial;
+    objeto.mesh.position.set(px, superficieY, pz);
+    if (datos.rotacionY !== undefined) objeto.mesh.rotation.y = datos.rotacionY;
+
+    // La altura del dato es la de la SUPERFICIE donde se apoya —el piso, la
+    // tapa de un pallet, una balda— y acá se corrige para que quede encima y
+    // no atravesándola ni flotando. Con la escala aplicada ninguna altura fija
+    // serviría: cada pieza mide distinto.
+    apoyarSobre(objeto.mesh, superficieY);
+
+    return objeto;
+  });
+
+  // ===================================================================
+  // PESADOS: NO SE MUEVEN
+  // ===================================================================
+  //
+  // Video 3.1: si un objeto innecesario es muy pesado, se le pone la tarjeta y
+  // se DEJA EN SU LUGAR, con un plazo para gestionar el traslado. Intentar
+  // arrastrarlos sería enseñar lo contrario, así que directamente no se
+  // arrastran: solo aceptan tarjeta roja.
+  //
+  // Su forma sale de la utilería del taller que ya existía, sin modelar nada
+  // nuevo.
+  const pesados = pesadosNivel1.map((datos) => {
+    const [px, pz] = datos.posicion;
+    if (datos.forma === "pallet") crearPalletConCajas(scene, px, pz);
+    else if (datos.forma === "tambores") crearTamboresAceite(scene, px, pz);
+    else crearPilaDeCajas(scene, px, pz, 5);
+
+    // Zona de clic propia: la utilería del taller no es interactuable, así que
+    // se le monta encima un volumen invisible que sí lo es. Evita tener que
+    // rehacer esas piezas solo para poder pincharlas.
+    const zona = MeshBuilder.CreateBox(`pesado_${datos.id}`, { width: 1.3, height: 1.1, depth: 1.3 }, scene);
+    zona.position.set(px, 0.6, pz);
+
+    // TRANSPARENTE, NO INVISIBLE. La diferencia decide si funciona o no.
+    //
+    // isVisible = false lo saca del sondeo de punteros —Babylon descarta lo
+    // invisible antes de comprobar si es pinchable— así que el volumen no
+    // recibía nunca el clic y los dos objetos pesados eran imposibles de
+    // etiquetar. Con visibility = 0 la malla sigue "visible" para el sondeo
+    // pero no se dibuja.
+    zona.visibility = 0;
+    zona.isPickable = true;
+
+    // Rótulo permanente. Los objetos sueltos avisan al pasar el cursor por
+    // encima, pero estos son utilería del taller: sin un cartel no hay nada
+    // que insinúe que se puede actuar sobre ellos.
+    crearRotulo3D(scene, `pesado_${datos.id}`, datos.nombreVisible, new Vector3(px, 1.35, pz), {
+      ancho: 1.5,
+      alto: 0.26,
+      lineasMax: 2,
+      colorFondo: "#1a1f24",
+      colorBorde: "rgba(255,255,255,0.22)",
+      mirarCamara: true,
+      alturaTextoMin: 0.075,
+    });
+
+    return { datos, zona, etiquetado: false };
+  });
+
   const realce = habilitarRealceAlPasar(scene, objetos.map((o) => o.mesh));
 
-  // Al pasar el cursor por un objeto se muestra su nombre y se lo resalta.
-  //
-  // Es información necesaria para jugar, no un adorno: el nivel pide clasificar
-  // diez objetos, y por buena que sea la forma, alguien que juega por primera
-  // vez no puede saber si una caja marrón es 'caja sin etiqueta' o 'chatarra'.
-  // Sin el nombre, la decisión se vuelve adivinanza.
   habilitarEtiquetasAlPasar(
     scene,
     gui,
-    objetos.map((objeto) => ({ mesh: objeto.mesh, texto: objeto.datos.nombreVisible }))
+    objetos.map((o) => ({ mesh: o.mesh, texto: o.datos.nombreVisible }))
   );
 
-  const zonaNecesario = crearDropZone(scene, "necesario", posicionesZonas.necesario, new Color3(0.2, 0.7, 0.3), gui, etiquetasZonas.necesario);
-  const zonaDudoso = crearDropZone(scene, "dudoso", posicionesZonas.dudoso, new Color3(0.85, 0.7, 0.15), gui, etiquetasZonas.dudoso);
-  const zonaDescartar = crearDropZone(scene, "descartar", posicionesZonas.descartar, new Color3(0.75, 0.2, 0.2), gui, etiquetasZonas.descartar);
-
-  // APERTURA DEL NIVEL
+  // ===================================================================
+  // DOS ZONAS, NO TRES
+  // ===================================================================
   //
-  // Primero se plantea la situación y la decisión a resolver, después el
-  // concepto de la fase, y recién al cerrar todo eso empieza a correr el
-  // nivel. Por eso el cronómetro arranca en false y se reinicia dentro de
-  // arrancarNivel: si contara desde la carga, el tiempo de lectura entraría
-  // en el puntaje y leer el contexto saldría caro.
+  // Desapareció "Dudoso". Era una tercera pila donde ir dejando lo que no se
+  // quería decidir, y Seiri consiste justamente en decidir. Lo que el curso
+  // plantea para lo no resuelto es la tarjeta roja: el objeto queda marcado
+  // con responsable y plazo, y va igual al área de descarte.
+  const zonaNecesario = crearDropZone(
+    scene,
+    "necesario",
+    -3.0,
+    new Color3(0.2, 0.7, 0.3),
+    gui,
+    "NECESARIO — se queda en el área"
+  );
+
+  // Área de descarte con su cinta roja perimetral. Video 3.1: los objetos
+  // etiquetados "deben ser llevados a un lugar específico al cual llamaremos
+  // área de descarte", que además permite medir en metros cuadrados lo
+  // liberado.
+  const zonaDescarte = crearDropZone(
+    scene,
+    "descartar",
+    3.0,
+    new Color3(0.75, 0.2, 0.2),
+    gui,
+    "ÁREA DE DESCARTE"
+  );
+  crearAreaDescarte(scene, 3.0, Z_ZONA, 3.2, 3.2);
+
   let inicioNivel = performance.now();
   let corriendoTiempo = false;
 
-  function arrancarNivel(): void {
-    // El cronómetro del ranking arranca junto con el del nivel: leer la
-    // apertura no cuenta como tiempo de juego.
-    GameManager.getInstance().iniciarCronometroNivel();
-    inicioNivel = performance.now();
-    corriendoTiempo = true;
-  }
+  hud.definirObjetivo("Recorre el taller y clasifica lo que estorba.");
+  hud.definirTotalTarea(objetosNivel1.length + pesadosNivel1.length);
 
-  mostrarAperturaNivel(
-    scene,
-    1,
-    briefingsNiveles[1],
-    microLeccionesNiveles[1],
-    arrancarNivel
+  // Metros cuadrados liberados. Es el indicador que el curso propone para
+  // dimensionar el resultado de la 1S, y aquí es el que le da sentido a mover
+  // un pallet entero frente a tirar una taza.
+  let metrosLiberados = 0;
+  const metrosTotales =
+    objetosNivel1.reduce((suma, o) => suma + o.metros, 0) +
+    pesadosNivel1.reduce((suma, o) => suma + o.metros, 0);
+
+  const contadorEspacio = new TextBlock(
+    "espacioRecuperado",
+    `Espacio recuperado: 0,00 m² de ${metrosTotales.toFixed(2).replace(".", ",")} m²`
   );
+  contadorEspacio.color = "white";
+  contadorEspacio.fontSize = TEXTO.cuerpo;
+  contadorEspacio.fontWeight = "600";
+  contadorEspacio.outlineWidth = 3;
+  contadorEspacio.outlineColor = "rgba(0,0,0,0.6)";
+  contadorEspacio.top = "-96px";
+  contadorEspacio.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+  gui.addControl(contadorEspacio);
 
-  scene.onBeforeRenderObservable.add(() => {
-    if (!corriendoTiempo) return;
-    const segundos = Math.floor((performance.now() - inicioNivel) / 1000);
-    hud.actualizarTiempo(segundos);
+  const sumarMetros = (metros: number): void => {
+    if (metros <= 0) return;
+    metrosLiberados += metros;
+    contadorEspacio.text = `Espacio recuperado: ${metrosLiberados
+      .toFixed(2)
+      .replace(".", ",")} m² de ${metrosTotales.toFixed(2).replace(".", ",")} m²`;
+  };
+
+  let resueltos = 0;
+  let tarjetasEmitidas = 0;
+  const conteo = { necesario: 0, descartar: 0, tarjetaRoja: 0 };
+
+  const registrarAvance = (): void => {
+    resueltos++;
+    hud.actualizarProgreso(resueltos);
+
+    if (resueltos < objetosNivel1.length + pesadosNivel1.length) return;
+
+    const segundosTotales = Math.round((performance.now() - inicioNivel) / 1000);
+    const bonusTiempo = Math.max(0, 120 - segundosTotales);
+    gameManager.sumarPuntos(bonusTiempo);
+    onCompletado();
+
+    hud.mostrarFeedback(
+      true,
+      `Clasificación completa · ${metrosLiberados.toFixed(2).replace(".", ",")} m² liberados · ` +
+        `${conteo.tarjetaRoja} tarjeta${conteo.tarjetaRoja === 1 ? "" : "s"} roja${
+          conteo.tarjetaRoja === 1 ? "" : "s"
+        } emitida${conteo.tarjetaRoja === 1 ? "" : "s"}`
+    );
+
+    luegoDe(scene, 1200, () => {
+      preguntarCierreDeNivel(gui, hud, 1, (cierre) => {
+        luegoDe(scene, 700, () => {
+          hud.mostrarResultadoFinal(
+            "Nivel 1",
+            resueltos * 10,
+            bonusTiempo,
+            segundosTotales,
+            onVolverMenu,
+            cierre
+          );
+        });
+      });
+    });
+  };
+
+  // ===================================================================
+  // TARJETA ROJA SOBRE LOS PESADOS
+  // ===================================================================
+  pesados.forEach((pesado) => {
+    pesado.zona.actionManager = new ActionManager(scene);
+    pesado.zona.actionManager.registerAction(
+      new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
+        if (pesado.etiquetado) return;
+
+        if (!corriendoTiempo) {
+          corriendoTiempo = true;
+          inicioNivel = performance.now();
+        }
+
+        pedirDatosTarjeta(gui, pesado.datos.nombreVisible, pesado.datos.donde, (datos) => {
+          if (!datos) return;
+
+          pesado.etiquetado = true;
+          tarjetasEmitidas++;
+          conteo.tarjetaRoja++;
+
+          const [px, pz] = pesado.datos.posicion;
+
+          // Altura según lo que se etiqueta, y siempre POR DELANTE del bulto.
+          //
+          // Antes iba a 0,62 m fijos y desplazada de lado: sobre el pallet
+          // funcionaba, pero dentro de la pila de cajas —que llega al metro y
+          // medio— la tarjeta quedaba enterrada entre los bultos y no se veía
+          // aparecer. Cada forma tiene su altura y la tarjeta se adelanta para
+          // que nada la tape.
+          const alturaTarjeta =
+            pesado.datos.forma === "pila" ? 1.5 : pesado.datos.forma === "tambores" ? 1.0 : 0.55;
+
+          colocarTarjetaRoja(
+            scene,
+            pesado.datos.id,
+            px,
+            alturaTarjeta,
+            pz - 0.8,
+            tarjetasEmitidas,
+            datos
+          );
+
+          // Suma metros aunque no se mueva: el espacio sigue ocupado hoy, pero
+          // ya está comprometido con responsable y plazo. Es exactamente lo
+          // que mide el área de descarte del curso.
+          sumarMetros(pesado.datos.metros);
+          reproducir("acierto");
+          hud.mostrarFeedback(true, pesado.datos.explicacion);
+          registrarAvance();
+        });
+      })
+    );
   });
 
-  let objetosResueltos = 0;
-
-  // Progreso en el panel: la cuenta ya existía para calcular el puntaje, solo
-  // no se estaba mostrando mientras se jugaba.
-  hud.definirTotalTarea(objetos.length);
-  const conteoZonas: Record<ZonaClasificacion, number> = { necesario: 0, dudoso: 0, descartar: 0 };
-
-  // Z de las zonas de piso y medio lado util, definidos en DropZone.
-  const Z_ZONA = 2.4;
-  const MEDIO_LADO_UTIL = 0.62;
+  // ===================================================================
+  // CLASIFICACIÓN DE LO QUE SÍ SE MUEVE
+  // ===================================================================
+  // Separación entre objetos ya clasificados.
+  //
+  // Subida de 0,62 a 0,95: los objetos están al doble de tamaño que antes, y
+  // con la rejilla vieja se encimaban unos con otros dentro de la zona.
+  const MEDIO_LADO_UTIL = 0.78;
 
   /**
-   * Lugar donde se apoya el objeto dentro de su zona.
+   * Tamaño al que quedan los objetos una vez clasificados.
    *
-   * Los objetos se acomodan en una grilla en vez de quedar donde cayeron: una
-   * zona con cinco objetos amontonados y superpuestos no se lee como un area
-   * clasificada, que es justo lo que el nivel quiere ensenar a construir.
+   * Mientras hay que ENCONTRARLOS conviene que sean grandes; una vez dentro de
+   * la zona, lo que importa es que quepan y se lean como un conjunto ordenado.
+   * A tamaño de búsqueda no entraban diez piezas en un cuadro de 2,2 m y se
+   * montaban unas sobre otras.
+   *
+   * Que se achiquen al llegar además refuerza la idea: el área clasificada se
+   * ve ordenada, no como otro montón.
    */
-  const lugarEnZona = (zona: ZonaClasificacion, indice: number): Vector3 => {
-    const columna = indice % 3;
-    const fila = Math.floor(indice / 3);
+  const ESCALA_ORDENADO = 1.15;
+
+  /** Lleva el objeto a su casilla y lo deja ordenado y derecho. */
+  const acomodarEnZona = (mesh: Mesh, destino: Vector3): void => {
+    moverMalla(scene, mesh, destino, 260);
+    luegoDe(scene, 270, () => {
+      mesh.scaling.setAll(ESCALA_ORDENADO);
+      // Alineado con la zona: lo clasificado deja de estar al voleo.
+      mesh.rotation.y = 0;
+      apoyarSobre(mesh, 0.02);
+    });
+  };
+  const lugarEnZona = (x: number, indice: number): Vector3 => {
+    // Cuatro columnas por tres filas: doce casillas dentro del cuadro de la
+    // zona. Con tres columnas no entraban las diez piezas.
+    const columna = indice % 4;
+    const fila = Math.floor(indice / 4);
     return new Vector3(
-      posicionesZonas[zona] + (columna - 1) * MEDIO_LADO_UTIL,
-      0.012,
-      Z_ZONA + (fila - 0.5) * MEDIO_LADO_UTIL
+      x + (columna - 1.5) * MEDIO_LADO_UTIL,
+      0.02,
+      Z_ZONA + (fila - 1) * MEDIO_LADO_UTIL
     );
   };
 
   objetos.forEach((objeto) => {
-    // Al agarrar otro objeto el jugador ya pasó a lo siguiente: se apaga el
-    // mensaje anterior para dejar la pantalla limpia y que el resultado de
-    // ESTA acción se lea sin competencia.
-    objeto.onAgarrar.add(() => hud.ocultarFeedback());
-
     objeto.onSoltar.add(({ mesh, movioSuficiente }) => {
       if (!movioSuficiente) return;
 
-      const zonaMasCercana = (Object.entries(posicionesZonas) as [ZonaClasificacion, number][])
-        .reduce((mejor, actual) =>
-          Math.abs(mesh.position.x - actual[1]) < Math.abs(mesh.position.x - mejor[1]) ? actual : mejor
-        )[0];
-
-      const esCorrecto = zonaMasCercana === objeto.datos.zonaCorrecta;
-
-      if (esCorrecto) {
-        gameManager.sumarPuntos(10);
-        // Las partículas brotan del objeto recién soltado, no del centro de la
-        // pantalla: así premian ESA decisión y no el hecho de haber hecho algo.
-        hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
-
-        // Se fija ANTES de moverlo: mientras viaja a su lugar el objeto ya no
-        // debe poder agarrarse, o el jugador lo vuelve a soltar en otra zona y
-        // se cuenta dos veces.
-        objeto.fijar();
-        // Deja de realzarse: ya no se puede agarrar, y seguir marcándolo
-        // como agarrable sería mentir.
-        realce.quitar(objeto.mesh);
-        moverMalla(scene, mesh, lugarEnZona(zonaMasCercana, conteoZonas[objeto.datos.zonaCorrecta]), 320);
-
-        objetosResueltos++;
-        hud.actualizarProgreso(objetosResueltos);
-        conteoZonas[objeto.datos.zonaCorrecta]++;
-
-        if (objetosResueltos === objetos.length) {
-          corriendoTiempo = false;
-          const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
-          // Bonus recalibrado: con 10 objetos (antes 5), completar rápido toma más tiempo real.
-          const bonusTiempo = Math.max(0, 90 - segundosTotales);
-          gameManager.sumarPuntos(bonusTiempo);
-          onCompletado();
-
-          // Resumen de la decisión tomada — refuerza el objetivo pedagógico
-          // del nivel (criterio, no intuición) antes de pasar al puntaje.
-          hud.mostrarFeedback(
-            true,
-            `¡Clasificación completa! Necesario: ${conteoZonas.necesario} · Dudoso: ${conteoZonas.dudoso} · Descartar: ${conteoZonas.descartar}`
-          );
-
-          luegoDe(scene, 1000, () => {
-            // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
-            // criterio que el nivel acaba de hacer practicar. El resultado se
-            // muestra recién después de responderla.
-            preguntarCierreDeNivel(gui, hud, 1, (cierre) => {
-              // El panel sale enseguida. La explicación de la pregunta viaja adentro
-              // de él, así que ya no hay que esperar a que se apague ningún cartel:
-              // esta pausa es solo para que el cierre no se sienta abrupto.
-              luegoDe(scene, 700, () => {
-                hud.mostrarResultadoFinal("Nivel 1", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu, cierre);
-              });
-            });
-          });
-        }
-      } else {
-        hud.mostrarFeedback(false, objeto.datos.explicacion, mesh.position.clone());
-
-        // Vuelve a su lugar en el banco. Antes se quedaba flotando sobre la
-        // zona equivocada a la altura del tablero, y con cada error la escena
-        // acumulaba objetos suspendidos en el aire.
-        moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
+      if (!corriendoTiempo) {
+        corriendoTiempo = true;
+        inicioNivel = performance.now();
       }
+
+      // Se comprueba por cercanía al centro de la zona. DropZone expone la
+      // malla, no un test de contención, así que el criterio vive acá: medio
+      // lado de la demarcación, que es lo que se ve pintado en el piso.
+      const dentroDe = (centroX: number): boolean =>
+        Math.abs(mesh.position.x - centroX) <= 1.4 && Math.abs(mesh.position.z - Z_ZONA) <= 1.4;
+
+      const enNecesario = dentroDe(-3.0);
+      const enDescarte = dentroDe(3.0);
+      if (!enNecesario && !enDescarte) return;
+
+      const destino = objeto.datos.destino;
+
+      // Lo necesario y lo que va directo a la basura se resuelven soltándolo
+      // en la zona que corresponde.
+      const aciertoDirecto =
+        (enNecesario && destino === "necesario") || (enDescarte && destino === "descartar");
+
+      // Lo que requiere tarjeta roja también termina en el área de descarte,
+      // pero solo cuenta si viene etiquetado. Soltarlo sin tarjeta es saltarse
+      // el paso: no se sabe quién responde ni hasta cuándo.
+      const necesitaTarjeta = enDescarte && destino === "tarjetaRoja";
+
+      if (necesitaTarjeta) {
+        pedirDatosTarjeta(gui, objeto.datos.nombreVisible, objeto.datos.donde, (datos) => {
+          if (!datos) {
+            // Sin tarjeta no se queda en el área: vuelve a su sitio.
+            moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
+            hud.mostrarFeedback(
+              false,
+              "Sin responsable ni plazo, la etiqueta no sirve: el objeto se quedaría ahí para siempre."
+            );
+            return;
+          }
+
+          tarjetasEmitidas++;
+          conteo.tarjetaRoja++;
+          objeto.fijar();
+          realce.quitar(mesh);
+
+          const posicion = lugarEnZona(3.0, conteo.descartar + conteo.tarjetaRoja - 1);
+          acomodarEnZona(mesh, posicion);
+
+          // La tarjeta se coloca CUANDO EL OBJETO YA LLEGÓ, no al mismo tiempo.
+          //
+          // Antes se creaba de inmediato en el destino, así que aparecía sola
+          // en la zona mientras el objeto todavía viajaba, y a una altura fija
+          // que no tenía nada que ver con su tamaño: sobre la caja quedaba
+          // hundida dentro y sobre los guantes flotando. Ahora se espera al
+          // final del movimiento y se toma la altura real de su tapa.
+          luegoDe(scene, 300, () => {
+            const tapa = mesh.getBoundingInfo().boundingBox.maximumWorld.y;
+            colocarTarjetaRoja(
+              scene,
+              objeto.datos.id,
+              mesh.position.x + 0.12,
+              tapa - 0.04,
+              mesh.position.z + 0.1,
+              tarjetasEmitidas,
+              datos
+            );
+          });
+
+          sumarMetros(objeto.datos.metros);
+          gameManager.sumarPuntos(10);
+          reproducir("acierto");
+          hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
+          registrarAvance();
+        });
+        return;
+      }
+
+      if (aciertoDirecto) {
+        objeto.fijar();
+        realce.quitar(mesh);
+
+        const zonaX = enNecesario ? -3.0 : 3.0;
+        const indice = enNecesario ? conteo.necesario : conteo.descartar + conteo.tarjetaRoja;
+        if (enNecesario) conteo.necesario++;
+        else conteo.descartar++;
+
+        acomodarEnZona(mesh, lugarEnZona(zonaX, indice));
+
+        sumarMetros(objeto.datos.metros);
+        gameManager.sumarPuntos(10);
+        reproducir("acierto");
+        hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
+        registrarAvance();
+        return;
+      }
+
+      // Error: vuelve a donde estaba. No se queda flotando sobre la zona
+      // equivocada, que es como la escena terminaba llena de objetos en el aire.
+      reproducir("error");
+      hud.mostrarFeedback(false, objeto.datos.explicacion, mesh.position.clone());
+      moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
     });
   });
 
-  return { objetos, zonas: [zonaNecesario, zonaDudoso, zonaDescartar] };
+  return { objetos, zonas: [zonaNecesario, zonaDescarte] };
 }
-
-// Señal física de tarjeta roja junto a la zona "Dudoso": conecta el
-// concepto de la metodología con algo visible en la escena, no solo
-// el nombre del botón.
-function crearSenalTarjetaRoja(scene: Scene, x: number): void {
-  const matPoste = new PBRMaterial("matPosteTarjetaRoja", scene);
-  matPoste.albedoColor = new Color3(0.4, 0.4, 0.42);
-  matPoste.roughness = 0.5;
-  matPoste.metallic = 0.4;
-
-  const poste = MeshBuilder.CreateCylinder("posteTarjetaRoja", { diameter: 0.035, height: 0.7 }, scene);
-  // Justo DELANTE de la zona Dudoso, centrada con ella.
-  //
-  // Antes iba a x - 1.45, que cae en el pasillo entre Necesario y Dudoso:
-  // pegada al borde de la zona verde, parecía pertenecer a esa. La tarjeta
-  // roja ES el concepto de Dudoso, así que tiene que leerse junto a ella.
-  //
-  // Va delante (z menor) y no encima para no chocar con la grilla donde
-  // aterrizan los objetos clasificados, que ocupa z entre 2.09 y 2.71.
-  poste.position.set(x, 0.35, 1.05);
-  poste.material = matPoste;
-
-  const matTarjeta = new PBRMaterial("matTarjetaRoja", scene);
-  matTarjeta.albedoColor = new Color3(0.78, 0.1, 0.1);
-  matTarjeta.roughness = 0.35;
-
-  const tarjeta = MeshBuilder.CreatePlane("tarjetaRoja", { width: 0.26, height: 0.34 }, scene);
-  tarjeta.position.set(0, 0.25, 0.015);
-  tarjeta.rotation.y = 0.3;
-  tarjeta.parent = poste;
-  tarjeta.material = matTarjeta;
-}
-
-// Micro-lección de la guía: explica qué es una tarjeta roja (red tag)
-// antes de empezar a clasificar, para que "Dudoso" tenga sentido real y
-// no sea solo una tercera categoría genérica.
