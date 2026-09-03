@@ -2,7 +2,7 @@ import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, Image, TextBlock } from "@babylonjs/gui";
 import { generarCertificado, descargarCertificado, compartirCertificado } from "../core/Certificate";
 import { emitirCertificado, explicarRechazo } from "../portal/Datos";
-import { PALETA, TEXTO, crearBotonPrincipal, crearBotonSecundario } from "./EstiloUI";
+import { PALETA, TEXTO, crearBotonPrincipal, crearBotonSecundario, afinarGui } from "./EstiloUI";
 
 /**
  * Pantalla del certificado.
@@ -23,6 +23,11 @@ export function mostrarCertificado(
   datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number }
 ): void {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("certificadoUI", true, scene);
+  // Resolución de la capa según la pantalla: sin esto el texto sale blando
+
+  // en monitores con escala de Windows. Ver afinarGui en EstiloUI.
+
+  afinarGui(gui);
   if (gui.layer) gui.layer.applyPostProcess = false;
   gui.idealWidth = 1600;
   gui.idealHeight = 900;

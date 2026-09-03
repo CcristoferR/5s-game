@@ -1,7 +1,7 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock, StackPanel, Button, Control } from "@babylonjs/gui";
 import type { BriefingNivel, MicroLeccionNivel } from "../data/levelConfig";
-import { TEXTO } from "./EstiloUI";
+import { TEXTO, afinarGui } from "./EstiloUI";
 
 // ---------------------------------------------------------------------------
 // Medidas
@@ -86,6 +86,14 @@ export function mostrarAperturaNivel(
   }
 
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("aperturaUI", true, scene);
+
+  // Resolución de la capa según la pantalla: sin esto el texto sale blando
+
+
+  // en monitores con escala de Windows. Ver afinarGui en EstiloUI.
+
+
+  afinarGui(gui);
   if (gui.layer) {
     gui.layer.applyPostProcess = false;
   }

@@ -1,4 +1,4 @@
-import { AdvancedDynamicTexture, Rectangle, StackPanel, ScrollViewer, Control } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, Rectangle, StackPanel, ScrollViewer, TextBlock, Control } from "@babylonjs/gui";
 import type { PuntoControlNivel5 } from "../data/levelConfig";
 import {
   PALETA,
@@ -12,6 +12,7 @@ import {
   crearEspacio,
   crearDivisor,
   crearBotonPrincipal,
+  altoDeTexto,
   desvanecer,
 } from "./EstiloUI";
 
@@ -73,7 +74,9 @@ export function mostrarInformeAuditoria(
   scroll.width = ANCHO_CONTENIDO + 12 + "px";
   scroll.height = ALTO_TARJETA - 236 + "px";
   scroll.thickness = 0;
-  scroll.barColor = "rgba(255,255,255,0.28)";
+  scroll.barColor = PALETA.tenue;
+  scroll.barBackground = PALETA.tarjetaSuave;
+  scroll.thickness = 0;
   scroll.barBackground = "rgba(255,255,255,0.05)";
   scroll.left = MARGEN + "px";
   scroll.top = "152px";
@@ -87,29 +90,43 @@ export function mostrarInformeAuditoria(
   scroll.addControl(lista);
 
   filas.forEach((fila) => {
+    // DOS SEÑALES, NO UNA.
+    //
+    // Antes la fila tenía un solo color y significaba "acertaste o no". El
+    // problema es que decía "Lo detectaste bien" en verde justo al lado de
+    // "calificación real 1/5", y eso se lee como una contradicción: verde con
+    // un uno. Son dos cosas distintas y hay que verlas por separado —cómo te
+    // fue a TI, y en qué estado está EL PUNTO— porque un punto en mal estado
+    // detectado a tiempo es un acierto, no un problema.
+    //
+    // Tu resultado va en la franja lateral y el tinte del fondo. El estado del
+    // punto va en una insignia a la derecha, con su propio color.
     const acerto = fila.marcadoPorJugador === fila.datos.tieneDesviacion;
     const color = acerto ? PALETA.acierto : PALETA.error;
+    const hayDesviacion = fila.datos.tieneDesviacion;
 
-    // ALTO DE LA FILA
-    //
-    // Se calcula a partir del texto en vez de dejárselo a adaptHeightToChildren.
-    // Esa opción entra en dependencia circular acá: la fila le pregunta su alto
-    // a los hijos, y la franja de color se lo pregunta a la fila — el resultado
-    // es alto cero y el informe aparece completamente vacío.
     const anchoTextoFila = ANCHO_CONTENIDO - 60;
-    const alto = altoDeFila(fila.datos.explicacion, anchoTextoFila);
+    // El ancho del texto descuenta la insignia: sin esto el título pasaba por
+    // debajo de ella y quedaba tapado en las descripciones largas.
+    const anchoTitulo = anchoTextoFila - 118;
+
+    const alto =
+      altoDeTexto(fila.datos.descripcionControl, anchoTitulo, TEXTO.cuerpo) +
+      altoDeTexto(fila.datos.explicacion, anchoTextoFila, TEXTO.menor) +
+      26 +
+      46;
 
     const marco = new Rectangle(`filaInforme_${fila.datos.id}`);
     marco.width = ANCHO_CONTENIDO + "px";
     marco.height = alto + "px";
     marco.thickness = 0;
     marco.cornerRadius = 10;
-    marco.background = PALETA.tarjetaSuave;
+    // Tinte según TU resultado. Muy suave: la lista se recorre leyendo, el
+    // color solo tiene que agrupar de un vistazo cuáles fallaste.
+    marco.background = acerto ? "rgba(127,180,149,0.09)" : "rgba(201,141,128,0.11)";
     marco.paddingBottom = "10px";
     lista.addControl(marco);
 
-    // Franja de color al costado en lugar de teñir el fondo entero: se ve el
-    // resultado de un vistazo sin que el color compita con el texto.
     const franja = new Rectangle(`franjaInforme_${fila.datos.id}`);
     franja.width = "4px";
     franja.height = alto - 10 + "px";
@@ -118,6 +135,35 @@ export function mostrarInformeAuditoria(
     franja.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     franja.isHitTestVisible = false;
     marco.addControl(franja);
+
+    // Insignia del estado del punto, arriba a la derecha. Ámbar para
+    // desviación y verde apagado para cumple: colores distintos de los del
+    // acierto para que no se confundan las dos lecturas.
+    const colorEstado = hayDesviacion ? PALETA.aviso : PALETA.acierto;
+
+    const insignia = new Rectangle(`insigniaInforme_${fila.datos.id}`);
+    insignia.width = "116px";
+    insignia.height = "28px";
+    insignia.cornerRadius = 6;
+    insignia.thickness = 1;
+    insignia.color = colorEstado;
+    insignia.background = hayDesviacion ? "rgba(189,160,121,0.16)" : "rgba(127,180,149,0.14)";
+    insignia.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    insignia.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    insignia.left = "-16px";
+    insignia.top = "14px";
+    insignia.isHitTestVisible = false;
+    marco.addControl(insignia);
+
+    const textoInsignia = new TextBlock(
+      `textoInsignia_${fila.datos.id}`,
+      `${hayDesviacion ? "DESVIACIÓN" : "CUMPLE"} ${fila.datos.calificacion}/5`
+    );
+    textoInsignia.color = colorEstado;
+    textoInsignia.fontSize = TEXTO.rotulo - 1;
+    textoInsignia.fontWeight = "700";
+    textoInsignia.isHitTestVisible = false;
+    insignia.addControl(textoInsignia);
 
     const columna = new StackPanel(`columnaInforme_${fila.datos.id}`);
     columna.isVertical = true;
@@ -132,23 +178,24 @@ export function mostrarInformeAuditoria(
       crearParrafo(
         `tituloFila_${fila.datos.id}`,
         fila.datos.descripcionControl,
-        anchoTextoFila,
+        anchoTitulo,
         TEXTO.cuerpo,
         PALETA.titulo,
         "600"
       )
     );
     columna.addControl(crearEspacio(`aireMedioFila_${fila.datos.id}`, 6));
+
+    // Tu resultado, con símbolo delante. El símbolo se reconoce sin leer y sin
+    // depender del color: quien no distinga verde de rojo cuenta igual.
     columna.addControl(
       crearParrafo(
         `estadoFila_${fila.datos.id}`,
-        acerto
-          ? `Lo detectaste bien · calificación real ${fila.datos.calificacion}/5`
-          : `Se te pasó · calificación real ${fila.datos.calificacion}/5`,
+        acerto ? "\u2713  Lo detectaste" : "\u2715  Se te pasó",
         anchoTextoFila,
         TEXTO.menor,
         color,
-        "600"
+        "700"
       )
     );
     columna.addControl(crearEspacio(`aireExplFila_${fila.datos.id}`, 6));
@@ -189,24 +236,4 @@ export function mostrarInformeAuditoria(
     linea.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     return linea;
   }
-}
-
-/**
- * Alto que necesita una fila del informe, en píxeles.
- *
- * Estima cuántos renglones ocupa la explicación y suma el título, el estado y
- * los márgenes. Es una estimación deliberadamente generosa: que sobren unos
- * píxeles no se nota, pero que falten uno corta la última línea.
- */
-function altoDeFila(explicacion: string, anchoDisponible: number): number {
-  // A 16 px, cada carácter ocupa alrededor de 8 px de ancho promedio.
-  const caracteresPorRenglon = Math.max(20, Math.floor(anchoDisponible / 8));
-  const renglones = Math.max(1, Math.ceil(explicacion.length / caracteresPorRenglon));
-
-  const ALTO_TITULO = 26;
-  const ALTO_ESTADO = 22;
-  const ALTO_RENGLON = 22;
-  const MARGENES = 46;
-
-  return ALTO_TITULO + ALTO_ESTADO + renglones * ALTO_RENGLON + MARGENES;
 }

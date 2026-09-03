@@ -1,3 +1,4 @@
+import { Texture } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, Control, Container } from "@babylonjs/gui";
 import { reproducir } from "../core/Sonido";
 
@@ -128,6 +129,38 @@ export const MARGEN = 40;
 // ---------------------------------------------------------------------------
 
 /**
+ * Nitidez de una capa de interfaz.
+ *
+ * ─── POR QUÉ EL TEXTO SE VEÍA BORROSO ─────────────────────────────────────
+ *
+ * La interfaz del juego no es HTML: se dibuja en una textura y esa textura se
+ * pega sobre el lienzo. Su tamaño lo hereda del motor, y el motor trabaja a
+ * píxeles CSS —eso es deliberado, porque cuando el buffer no coincidía con el
+ * lienzo la conversión de coordenadas del puntero se desalineaba y los clics
+ * caían una fila más abajo—.
+ *
+ * El efecto secundario es que en pantallas con escala de Windows al 125 % o
+ * 150 % —lo normal en un portátil— la textura tiene menos píxeles que el área
+ * donde se muestra, y el navegador la agranda. De ahí el texto blando, con los
+ * bordes lavados.
+ *
+ * renderScale multiplica la resolución DE LA TEXTURA sin tocar el motor ni la
+ * geometría del puntero: la interfaz se dibuja con más píxeles y se muestra al
+ * mismo tamaño. Es exactamente el problema que resuelve, y no reabre el de los
+ * clics desplazados.
+ *
+ * El factor sale de la escala real de la pantalla, con tope en 2: por encima
+ * de eso se gasta memoria de vídeo sin ganancia visible.
+ */
+export function afinarGui(gui: AdvancedDynamicTexture): void {
+  gui.renderScale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+
+  // Filtrado trilineal al muestrear la textura: con más resolución de la que
+  // se muestra, sin filtrar quedan los cantos dentados.
+  gui.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+}
+
+/**
  * Capa que oscurece la escena y bloquea los clics.
  *
  * Todo panel que exija una decisión del jugador va sobre un velo: si la escena
@@ -210,6 +243,33 @@ export function crearParrafo(
   bloque.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   bloque.isHitTestVisible = false;
   return bloque;
+}
+
+/**
+ * Estima el alto que ocupará un texto ajustado a un ancho dado.
+ *
+ * Hace falta porque el alto real de un TextBlock solo se conoce DESPUÉS de que
+ * la interfaz lo mide, y eso ocurre al dibujar. Cualquier fila que tenga que
+ * dimensionarse en el momento de construirse —las listas de los informes— no
+ * puede preguntárselo: leería cero y quedaría aplastada.
+ *
+ * Es una estimación, no una medida, y por eso redondea siempre HACIA ARRIBA.
+ * Sobrar unos píxeles de aire no se nota; faltar uno recorta el último renglón,
+ * que es exactamente el defecto que tenían los dos informes.
+ */
+export function altoDeTexto(texto: string, ancho: number, tamano: number = TEXTO.cuerpo): number {
+  // Ancho medio de carácter para la tipografía del sistema. 0,52 del tamaño de
+  // fuente es conservador: la mayoría de las letras miden menos, así que la
+  // cuenta tiende a sobrestimar los renglones, que es el lado seguro.
+  const anchoCaracter = tamano * 0.52;
+  const porRenglon = Math.max(12, Math.floor(ancho / anchoCaracter));
+
+  // Se cuentan también los saltos escritos a mano.
+  const renglones = texto
+    .split("\n")
+    .reduce((total, parrafo) => total + Math.max(1, Math.ceil(parrafo.length / porRenglon)), 0);
+
+  return renglones * Math.ceil(tamano * 1.42);
 }
 
 /** Separación vertical dentro de una columna. */

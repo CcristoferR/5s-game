@@ -2,7 +2,7 @@ import { Scene, Vector3 } from "@babylonjs/core";
 import { reproducir } from "../core/Sonido";
 import { chispasDeAcierto, humoDeError, lluviaDeEstrellas, puntoFrenteALaCamara } from "../entities/Particulas";
 import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel, Button } from "@babylonjs/gui";
-import { TEXTO, PALETA, desvanecer } from "./EstiloUI";
+import { TEXTO, PALETA, desvanecer, afinarGui } from "./EstiloUI";
 
 // Capa de interfaz ÚNICA compartida por todo lo que pasa en el nivel:
 // marcador, feedback, resultado final — y también las etiquetas de zona
@@ -47,6 +47,11 @@ export class HUD {
   constructor(scene: Scene) {
     this.scene = scene;
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI("hudPrincipal", true, scene);
+    // Resolución de la capa según la pantalla: sin esto el texto sale blando
+
+    // en monitores con escala de Windows. Ver afinarGui en EstiloUI.
+
+    afinarGui(this.gui);
 
     // --- Marcador: ahora con tarjeta real detrás, no texto flotando solo ---
     const marcador = new Rectangle("marcador");

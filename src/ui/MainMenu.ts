@@ -1,6 +1,7 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, TextBlock, StackPanel, Rectangle, Control, Image, Button } from "@babylonjs/gui";
 import { leerPreferencias } from "../portal/Preferencias";
+import { afinarGui } from "./EstiloUI";
 
 export interface NivelMenuInfo {
   numero: number;
@@ -116,6 +117,14 @@ export function mostrarMenuPrincipal(
   C = PALETAS[leerPreferencias().tema];
 
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("menuPrincipal", true, scene);
+
+  // Resolución de la capa según la pantalla: sin esto el texto sale blando
+
+
+  // en monitores con escala de Windows. Ver afinarGui en EstiloUI.
+
+
+  afinarGui(gui);
 
   // 1. La capa del menu queda fuera del post-proceso de la escena. Sin esto,
   //    el bloom y el tone mapping levantan los negros y todo se ve lavado.

@@ -13,6 +13,7 @@ import {
   crearDivisor,
   crearBotonPrincipal,
   desvanecer,
+  afinarGui,
 } from "./EstiloUI";
 import { podioDelCurso, miPosicion, formatearDuracion, type FilaRanking, type MiPosicion } from "../portal/Ranking";
 import { CURSO_ID } from "../portal/Datos";
@@ -47,6 +48,11 @@ const COLORES_PODIO: Record<number, string> = {
  */
 export function mostrarRankingCurso(scene: Scene, onCerrar: () => void): void {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("rankingUI", true, scene);
+  // Resolución de la capa según la pantalla: sin esto el texto sale blando
+
+  // en monitores con escala de Windows. Ver afinarGui en EstiloUI.
+
+  afinarGui(gui);
   if (gui.layer) {
     // Fuera del post-proceso de la escena, igual que las demás pantallas: el
     // bloom y el tone mapping levantan los negros y lavan los colores.

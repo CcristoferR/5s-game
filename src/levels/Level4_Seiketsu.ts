@@ -18,7 +18,7 @@ import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida 
 import { HUD } from "../ui/HUD";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
-import { TEXTO, PALETA } from "../ui/EstiloUI";
+import { TEXTO, PALETA, altoDeTexto } from "../ui/EstiloUI";
 
 const posicionesZonas: Record<ZonaChecklist, number> = {
   checklist: -3.6,
@@ -603,10 +603,17 @@ function mostrarInformeEstandar(
     // Estaba fijo en 72 px con tres bloques de texto que se ajustan: cualquier
     // explicacion de dos renglones desbordaba y se recortaba por arriba, que
     // es por lo que se veian encabezados cortados a la mitad.
+    // Alto estimado, NO medido.
+    //
+    // heightInPixels devuelve cero en este momento: la interfaz mide los
+    // bloques al dibujar, no al crearlos, así que preguntarle acá dejaría
+    // todas las filas aplastadas. altoDeTexto hace la cuenta redondeando
+    // hacia arriba, que es el lado seguro — sobra aire en vez de faltar
+    // renglón.
     fondoFila.height =
-      encabezado.heightInPixels +
-      texto.heightInPixels +
-      explicacion.heightInPixels +
+      altoDeTexto(`${fila.correcto ? "\u2713" : "\u2715"}  ${tipo} · ${veredicto}`, 486, TEXTO.rotulo) +
+      altoDeTexto(fila.texto, 486, TEXTO.menor) +
+      altoDeTexto(fila.explicacion, 486, TEXTO.rotulo) +
       12 +
       38 +
       "px";
