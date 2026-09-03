@@ -48,11 +48,36 @@ import { CURSO_ID } from "./Datos";
  * Todo lo que se ve acá sale de src/portal/Datos.ts. Cuando exista el servidor,
  * esta pantalla no cambia: cambia de dónde vienen los datos.
  */
+/** Secciones del panel. El orden es el de la barra de navegación. */
+type Pestana = "personas" | "codigos" | "cursos" | "reportes";
+
+const PESTANAS: Array<{ id: Pestana; rotulo: string }> = [
+  { id: "personas", rotulo: "Personas" },
+  { id: "codigos", rotulo: "Códigos" },
+  { id: "cursos", rotulo: "Cursos" },
+  { id: "reportes", rotulo: "Reportes" },
+];
+
 export function mostrarAdministracion(onSalir: () => void): void {
   const raiz = document.createElement("div");
   raiz.className = "portal portal--ancho";
   document.body.appendChild(raiz);
 
+  // ESTADO QUE SOBREVIVE AL REPINTADO.
+  //
+  // Cada acción del panel —suspender, dar de baja, emitir un código— vuelve a
+  // pedir los datos y reconstruye el HTML entero. Si la pestaña activa y el
+  // texto del buscador no se guardaran acá, después de cada clic el panel
+  // saltaría a "Personas" con el buscador vacío. Con doscientas personas eso
+  // significa volver a filtrar en cada acción: es la diferencia entre un panel
+  // que se usa y uno que se demuestra.
+  let pestanaActiva: Pestana = "personas";
+  let busqueda = "";
+
+  // Se dibuja el esqueleto antes de la primera consulta: sin esto la pantalla
+  // queda en blanco mientras responde el servidor y no se sabe si está
+  // cargando o si no hay nada.
+  raiz.innerHTML = esqueletoCargando();
   void pintar();
 
   async function pintar(): Promise<void> {
@@ -79,13 +104,80 @@ export function mostrarAdministracion(onSalir: () => void): void {
       cursos,
       ranking,
       areas,
-      sesion?.perfil.id ?? null
+      sesion?.perfil.id ?? null,
+      pestanaActiva
     );
     conectar();
   }
 
+  /**
+   * Cambia de sección sin volver a pedir los datos.
+   *
+   * Las cuatro secciones se arman con la misma consulta, así que navegar entre
+   * ellas no necesita red: se muestra el panel que toca y se ocultan los otros.
+   * Ir a Códigos y volver a Personas es instantáneo y no gasta una consulta.
+   */
+  function irAPestana(destino: Pestana): void {
+    pestanaActiva = destino;
+
+    raiz.querySelectorAll<HTMLElement>("[data-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.panel !== destino;
+    });
+
+    raiz.querySelectorAll<HTMLButtonElement>("[data-pestana]").forEach((boton) => {
+      const activa = boton.dataset.pestana === destino;
+      boton.classList.toggle("admin__pestana--activa", activa);
+      boton.setAttribute("aria-selected", String(activa));
+    });
+  }
+
+  /**
+   * Filtra la tabla de personas ocultando filas, sin volver a construirla.
+   *
+   * Reconstruir el HTML en cada tecla perdería el foco del campo y el punto de
+   * inserción del cursor. Ocultar filas mantiene el foco intacto y además es
+   * más rápido: no se vuelve a armar nada.
+   */
+  function filtrar(texto: string): void {
+    busqueda = texto;
+    const aguja = texto.trim().toLowerCase();
+
+    let visibles = 0;
+    raiz.querySelectorAll<HTMLTableRowElement>("[data-buscable]").forEach((fila) => {
+      const coincide = !aguja || (fila.dataset.buscable ?? "").includes(aguja);
+      fila.hidden = !coincide;
+      if (coincide) visibles++;
+    });
+
+    const contador = raiz.querySelector<HTMLElement>("#contadorPersonas");
+    if (contador) {
+      contador.textContent = aguja
+        ? `${visibles} de ${raiz.querySelectorAll("[data-buscable]").length}`
+        : `${visibles} en total`;
+    }
+
+    // Aviso de "sin resultados": distinto de "no hay nadie registrado". Sin
+    // esta distinción, filtrar mal parece un panel roto o una base vacía.
+    const sinResultados = raiz.querySelector<HTMLElement>("#sinResultados");
+    if (sinResultados) sinResultados.hidden = visibles > 0 || !aguja;
+  }
+
   function conectar(): void {
     const $ = <T extends HTMLElement>(sel: string): T => raiz.querySelector(sel) as T;
+
+    raiz.querySelectorAll<HTMLButtonElement>("[data-pestana]").forEach((boton) => {
+      boton.addEventListener("click", () => irAPestana(boton.dataset.pestana as Pestana));
+    });
+
+    const buscador = raiz.querySelector<HTMLInputElement>("#buscadorPersonas");
+    if (buscador) {
+      // El valor se restituye tras cada repintado y se vuelve a aplicar el
+      // filtro: si no, una acción sobre una persona filtrada devolvería la
+      // tabla completa y habría que escribir el nombre otra vez.
+      buscador.value = busqueda;
+      filtrar(busqueda);
+      buscador.addEventListener("input", () => filtrar(buscador.value));
+    }
 
     $<HTMLButtonElement>("#btnSalirAdmin").addEventListener("click", () => {
       cerrarSesion();
@@ -414,85 +506,24 @@ function plantilla(
   cursos: Curso[],
   ranking: FilaRankingAdmin[],
   areas: ResumenArea[],
-  perfilPropio: string | null
+  perfilPropio: string | null,
+  pestanaActiva: Pestana
 ): string {
   const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
+  const activos = codigos.filter((c) => c.activo).length;
 
-  return `
-    <div class="portal__tarjeta portal__tarjeta--ancha">
-      <div class="portal__filete portal__filete--admin"></div>
-      <div class="portal__cuerpo">
-        <div class="portal__encabezadoAdmin">
-          <div>
-            <p class="portal__rotulo">ADMINISTRACIÓN</p>
-            <h1 class="portal__titulo">Curso 5S</h1>
-            <p class="portal__bajada" style="margin-bottom:0">
-              ${trabajadores.length} persona${trabajadores.length === 1 ? "" : "s"} registrada${trabajadores.length === 1 ? "" : "s"}
-              · ${inscripciones.length} inscripci${inscripciones.length === 1 ? "ón" : "ones"}
-              · ${codigos.length} código${codigos.length === 1 ? "" : "s"}
-            </p>
-          </div>
-          <button class="portal__boton portal__boton--secundario" id="btnSalirAdmin" type="button">
-            Cerrar sesión
-          </button>
-        </div>
+  // El total de fases sale del curso y no de un 5 escrito a mano: si algun dia
+  // se publica un curso con otra cantidad de fases, el avance sigue siendo
+  // correcto sin tocar esta pantalla.
+  const totalFases = cursos.find((c) => c.id === CURSO_ID)?.totalFases ?? 5;
 
-        <p class="portal__aviso" id="avisoAdmin" hidden></p>
-
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Verificar un certificado</h2>
-          <p class="portal__nota portal__nota--arriba">
-            Comprueba si un certificado presentado por alguien fue emitido por esta
-            plataforma. Basta el código impreso al pie del documento.
-          </p>
-          <button class="reporte" type="button" id="abrirVerificacion">
-            <span class="reporte__nombre">Abrir verificador</span>
-            <span class="reporte__desc">
-              Escribe el código y confirma nombre, curso, puntaje y fecha de emisión
-            </span>
-          </button>
-        </section>
-
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Reportes</h2>
-          <p class="portal__nota portal__nota--arriba">
-            Archivos Excel con formato, listos para archivar o adjuntar.
-          </p>
-
-          <div class="reportes">
-            <button class="reporte" type="button" data-reporte="personas">
-              <span class="reporte__nombre">Personas y avance</span>
-              <span class="reporte__desc">Una fila por inscripción, con fases completadas y estado</span>
-            </button>
-            <button class="reporte" type="button" data-reporte="ranking">
-              <span class="reporte__nombre">Ranking completo</span>
-              <span class="reporte__desc">Todos los participantes ordenados por puntaje</span>
-            </button>
-            <button class="reporte" type="button" data-reporte="areas">
-              <span class="reporte__nombre">Resumen por área</span>
-              <span class="reporte__desc">Cobertura de la capacitación en cada área</span>
-            </button>
-            <button class="reporte" type="button" data-reporte="codigos">
-              <span class="reporte__nombre">Códigos emitidos</span>
-              <span class="reporte__desc">Consumo de cupos y vigencia de cada código</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Cobertura por área</h2>
-          <div class="portal__tablaEnvoltura">
-            ${tablaAreas(areas)}
-          </div>
-        </section>
-
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Cursos de la plataforma</h2>
-          <div class="portal__tablaEnvoltorio">
-            ${tablaCursos(cursos, inscripciones)}
-          </div>
-        </section>
-
+  // Los cuatro grupos salen de agrupar por TAREA, no por tipo de dato: quien
+  // entra al panel viene a hacer algo concreto —dar de alta a alguien, emitir
+  // un código, mirar cómo va el curso— y cada una de esas tareas necesita su
+  // formulario y su tabla juntos. Antes estaban a media pantalla de distancia
+  // porque el orden era el de construcción, no el de uso.
+  const paneles: Record<Pestana, string> = {
+    personas: `
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Agregar administrador</h2>
           <form id="formAdmin">
@@ -524,7 +555,14 @@ function plantilla(
             <button class="portal__boton" type="submit">Crear administrador</button>
           </form>
         </section>
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Personas registradas</h2>
+          <div class="portal__tablaEnvoltura">
+            ${tablaPersonas(perfiles, inscripciones, cursos, perfilPropio, ranking, totalFases)}
+          </div>
+        </section>`,
 
+    codigos: `
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Emitir código</h2>
           <form id="formCodigo">
@@ -559,39 +597,156 @@ function plantilla(
             <button class="portal__boton" type="submit">Generar código</button>
           </form>
         </section>
-
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Códigos emitidos</h2>
           <div class="portal__tablaEnvoltura">
             ${tablaCodigos(codigos, cursos)}
           </div>
-        </section>
+        </section>`,
 
+    cursos: `
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Cursos de la plataforma</h2>
+          <div class="portal__tablaEnvoltorio">
+            ${tablaCursos(cursos, inscripciones)}
+          </div>
+        </section>`,
+
+    reportes: `
         <section class="portal__seccion">
           <h2 class="portal__tituloSeccion">Ranking del curso</h2>
           <div class="portal__tablaEnvoltura">
             ${tablaRanking(ranking)}
           </div>
         </section>
-
         <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Personas registradas</h2>
+          <h2 class="portal__tituloSeccion">Cobertura por área</h2>
           <div class="portal__tablaEnvoltura">
-            ${tablaPersonas(perfiles, inscripciones, cursos, perfilPropio)}
+            ${tablaAreas(areas)}
           </div>
         </section>
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Reportes</h2>
+          <p class="portal__nota portal__nota--arriba">
+            Archivos Excel con formato, listos para archivar o adjuntar.
+          </p>
+
+          <div class="reportes">
+            <button class="reporte" type="button" data-reporte="personas">
+              <span class="reporte__nombre">Personas y avance</span>
+              <span class="reporte__desc">Una fila por inscripción, con fases completadas y estado</span>
+            </button>
+            <button class="reporte" type="button" data-reporte="ranking">
+              <span class="reporte__nombre">Ranking completo</span>
+              <span class="reporte__desc">Todos los participantes ordenados por puntaje</span>
+            </button>
+            <button class="reporte" type="button" data-reporte="areas">
+              <span class="reporte__nombre">Resumen por área</span>
+              <span class="reporte__desc">Cobertura de la capacitación en cada área</span>
+            </button>
+            <button class="reporte" type="button" data-reporte="codigos">
+              <span class="reporte__nombre">Códigos emitidos</span>
+              <span class="reporte__desc">Consumo de cupos y vigencia de cada código</span>
+            </button>
+          </div>
+        </section>
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Verificar un certificado</h2>
+          <p class="portal__nota portal__nota--arriba">
+            Comprueba si un certificado presentado por alguien fue emitido por esta
+            plataforma. Basta el código impreso al pie del documento.
+          </p>
+          <button class="reporte" type="button" id="abrirVerificacion">
+            <span class="reporte__nombre">Abrir verificador</span>
+            <span class="reporte__desc">
+              Escribe el código y confirma nombre, curso, puntaje y fecha de emisión
+            </span>
+          </button>
+        </section>`,
+  };
+
+  const pestanas = PESTANAS.map((p) => {
+    const activa = p.id === pestanaActiva;
+    return `<button type="button" role="tab" class="admin__pestana${activa ? " admin__pestana--activa" : ""}"
+                    data-pestana="${p.id}" aria-selected="${activa}">${p.rotulo}</button>`;
+  }).join("");
+
+  const cuerpos = PESTANAS.map(
+    (p) =>
+      `<div data-panel="${p.id}" role="tabpanel"${p.id === pestanaActiva ? "" : " hidden"}>${paneles[p.id]}</div>`
+  ).join("");
+
+  return `
+    <div class="portal__tarjeta portal__tarjeta--ancha">
+      <div class="portal__filete portal__filete--admin"></div>
+      <div class="portal__cuerpo">
+
+        <div class="admin__encabezado">
+          <div>
+            <p class="portal__rotulo">ADMINISTRACIÓN</p>
+            <h1 class="portal__titulo">Curso 5S</h1>
+          </div>
+          <button class="portal__boton portal__boton--secundario admin__salir" id="btnSalirAdmin" type="button">
+            Cerrar sesión
+          </button>
+        </div>
+
+        <!-- Cifras de cabecera: lo que un administrador mira primero al
+             entrar, sin tener que abrir ninguna sección. -->
+        <div class="admin__cifras">
+          <div class="admin__cifra">
+            <span class="admin__cifraDato">${trabajadores.length}</span>
+            <span class="admin__cifraRotulo">Trabajadores</span>
+          </div>
+          <div class="admin__cifra">
+            <span class="admin__cifraDato">${inscripciones.filter((i) => i.activa).length}</span>
+            <span class="admin__cifraRotulo">Inscripciones activas</span>
+          </div>
+          <div class="admin__cifra">
+            <span class="admin__cifraDato">${activos}</span>
+            <span class="admin__cifraRotulo">Códigos vigentes</span>
+          </div>
+          <div class="admin__cifra">
+            <span class="admin__cifraDato">${ranking.filter((f) => f.fasesAprobadas >= 5).length}</span>
+            <span class="admin__cifraRotulo">Cursos completados</span>
+          </div>
+        </div>
+
+        <nav class="admin__pestanas" role="tablist" aria-label="Secciones">
+          ${pestanas}
+        </nav>
+
+        <p class="portal__aviso" id="avisoAdmin" hidden></p>
+
+        ${cuerpos}
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 /**
- * Cuántos completaron el curso en cada área.
+ * Esqueleto mientras llegan los datos.
  *
- * Es lo primero que mira una jefatura: no le interesa persona por persona, le
- * interesa si su área está al día. Y hace visible que un turno completo quedó
- * sin capacitar, algo que en una lista de cien nombres pasa desapercibido.
+ * Reproduce la forma real del panel —cabecera, cifras, pestañas y filas— en
+ * lugar de un texto "Cargando…". La pantalla no cambia de estructura al
+ * llegar los datos, solo se rellena, y eso hace que la espera se perciba más
+ * corta aunque dure lo mismo.
  */
+function esqueletoCargando(): string {
+  const filas = Array.from({ length: 6 }, () => `<div class="admin__hueso admin__hueso--fila"></div>`).join("");
+  const cifras = Array.from({ length: 4 }, () => `<div class="admin__hueso admin__hueso--cifra"></div>`).join("");
+
+  return `
+    <div class="portal__tarjeta portal__tarjeta--ancha">
+      <div class="portal__filete portal__filete--admin"></div>
+      <div class="portal__cuerpo" aria-busy="true">
+        <div class="admin__hueso admin__hueso--titulo"></div>
+        <div class="admin__cifras">${cifras}</div>
+        <div class="admin__hueso admin__hueso--pestanas"></div>
+        ${filas}
+      </div>
+    </div>`;
+}
+
 function tablaAreas(areas: ResumenArea[]): string {
   if (areas.length === 0) {
     return `<p class="portal__vacio">Todavía no hay personas inscritas.</p>`;
@@ -770,8 +925,16 @@ function tablaPersonas(
   perfiles: Perfil[],
   inscripciones: Inscripcion[],
   cursos: Curso[],
-  perfilPropio: string | null
+  perfilPropio: string | null,
+  ranking: FilaRankingAdmin[],
+  totalFases: number
 ): string {
+  // Avance por persona, indexado para no recorrer el ranking en cada fila.
+  //
+  // El dato ya venia en la consulta del ranking y no se estaba usando: quien
+  // aparece ahi tiene fases aprobadas registradas. No hace falta ninguna
+  // consulta nueva, solo cruzarlo por perfilId.
+  const avancePorPerfil = new Map(ranking.map((f) => [f.perfilId, f]));
   if (perfiles.length === 0) {
     return `<p class="portal__vacio">Todav\u00eda no se registr\u00f3 nadie.</p>`;
   }
@@ -781,11 +944,17 @@ function tablaPersonas(
       const inscripcion = inscripciones.find((i) => i.perfilId === p.id);
       const activa = inscripcion?.activa ?? false;
 
-      // El avance vive hoy en el navegador de cada equipo, no ac\u00e1. Hasta que
-      // el progreso viaje al servidor se asume sin avance, que es el caso en
-      // el que eliminar es seguro. Cuando el dato exista, esta l\u00ednea es lo
-      // \u00fanico que cambia.
-      const sinAvance = true;
+      const avance = avancePorPerfil.get(p.id);
+      const fases = avance?.fasesAprobadas ?? 0;
+
+      // Eliminar solo se ofrece a quien no tiene nada que perder.
+      //
+      // Antes esto estaba fijo en true y el boton aparecia SIEMPRE, incluso
+      // sobre alguien con el curso terminado y certificado emitido. Un clic de
+      // mas y se borraba un historial irrecuperable. Ahora, en cuanto hay una
+      // sola fase registrada, la accion destructiva desaparece y queda
+      // "Dar de baja", que conserva el historial.
+      const sinAvance = fases === 0;
 
       const esAdmin = p.rol === "administrador";
       const esUnoMismo = p.id === perfilPropio;
@@ -862,7 +1031,10 @@ function tablaPersonas(
       // van apilados en una sola celda. No se pierde ning\u00fan dato y la tabla
       // entra en la tarjeta sin barra de desplazamiento.
       return `
-        <tr class="${p.suspendido ? "portal__fila--baja" : activa || !inscripcion ? "" : "portal__fila--baja"}">
+        <tr class="${p.suspendido ? "portal__fila--baja" : activa || !inscripcion ? "" : "portal__fila--baja"}"
+            data-buscable="${escapar(
+              [p.nombreCompleto, p.identificador, p.empresa, p.area, curso].join(" ").toLowerCase()
+            )}">
           <td class="portal__apilada">
             <strong>${escapar(p.nombreCompleto)}</strong>
             <span class="portal__subdato">${escapar(p.identificador)}</span>
@@ -880,17 +1052,28 @@ function tablaPersonas(
             ${estado}
             <span class="portal__subdato">${inscripcion ? fecha(inscripcion.inscritoEn) : "\u2014"}</span>
           </td>
+          <td>${celdaAvance(fases, totalFases, avance?.puntajeTotal ?? 0)}</td>
           <td class="portal__acciones">${acciones.join("")}</td>
         </tr>`;
     })
     .join("");
 
   return `
+    <div class="admin__herramientas">
+      <input class="portal__entrada admin__buscador" id="buscadorPersonas" type="search"
+             placeholder="Buscar por nombre, RUT, empresa o área…" autocomplete="off" />
+      <span class="admin__contador" id="contadorPersonas"></span>
+    </div>
+
+    <p class="portal__vacio" id="sinResultados" hidden>
+      Ninguna persona coincide con esa búsqueda.
+    </p>
+
     <table class="portal__tabla portal__tabla--personas">
       <thead>
         <tr>
           <th>Persona</th><th>Empresa / \u00e1rea</th><th>Rol</th>
-          <th>Curso</th><th>Inscripci\u00f3n</th><th></th>
+          <th>Curso</th><th>Inscripci\u00f3n</th><th>Avance</th><th></th>
         </tr>
       </thead>
       <tbody>${filas}</tbody>
@@ -909,6 +1092,40 @@ function tablaPersonas(
  * esto, alguien que ponga etiquetas HTML en su nombre las ejecuta en el
  * navegador del administrador, que es justamente quien m\u00e1s permisos tiene.
  */
+/**
+ * Celda de avance: cuantas fases lleva y cuanto suma.
+ *
+ * Tres estados distintos y no una sola barra, porque responden preguntas
+ * distintas: "todavia no empezo" es un problema de seguimiento, "va por la 3"
+ * es normal, y "termino" cierra el caso. Con una barra al 0% los dos primeros
+ * se ven casi igual.
+ *
+ * Esto es lo que faltaba en el panel. El ranking dice quien va PRIMERO —sirve
+ * para premiar— pero no responde "¿esta persona empezo?", que es la pregunta
+ * de todos los dias. Y quien no empezo no aparece en el ranking, asi que ahi
+ * es invisible.
+ */
+function celdaAvance(fases: number, total: number, puntaje: number): string {
+  if (fases === 0) {
+    return `<span class="portal__estado portal__estado--neutro">Sin empezar</span>`;
+  }
+
+  const completo = fases >= total;
+  const porcentaje = Math.round((Math.min(fases, total) / total) * 100);
+
+  return `
+    <div class="admin__avance">
+      <div class="admin__avanceCifra">
+        <span class="${completo ? "admin__avanceHecho" : ""}">${fases} de ${total}</span>
+        <span class="admin__avancePuntaje">${puntaje} pts</span>
+      </div>
+      <div class="cobertura__carril">
+        <span class="cobertura__barra cobertura__barra--${completo ? "ok" : "media"}"
+              style="width:${porcentaje}%"></span>
+      </div>
+    </div>`;
+}
+
 function escapar(texto: string): string {
   return texto
     .replace(/&/g, "&amp;")

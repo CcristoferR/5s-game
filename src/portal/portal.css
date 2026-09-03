@@ -162,7 +162,21 @@
 }
 
 .portal__tarjeta--ancha {
-  max-width: 1080px;
+  /* 1080 se quedaba corto: la tabla de personas tiene seis columnas más un
+     bloque de cuatro botones, y a ese ancho aparecía barra horizontal en un
+     monitor normal. Con min() nunca supera el ancho disponible, así que en
+     pantallas chicas no desborda. */
+  max-width: min(1280px, 100%);
+
+  /* Sin recorte, y esto es necesario, no estético: overflow hidden en un
+     ancestro anula position sticky, y la barra de secciones se queda pegada
+     arriba al desplazar. El recorte estaba solo para que el filete respetara
+     las esquinas redondeadas, así que se le redondea a él directamente. */
+  overflow: visible;
+}
+
+.portal__tarjeta--ancha > .portal__filete {
+  border-radius: 12px 12px 0 0;
 }
 
 /* Filete de color en el borde superior: identifica la pantalla sin teñir
@@ -523,6 +537,245 @@
 
 .portal__pie .portal__boton {
   margin-top: 0;
+}
+
+/* ===========================================================================
+   Panel de administración
+   ===========================================================================
+
+   Todo lo de acá usa las variables del sistema —nada de colores propios— así
+   que el panel acompaña el tema claro y el oscuro sin una sola regla
+   duplicada, y el tamaño de texto lo escala igual que al resto.
+   =========================================================================== */
+
+.admin__encabezado {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.admin__salir {
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+/* --- Cifras de cabecera ---
+
+   Rejilla automática en vez de cuatro columnas fijas: con auto-fit las
+   tarjetas se reacomodan solas al angostar la ventana en lugar de aplastarse.
+   El mínimo de 150px es el ancho al que "Inscripciones activas" todavía entra
+   en dos líneas sin cortarse. */
+.admin__cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.admin__cifra {
+  padding: 16px 18px;
+  border: 1px solid var(--portal-borde);
+  border-radius: 10px;
+  background: var(--portal-realce);
+}
+
+.admin__cifraDato {
+  display: block;
+  color: var(--portal-titulo);
+  font-size: calc(28px * var(--portal-escala));
+  font-weight: 700;
+  line-height: 1.1;
+  /* Cifras tabulares: los números no bailan al actualizarse. */
+  font-variant-numeric: tabular-nums;
+}
+
+.admin__cifraRotulo {
+  display: block;
+  margin-top: 4px;
+  color: var(--portal-rotulo);
+  font-size: calc(12px * var(--portal-escala));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* --- Barra de secciones ---
+
+   Se queda pegada arriba al desplazar: las tablas son largas y sin esto hay
+   que volver hasta el principio para cambiar de sección. */
+.admin__pestanas {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  margin: 26px 0 0;
+  padding: 6px;
+  border: 1px solid var(--portal-borde);
+  border-radius: 12px;
+  background: var(--portal-tarjeta);
+  /* En pantallas angostas la barra se desplaza en horizontal en lugar de
+     partirse en dos líneas, que descolocaría el contenido de abajo. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.admin__pestanas::-webkit-scrollbar {
+  display: none;
+}
+
+.admin__pestana {
+  flex: 1 1 auto;
+  min-width: max-content;
+  padding: 10px 20px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--portal-cuerpo);
+  font: inherit;
+  font-size: calc(14px * var(--portal-escala));
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin__pestana:hover {
+  background: var(--portal-realce-medio);
+  color: var(--portal-titulo);
+}
+
+.admin__pestana--activa,
+.admin__pestana--activa:hover {
+  background: var(--portal-realce-fuerte);
+  color: var(--portal-titulo);
+}
+
+.admin__pestana:focus-visible {
+  outline: 2px solid var(--portal-dato);
+  outline-offset: -2px;
+}
+
+/* --- Buscador --- */
+
+.admin__herramientas {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.admin__buscador {
+  flex: 1 1 260px;
+  width: auto;
+  margin: 0;
+}
+
+.admin__contador {
+  flex: 0 0 auto;
+  color: var(--portal-rotulo);
+  font-size: calc(13px * var(--portal-escala));
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Esqueleto de carga ---
+
+   Reproduce la forma del panel mientras llegan los datos. El brillo va sobre
+   background-position, que el navegador anima sin bloquearse con el hilo
+   principal ocupado. */
+.admin__hueso {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    var(--portal-realce) 25%,
+    var(--portal-realce-medio) 37%,
+    var(--portal-realce) 63%
+  );
+  background-size: 400% 100%;
+  animation: adminHueso 1.4s ease-in-out infinite;
+}
+
+.admin__hueso--titulo {
+  width: 220px;
+  height: 34px;
+  margin-bottom: 26px;
+}
+
+.admin__hueso--cifra {
+  height: 78px;
+}
+
+.admin__hueso--pestanas {
+  height: 50px;
+  margin: 26px 0 22px;
+}
+
+.admin__hueso--fila {
+  height: 54px;
+  margin-bottom: 10px;
+}
+
+@keyframes adminHueso {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin__hueso {
+    animation: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin__encabezado {
+    flex-direction: column;
+  }
+
+  .admin__salir {
+    width: 100%;
+  }
+
+  .admin__pestana {
+    padding: 10px 14px;
+  }
+}
+
+/* Celda de avance de la tabla de personas. Compacta a propósito: comparte fila
+   con seis columnas más y un bloque de cuatro botones. */
+.admin__avance {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 104px;
+}
+
+.admin__avanceCifra {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--portal-titulo);
+  font-size: calc(13px * var(--portal-escala));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin__avanceHecho {
+  color: var(--portal-acierto);
+}
+
+.admin__avancePuntaje {
+  color: var(--portal-rotulo);
+  font-weight: 500;
+  font-size: calc(12px * var(--portal-escala));
 }
 
 /* --- Vista de administración --- */
