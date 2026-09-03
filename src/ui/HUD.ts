@@ -1,5 +1,6 @@
 import { Scene, Vector3 } from "@babylonjs/core";
 import { reproducir } from "../core/Sonido";
+import { briefingsNiveles } from "../data/levelConfig";
 import { chispasDeAcierto, humoDeError, lluviaDeEstrellas, puntoFrenteALaCamara } from "../entities/Particulas";
 import { AdvancedDynamicTexture, TextBlock, Rectangle, Control, StackPanel, Button } from "@babylonjs/gui";
 import { TEXTO, PALETA, desvanecer, afinarGui } from "./EstiloUI";
@@ -28,6 +29,17 @@ export class HUD {
 
   private textoPuntaje: TextBlock;
   private textoTiempo: TextBlock;
+  private textoFase: TextBlock;
+  private textoObjetivo: TextBlock;
+  private textoProgreso: TextBlock;
+  private franjaFase: Rectangle;
+  private filaProgreso: Rectangle;
+  private barraProgreso: Rectangle;
+
+  /** Total de la tarea. Cero mientras el nivel no informe uno. */
+  private totalTarea = 0;
+  /** Segundos de referencia para el color del tiempo. */
+  private tiempoReferencia = 0;
   private cartelFeedback: Rectangle;
   private franjaFeedback: Rectangle;
   private rotuloFeedback: TextBlock;
@@ -54,47 +66,184 @@ export class HUD {
     afinarGui(this.gui);
 
     // --- Marcador: ahora con tarjeta real detrás, no texto flotando solo ---
+    // ===================================================================
+    // PANEL DE FASE
+    // ===================================================================
+    //
+    // Antes eran dos líneas de texto —"Puntaje 0" y "Restante 34s"— en una
+    // caja gris. Cumplía, pero no decía nada de lo único que importa mientras
+    // se juega: QUÉ hay que hacer y CUÁNTO falta. Esa información existía en
+    // el juego pero vivía en el panel de apertura, que se cierra antes de
+    // empezar, así que a mitad de nivel no había dónde consultarla.
+    //
+    // El panel se arma de arriba abajo por orden de urgencia:
+    //   1. Qué fase es      — insignia con número y término japonés
+    //   2. Qué hay que hacer — el objetivo, en una línea
+    //   3. Cuánto llevo      — barra de progreso con la cuenta
+    //   4. Cuánto queda      — barra de tiempo
+    //   5. Cuánto sumo       — el puntaje, que es consecuencia y no meta
+    //
+    // Nada de esto cambia una sola mecánica: son datos que el juego ya tenía.
     const marcador = new Rectangle("marcador");
-    marcador.width = "220px";
-    marcador.height = "84px";
-    marcador.cornerRadius = 12;
+    marcador.width = "268px";
+    marcador.adaptHeightToChildren = true;
+    marcador.cornerRadius = 14;
     marcador.thickness = 1;
-    marcador.color = "rgba(255,255,255,0.15)";
-    marcador.background = "rgba(18, 20, 24, 0.82)";
+    marcador.color = PALETA.borde;
+    marcador.background = "rgba(16, 19, 23, 0.88)";
     marcador.top = "16px";
     marcador.left = "16px";
     marcador.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     marcador.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    marcador.isPointerBlocker = false;
     this.gui.addControl(marcador);
-
-    const franjaAcento = new Rectangle("franjaAcentoMarcador");
-    franjaAcento.width = "5px";
-    franjaAcento.height = "84px";
-    franjaAcento.thickness = 0;
-    franjaAcento.background = "#2e7d46";
-    franjaAcento.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    marcador.addControl(franjaAcento);
 
     const panelMarcador = new StackPanel("panelMarcador");
     panelMarcador.isVertical = true;
-    panelMarcador.width = "195px";
-    panelMarcador.left = "12px";
-    panelMarcador.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    panelMarcador.width = "236px";
+    panelMarcador.paddingTop = "16px";
+    panelMarcador.paddingBottom = "16px";
     marcador.addControl(panelMarcador);
 
-    this.textoPuntaje = new TextBlock("puntaje", "Puntaje  0");
-    this.textoPuntaje.color = "white";
-    this.textoPuntaje.fontSize = TEXTO.destacado;
-    this.textoPuntaje.height = "38px";
-    this.textoPuntaje.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    panelMarcador.addControl(this.textoPuntaje);
+    // --- 1. Insignia de fase ---
+    const cabecera = new Rectangle("cabeceraFase");
+    cabecera.width = "236px";
+    cabecera.height = "34px";
+    cabecera.thickness = 0;
+    cabecera.background = "transparent";
+    panelMarcador.addControl(cabecera);
 
+    // Franja de color de la fase. Es el único elemento que cambia de color
+    // entre niveles, y por eso identifica la fase de un vistazo aunque no se
+    // lea el texto.
+    this.franjaFase = new Rectangle("franjaFase");
+    this.franjaFase.width = "4px";
+    this.franjaFase.height = "26px";
+    this.franjaFase.thickness = 0;
+    this.franjaFase.background = PALETA.acierto;
+    this.franjaFase.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.franjaFase.isHitTestVisible = false;
+    cabecera.addControl(this.franjaFase);
+
+    this.textoFase = new TextBlock("textoFase", "");
+    this.textoFase.color = PALETA.titulo;
+    this.textoFase.fontSize = TEXTO.menor;
+    this.textoFase.fontWeight = "700";
+    this.textoFase.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoFase.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoFase.left = "16px";
+    this.textoFase.isHitTestVisible = false;
+    cabecera.addControl(this.textoFase);
+
+    // --- 2. Objetivo ---
+    this.textoObjetivo = new TextBlock("textoObjetivo", "");
+    this.textoObjetivo.color = PALETA.cuerpo;
+    this.textoObjetivo.fontSize = TEXTO.rotulo;
+    this.textoObjetivo.textWrapping = true;
+    this.textoObjetivo.resizeToFit = true;
+    this.textoObjetivo.width = "220px";
+    this.textoObjetivo.paddingLeft = "16px";
+    this.textoObjetivo.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoObjetivo.isHitTestVisible = false;
+    panelMarcador.addControl(this.textoObjetivo);
+
+    // --- 3. Progreso de la tarea ---
+    //
+    // La fila es un rectángulo de alto FIJO, no un StackPanel con márgenes.
+    //
+    // La versión anterior apilaba el rótulo y el carril dentro de un
+    // StackPanel usando paddingTop para separarlos, y ahí está el problema:
+    // el StackPanel mide a sus hijos por su alto y no cuenta ese relleno, así
+    // que los carriles quedaban desplazados fuera de su fila. Eso era la banda
+    // gris suelta que aparecía debajo de "Tiempo" sin pertenecer a nada.
+    //
+    // Con alto fijo y posiciones absolutas dentro, cada pieza queda donde se
+    // la pone y no depende de cómo mida el contenedor.
+    this.filaProgreso = new Rectangle("filaProgreso");
+    this.filaProgreso.width = "236px";
+    this.filaProgreso.height = "44px";
+    this.filaProgreso.thickness = 0;
+    this.filaProgreso.background = "transparent";
+    this.filaProgreso.isVisible = false;
+    this.filaProgreso.isHitTestVisible = false;
+    panelMarcador.addControl(this.filaProgreso);
+
+    this.textoProgreso = new TextBlock("textoProgreso", "");
+    this.textoProgreso.color = PALETA.rotulo;
+    this.textoProgreso.fontSize = TEXTO.rotulo;
+    this.textoProgreso.fontWeight = "600";
+    this.textoProgreso.height = "18px";
+    this.textoProgreso.left = "16px";
+    this.textoProgreso.top = "2px";
+    this.textoProgreso.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoProgreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.textoProgreso.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoProgreso.isHitTestVisible = false;
+    this.filaProgreso.addControl(this.textoProgreso);
+
+    const carrilProgreso = new Rectangle("carrilProgreso");
+    carrilProgreso.width = "204px";
+    carrilProgreso.height = "8px";
+    carrilProgreso.cornerRadius = 4;
+    carrilProgreso.thickness = 0;
+    carrilProgreso.background = "rgba(255,255,255,0.10)";
+    carrilProgreso.left = "16px";
+    carrilProgreso.top = "-4px";
+    carrilProgreso.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    carrilProgreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    carrilProgreso.isHitTestVisible = false;
+    this.filaProgreso.addControl(carrilProgreso);
+
+    this.barraProgreso = new Rectangle("barraProgreso");
+    this.barraProgreso.width = "0px";
+    this.barraProgreso.height = "8px";
+    this.barraProgreso.cornerRadius = 4;
+    this.barraProgreso.thickness = 0;
+    this.barraProgreso.background = PALETA.acierto;
+    this.barraProgreso.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.barraProgreso.isHitTestVisible = false;
+    carrilProgreso.addControl(this.barraProgreso);
+
+    // --- 4. Tiempo ---
+    //
+    // SIN BARRA, en ningún nivel.
+    //
+    // En los niveles 1 a 4 el reloj cuenta hacia arriba y no tiene límite, así
+    // que no hay contra qué llenar nada. En el 5 sí hay cuenta atrás, pero una
+    // sola barra que a veces significa algo y a veces no enseña a ignorarla.
+    //
+    // La urgencia la comunica el propio número cambiando de color, que ocupa
+    // cero espacio extra y se ve igual de reojo.
     this.textoTiempo = new TextBlock("tiempo", "Tiempo  0s");
-    this.textoTiempo.color = "rgba(255,255,255,0.85)";
-    this.textoTiempo.fontSize = TEXTO.cuerpo;
-    this.textoTiempo.height = "30px";
+    this.textoTiempo.color = PALETA.rotulo;
+    this.textoTiempo.fontSize = TEXTO.menor;
+    this.textoTiempo.fontWeight = "600";
+    this.textoTiempo.height = "24px";
+    this.textoTiempo.paddingLeft = "16px";
     this.textoTiempo.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoTiempo.isHitTestVisible = false;
     panelMarcador.addControl(this.textoTiempo);
+
+    // --- 5. Puntaje ---
+    //
+    // Abajo y no arriba: el puntaje es consecuencia de hacer bien la tarea, no
+    // el objetivo. Arriba del todo empujaba a jugar mirando el número.
+    // Sin línea divisoria entre el tiempo y el puntaje.
+    //
+    // Estaban separados por una línea con aire arriba y abajo, y no separaba
+    // nada: son dos datos del mismo bloque, no dos secciones. Quitarla acorta
+    // el panel y deja el conjunto más limpio, que es lo que se busca en algo
+    // que está en pantalla todo el rato.
+
+    this.textoPuntaje = new TextBlock("puntaje", "0 pts");
+    this.textoPuntaje.color = PALETA.titulo;
+    this.textoPuntaje.fontSize = TEXTO.destacado;
+    this.textoPuntaje.fontWeight = "700";
+    this.textoPuntaje.height = "36px";
+    this.textoPuntaje.paddingLeft = "16px";
+    this.textoPuntaje.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoPuntaje.isHitTestVisible = false;
+    panelMarcador.addControl(this.textoPuntaje);
 
     // --- Cartel de feedback ---
     // CARTEL DE RETROALIMENTACIÓN
@@ -261,17 +410,112 @@ export class HUD {
     this.pantallaFinal.addControl(this.botonReintentar);
   }
 
-  actualizarPuntaje(puntaje: number): void {
-    this.textoPuntaje.text = `Puntaje  ${puntaje}`;
+  /**
+   * Fija la fase que se está jugando.
+   *
+   * Los textos salen de briefingsNiveles: el mismo término japonés, la misma
+   * traducción y el mismo color que muestra el panel de apertura y la pantalla
+   * de carga. Nada duplicado — si algún día se corrige un texto, cambia en los
+   * tres sitios a la vez.
+   *
+   * Hace falta porque el panel de apertura se cierra antes de empezar: a mitad
+   * de nivel no había forma de recordar en qué S se estaba.
+   */
+  definirFase(numeroNivel: number): void {
+    const briefing = briefingsNiveles[numeroNivel];
+
+    if (!briefing) {
+      this.textoFase.text = "TUTORIAL";
+      this.textoObjetivo.text = "Aprende a mirar, tomar y soltar.";
+      return;
+    }
+
+    this.textoFase.text = `${String(numeroNivel).padStart(2, "0")}  ${briefing.fase.toUpperCase()}`;
+    this.textoObjetivo.text = briefing.traduccion;
+    this.franjaFase.background = briefing.color;
+    this.barraProgreso.background = briefing.color;
   }
 
+  /**
+   * Sustituye el objetivo por uno propio del nivel.
+   *
+   * La traducción de la S sirve de objetivo por defecto —"Clasificar",
+   * "Ordenar"— pero un nivel puede querer decir algo más concreto.
+   */
+  definirObjetivo(texto: string): void {
+    this.textoObjetivo.text = texto;
+  }
+
+  /**
+   * Enciende la barra de progreso de la tarea.
+   *
+   * Mientras un nivel no llame a esto, la fila queda oculta: una barra que
+   * nunca avanza confunde más que la ausencia de barra.
+   */
+  definirTotalTarea(total: number): void {
+    this.totalTarea = Math.max(0, total);
+    this.filaProgreso.isVisible = this.totalTarea > 0;
+    this.actualizarProgreso(0);
+  }
+
+  actualizarProgreso(hechos: number): void {
+    if (this.totalTarea <= 0) return;
+
+    const hechosAcotados = Math.min(hechos, this.totalTarea);
+    this.textoProgreso.text = `${hechosAcotados} de ${this.totalTarea}`;
+    this.barraProgreso.width = Math.round((hechosAcotados / this.totalTarea) * 204) + "px";
+  }
+
+  actualizarPuntaje(puntaje: number): void {
+    this.textoPuntaje.text = `${puntaje} pts`;
+  }
+
+  /**
+   * Tiempo transcurrido.
+   *
+   * Sin límite que mostrar, la barra se llena sobre una referencia de dos
+   * minutos: no es una cuenta atrás, es una noción de cuánto se lleva. Se
+   * queda llena al pasarse, sin desbordar.
+   */
+  /**
+   * Tiempo transcurrido, SIN barra.
+   *
+   * La primera versión dibujaba una barra contra una referencia inventada de
+   * dos minutos. No medía nada: en estos niveles el reloj no tiene límite, así
+   * que la barra no podía llenarse ni vaciarse por ningún motivo real. Una
+   * barra que no representa nada ocupa sitio y le quita crédito a las que sí
+   * significan algo.
+   */
   actualizarTiempo(segundos: number): void {
     this.textoTiempo.text = `Tiempo  ${segundos}s`;
   }
 
+  /**
+   * Tiempo restante, para los niveles con reloj en contra.
+   *
+   * La barra se vacía y cambia de color en dos umbrales. El color hace el
+   * trabajo que el número no puede: a mitad de una tarea nadie está leyendo
+   * cifras, pero un borde que se pone ámbar se ve por el rabillo del ojo.
+   */
+  /**
+   * Tiempo restante, para los niveles con reloj en contra.
+   *
+   * El aviso lo da el NÚMERO cambiando de color: ámbar bajo el 40 % y rojo
+   * bajo el 15 %. Se ve de reojo igual que una barra, no ocupa una fila extra
+   * y no deja nada gris en pantalla cuando no hay nada que avisar.
+   */
   actualizarTiempoRestante(segundos: number): void {
     this.textoTiempo.text = `Restante  ${segundos}s`;
+
+    // La primera lectura fija la referencia: así funciona con el límite que
+    // tenga cada nivel, sin informárselo aparte.
+    if (this.tiempoReferencia <= 0) this.tiempoReferencia = Math.max(1, segundos);
+
+    const proporcion = Math.max(0, Math.min(1, segundos / this.tiempoReferencia));
+    this.textoTiempo.color =
+      proporcion <= 0.15 ? PALETA.error : proporcion <= 0.4 ? PALETA.aviso : PALETA.rotulo;
   }
+
 
   /**
    * Informa un acierto o un error.

@@ -99,6 +99,8 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   gui.addControl(instruccion);
 
   const totalManchas = incidentesNivel3.reduce((sum, inc) => sum + inc.manchas.length, 0);
+  hud.definirTotalTarea(totalManchas);
+
   const progreso = new TextBlock("progresoNivel3", `Manchas limpias: 0/${totalManchas}`);
   progreso.color = "white";
   progreso.fontSize = TEXTO.cuerpo;
@@ -166,6 +168,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         manchasLimpiasTotal++;
         manchasLimpiasEsteIncidente++;
         progreso.text = `Manchas limpias: ${manchasLimpiasTotal}/${totalManchas}`;
+        hud.actualizarProgreso(manchasLimpiasTotal);
 
         if (manchasLimpiasEsteIncidente === incidente.manchas.length) {
           abrirPreguntaDeIncidente(gui, incidente, () => {

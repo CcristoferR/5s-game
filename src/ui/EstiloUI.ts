@@ -129,36 +129,25 @@ export const MARGEN = 40;
 // ---------------------------------------------------------------------------
 
 /**
- * Nitidez de una capa de interfaz.
+ * Filtrado de una capa de interfaz.
  *
- * ─── POR QUÉ EL TEXTO SE VEÍA BORROSO ─────────────────────────────────────
+ * OJO CON renderScale: en Babylon funciona al revés de lo que parece. Un valor
+ * MAYOR hace la textura MÁS CHICA (2 significa "la mitad de resolución"). Acá
+ * hubo un intento de subir la nitidez poniéndolo en 1,25 y el efecto fue el
+ * contrario: la interfaz pasó a dibujarse con un 25 % menos de píxeles.
  *
- * La interfaz del juego no es HTML: se dibuja en una textura y esa textura se
- * pega sobre el lienzo. Su tamaño lo hereda del motor, y el motor trabaja a
- * píxeles CSS —eso es deliberado, porque cuando el buffer no coincidía con el
- * lienzo la conversión de coordenadas del puntero se desalineaba y los clics
- * caían una fila más abajo—.
+ * Tampoco sirve bajarlo de 1: la textura crecería, pero los controles están
+ * medidos en píxeles y se encogerían todos en la misma proporción.
  *
- * El efecto secundario es que en pantallas con escala de Windows al 125 % o
- * 150 % —lo normal en un portátil— la textura tiene menos píxeles que el área
- * donde se muestra, y el navegador la agranda. De ahí el texto blando, con los
- * bordes lavados.
- *
- * renderScale multiplica la resolución DE LA TEXTURA sin tocar el motor ni la
- * geometría del puntero: la interfaz se dibuja con más píxeles y se muestra al
- * mismo tamaño. Es exactamente el problema que resuelve, y no reabre el de los
- * clics desplazados.
- *
- * El factor sale de la escala real de la pantalla, con tope en 2: por encima
- * de eso se gasta memoria de vídeo sin ganancia visible.
+ * La nitidez de verdad se resuelve en el motor, no acá — ver el escalado de
+ * hardware en main.ts. Lo único que queda en esta función es el filtrado, que
+ * suaviza el muestreo sin tocar la resolución.
  */
 export function afinarGui(gui: AdvancedDynamicTexture): void {
-  gui.renderScale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-
-  // Filtrado trilineal al muestrear la textura: con más resolución de la que
-  // se muestra, sin filtrar quedan los cantos dentados.
+  gui.renderScale = 1;
   gui.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
 }
+
 
 /**
  * Capa que oscurece la escena y bloquea los clics.

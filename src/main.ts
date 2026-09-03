@@ -30,29 +30,36 @@ import { mostrarRankingCurso } from "./ui/RankingScreen";
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, undefined, false);
 
-// El buffer de render va 1:1 con el tamanio del canvas.
+// ---------------------------------------------------------------------------
+// Resolución de render — NO TOCAR ESTA LÍNEA
+// ---------------------------------------------------------------------------
 //
-// Aca hubo un setHardwareScalingLevel(1 / devicePixelRatio) para ganar
-// nitidez. El costo fue que el buffer pasaba a medir el doble que el canvas,
-// y con eso la conversion de coordenadas del puntero hacia la GUI dejaba de
-// coincidir: el menu se dibujaba en un lado y respondia en otro — el mouse
-// sobre una fila y el clic entrando a la fila de abajo. Ademas explicaba por
-// que al abrir las devtools o el modo celular (que cambian el
-// devicePixelRatio) el comportamiento cambiaba.
+// Tiene que quedar en 1. Fijo. Sin ratio de pantalla, sin topes, sin
+// condiciones.
 //
-// La nitidez de la interfaz se resuelve por el lado de la GUI (idealWidth /
-// idealHeight en MainMenu), que no toca la geometria del puntero.
+// QUÉ PASA SI SE CAMBIA. Con cualquier valor distinto de 1, el buffer de
+// render deja de medir lo mismo que el canvas, y la conversión de coordenadas
+// del puntero hacia la interfaz deja de coincidir: el menú se DIBUJA en un
+// sitio y RESPONDE en otro. El desfase crece hacia abajo de la pantalla, así
+// que las primeras filas todavía se dejan apretar y las últimas no — hay que
+// apuntar al Nivel 1 para entrar al 2, y el ranking y el cerrar sesión, que
+// están al fondo del panel, no responden en absoluto.
 //
-// OJO: la linea de abajo tiene que quedar en 1 fijo. Volvio a aparecer como
-// (1 / devicePixelRatio) con un tope de 2, creyendo que el tope la hacia
-// segura, y no lo es: con la pantalla al 125% o 150% —lo normal en Windows—
-// el divisor es 1.25 o 1.5 y el desfase vuelve igual. Se nota poco arriba y
-// mucho abajo, porque crece con la distancia al borde superior: las primeras
-// filas del menu todavia se dejan apretar y las ultimas ya no, igual que el
-// ranking y el cerrar sesion, que estan al fondo del panel.
+// HISTORIAL. Esto ya ocurrió tres veces:
+//   1. Estaba como (1 / devicePixelRatio) y se quitó por este mismo fallo.
+//   2. Volvió como (1 / min(devicePixelRatio, 2)), creyendo que el tope lo
+//      hacía seguro. No lo hace: con la pantalla al 125 % el divisor es 1,25
+//      y el desfase vuelve igual.
+//   3. Volvió otra vez para ganar nitidez en pantallas con escala de Windows,
+//      y falló de nuevo de forma idéntica.
 //
-// Por el mismo motivo el cuarto argumento del Engine va en false:
-// adaptToDeviceRatio hace exactamente lo mismo por su cuenta.
+// EL COSTO ACEPTADO. En monitores con escala al 125 % o 150 % la imagen se ve
+// algo blanda, porque el canvas se muestra sobre más píxeles físicos de los
+// que tiene. Es un costo real y conocido — y es preferible: nítido con los
+// clics corridos deja el juego inservible, blando no.
+//
+// La nitidez de la interfaz se trabaja por otro lado (tamaños de letra y
+// resolución de los carteles), no desde acá.
 engine.setHardwareScalingLevel(1);
 let sceneManager = new SceneManager(engine);
 
@@ -276,6 +283,11 @@ function construirNivel(numeroNivel: number): void {
   gameManager.onPuntajeCambiado.clear();
 
   const hud = new HUD(sceneManager.scene);
+
+  // La fase se informa desde acá y no desde cada nivel: main es quien sabe qué
+  // número se está cargando, y así los cinco niveles quedan cubiertos sin
+  // tocar ninguno.
+  hud.definirFase(numeroNivel);
   gameManager.onPuntajeCambiado.add((puntaje) => hud.actualizarPuntaje(puntaje));
 
   const onCompletado = () => {

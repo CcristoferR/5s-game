@@ -97,6 +97,25 @@ export function cargarNivel5(
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
 
+  // SIN barra de progreso en este nivel, a propósito.
+  //
+  // Acá no hay una cuenta honesta que mostrar. Marcar los cinco puntos NO es
+  // el objetivo: hay que marcar solo los que tienen desviación, y cuántos son
+  // cambia en cada partida porque se generan a partir del estándar que el
+  // jugador definió en el Nivel 4.
+  //
+  // Las dos opciones posibles fallan, cada una a su manera:
+  //
+  //   "0 de 5" sobre el total de estaciones da una instrucción falsa — invita
+  //   a marcarlas todas, que es justo el error que la auditoría penaliza.
+  //
+  //   "0 de 3" sobre el número de desviaciones sería peor todavía: le estaría
+  //   diciendo al jugador cuántos problemas hay antes de buscarlos, y el
+  //   ejercicio consiste precisamente en decidir cuántos hay.
+  //
+  // Queda el contador "Marcados: X/5" de la pantalla, que es neutro: dice
+  // cuántas estaciones llevas marcadas, no cuántas deberías marcar.
+
   const contador = new TextBlock("contadorNivel5", `Marcados: 0/${datosControl.length}`);
   contador.color = "white";
   contador.fontSize = TEXTO.cuerpo;

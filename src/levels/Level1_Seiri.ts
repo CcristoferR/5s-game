@@ -117,6 +117,10 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   });
 
   let objetosResueltos = 0;
+
+  // Progreso en el panel: la cuenta ya existía para calcular el puntaje, solo
+  // no se estaba mostrando mientras se jugaba.
+  hud.definirTotalTarea(objetos.length);
   const conteoZonas: Record<ZonaClasificacion, number> = { necesario: 0, dudoso: 0, descartar: 0 };
 
   // Z de las zonas de piso y medio lado util, definidos en DropZone.
@@ -172,6 +176,7 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         moverMalla(scene, mesh, lugarEnZona(zonaMasCercana, conteoZonas[objeto.datos.zonaCorrecta]), 320);
 
         objetosResueltos++;
+        hud.actualizarProgreso(objetosResueltos);
         conteoZonas[objeto.datos.zonaCorrecta]++;
 
         if (objetosResueltos === objetos.length) {

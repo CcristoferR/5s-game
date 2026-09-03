@@ -120,6 +120,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Realce al pasar el cursor, igual que en los Niveles 1 y 2. Las tarjetas y
   // las senales se apoyan sobre mobiliario que tambien responde al puntero:
   // sin el contorno hay que probar cual de todo lo que se ve se puede tomar.
+  // Total de la tarea: las tarjetas del checklist más las señales. Es la misma
+  // cuenta que ya llevaba el contador de pantalla.
+  hud.definirTotalTarea(items.length + senales.length);
+
   const realce = habilitarRealceAlPasar(scene, [
     ...items.map((o) => o.mesh),
     ...senales.map((o) => o.mesh),
@@ -255,6 +259,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     const total = items.length + senales.length;
     const colocados = colocacionItems.size + colocacionSenales.size;
     progreso.text = `Colocado: ${colocados}/${total}`;
+    hud.actualizarProgreso(colocados);
 
     if (colocados === total) {
       botonProbar.isVisible = true;

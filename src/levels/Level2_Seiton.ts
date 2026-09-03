@@ -111,6 +111,10 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   });
 
   let objetosResueltos = 0;
+
+  // Progreso en el panel: la cuenta ya existía para calcular el puntaje, solo
+  // no se estaba mostrando mientras se jugaba.
+  hud.definirTotalTarea(objetos.length);
   let distanciaTotalRecorrida = 0;
 
   // Cuántas herramientas ya se guardaron en cada estación.
@@ -162,6 +166,7 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         moverMalla(scene, mesh, lugarEnEstacion(slotMasCercano.posicionX, yaGuardados), 300);
 
         objetosResueltos++;
+        hud.actualizarProgreso(objetosResueltos);
 
         if (objetosResueltos === objetos.length) {
           corriendoTiempo = false;
