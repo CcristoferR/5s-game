@@ -3,6 +3,25 @@ import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Observab
 export interface StainResult {
   mesh: Mesh;
   onLimpia: Observable<void>;
+  /** Se intentó limpiar con la fuente de suciedad todavía activa. */
+  onBloqueada: Observable<void>;
+  /** Saca a la luz una mancha que arrancó oculta. */
+  revelar: () => void;
+}
+
+export interface OpcionesMancha {
+  /**
+   * Permiso para limpiar, consultado en CADA clic.
+   *
+   * Video 3.4 (1:40): hay que "eliminar la suciedad y las fuentes de
+   * suciedad". Mientras la fuente siga activa, trapear es trabajo perdido — y
+   * el juego tiene que dejar que el jugador lo COMPRUEBE frotando, no
+   * impedírselo con un cartel. Por eso el clic se acepta, se ve la pasada de
+   * trapo, y la mancha sigue ahí.
+   */
+  puedeLimpiarse?: () => boolean;
+  /** Arranca invisible e impinchable. Se destapa con revelar(). */
+  ocultaAlInicio?: boolean;
 }
 
 export type TipoMancha = "aceite" | "polvo";
@@ -81,7 +100,8 @@ export function crearMancha(
   x: number,
   z: number,
   tipo: TipoMancha = "aceite",
-  clicksNecesarios?: number
+  clicksNecesarios?: number,
+  opciones: OpcionesMancha = {}
 ): StainResult {
   const esPolvo = tipo === "polvo";
   const clicks = clicksNecesarios ?? (esPolvo ? 3 : 5);
@@ -114,6 +134,17 @@ export function crearMancha(
   // encima. Es el mismo motivo por el que el realce de objetos no encendia.
   mesh.enablePointerMoveEvents = true;
 
+  // Suciedad oculta: existe desde el primer cuadro pero no se ve ni se puede
+  // pinchar. Crearla después, al apartar el bulto, tendría el mismo efecto
+  // visual y un problema: la mancha aparecería SOBRE el objeto que la tapaba
+  // si el jugador lo arrastró justo encima. Naciendo con el nivel, el orden de
+  // profundidad ya está resuelto.
+  let oculta = opciones.ocultaAlInicio === true;
+  if (oculta) {
+    mesh.isVisible = false;
+    mesh.isPickable = false;
+  }
+
   // --- Aviso de que se puede limpiar ---
   //
   // Antes esto era un aro luminoso alrededor. Se veía como un círculo blanco
@@ -126,6 +157,7 @@ export function crearMancha(
   let cursorEncima = false;
 
   const onLimpia = new Observable<void>();
+  const onBloqueada = new Observable<void>();
   let clicksRestantes = clicks;
 
   const escuchaPuntero = scene.onPointerObservable.add((info) => {
@@ -138,6 +170,17 @@ export function crearMancha(
 
     if (info.type !== PointerEventTypes.POINTERPICK) return;
     if (info.pickInfo?.pickedMesh !== mesh) return;
+
+    // FUENTE TODAVÍA ACTIVA. Se frota, salta la salpicadura y la mancha vuelve
+    // a su estado: el trabajo no cuenta. Es la lección de la 3S puesta en la
+    // mecánica en vez de en un cartel — limpiar sin eliminar la causa es
+    // volver a limpiar mañana.
+    if (opciones.puedeLimpiarse && !opciones.puedeLimpiarse()) {
+      lanzarSalpicaduras(scene, mesh.position, esPolvo);
+      rebrotar(scene, mesh, mat, alphaBase);
+      onBloqueada.notifyObservers();
+      return;
+    }
 
     clicksRestantes--;
     const progreso = clicksRestantes / clicks;
@@ -176,7 +219,55 @@ export function crearMancha(
     mat.emissiveColor.set(actual, actual, actual);
   });
 
-  return { mesh, onLimpia };
+  const revelar = (): void => {
+    if (!oculta || mesh.isDisposed()) return;
+    oculta = false;
+    mesh.isVisible = true;
+    mesh.isPickable = true;
+
+    // Entra desvaneciéndose desde el piso en vez de aparecer de golpe: lo que
+    // se destapa estaba ahí desde siempre, y un parpadeo lo haría ver como un
+    // objeto que acaba de generarse.
+    const destino = alphaBase;
+    mat.alpha = 0;
+    const inicio = performance.now();
+    const entrada = scene.onBeforeRenderObservable.add(() => {
+      if (mesh.isDisposed()) {
+        scene.onBeforeRenderObservable.remove(entrada);
+        return;
+      }
+      const avance = Math.min(1, (performance.now() - inicio) / 520);
+      mat.alpha = destino * avance;
+      if (avance >= 1) scene.onBeforeRenderObservable.remove(entrada);
+    });
+  };
+
+  return { mesh, onLimpia, onBloqueada, revelar };
+}
+
+/**
+ * La mancha se aclara un instante y vuelve a su estado.
+ *
+ * Es el acuse de "pasaste el trapo y no sirvió". Sin este movimiento el clic
+ * bloqueado no se distingue de un clic que no registró, y el jugador insiste
+ * creyendo que el juego está roto en vez de entender que le falta un paso.
+ */
+function rebrotar(scene: Scene, mesh: Mesh, mat: PBRMaterial, alphaBase: number): void {
+  const inicio = performance.now();
+  const observador = scene.onBeforeRenderObservable.add(() => {
+    if (mesh.isDisposed()) {
+      scene.onBeforeRenderObservable.remove(observador);
+      return;
+    }
+    const avance = Math.min(1, (performance.now() - inicio) / 560);
+    // Baja de golpe y se recupera despacio: se lee como aceite que vuelve a
+    // extenderse, no como un destello.
+    mat.alpha = alphaBase * (0.45 + 0.55 * avance);
+    if (avance >= 1) {
+      mat.alpha = alphaBase;
+      scene.onBeforeRenderObservable.remove(observador);
+    }
+  });
 }
 
 /** Gotas que saltan al frotar. Duran poco: son el acuse de recibo del clic. */

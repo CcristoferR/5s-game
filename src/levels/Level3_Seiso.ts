@@ -1,8 +1,10 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, PointLight, ActionManager, ExecuteCodeAction, Mesh } from "@babylonjs/core";
 import { TextBlock, Control, AdvancedDynamicTexture } from "@babylonjs/gui";
 import { incidentesNivel3, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearMancha } from "../entities/Stain";
+import { crearBidonApartable } from "../entities/BidonApartable";
+import { crearRotulo3D } from "../entities/Rotulo3D";
 import { chispasDeAcierto } from "../entities/Particulas";
 import { reproducir } from "../core/Sonido";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
@@ -17,6 +19,43 @@ import { HUD } from "../ui/HUD";
 import { luegoDe } from "../core/Animacion";
 import { TEXTO } from "../ui/EstiloUI";
 
+// ===========================================================================
+// NIVEL 3 — SEISO (Limpiar)
+// ===========================================================================
+//
+// ─── EL FALLO DE FONDO QUE TENÍA ──────────────────────────────────────────
+//
+// Se ganaba haciendo clic en cinco manchas del piso. Eso es un juego de
+// limpieza, no la 3S. Video 3.4 (0:41): "en esta S no se trata solo de limpiar
+// sino, y más importante, la labor de limpieza la realizaremos con el objetivo
+// final de poder realizar una INSPECCIÓN a nuestros equipos y áreas". Y en
+// 1:40: hay que "eliminar la suciedad y LAS FUENTES DE SUCIEDAD... analizar la
+// causa... y tomar acción".
+//
+// Trapear lo que está a la vista no es ninguna de las dos cosas.
+//
+// ─── LO QUE AHORA EXIGE EL NIVEL ──────────────────────────────────────────
+//
+// 1. ELIMINAR LA FUENTE ANTES QUE LA SUCIEDAD. Las manchas de aceite no se
+//    dejan limpiar mientras la junta siga goteando: se puede frotar, salta la
+//    salpicadura, y el aceite vuelve. La lección no se cuenta en un cartel, se
+//    comprueba con el trapo en la mano.
+//
+// 2. INSPECCIONAR PARA ENCONTRARLA. La junta está AL DORSO del equipo. Desde
+//    donde arranca la cámara no se ve: lo que se ve es el piloto de falla
+//    latiendo y un cartel que manda mirar detrás. Hay que rodear la máquina.
+//
+// 3. MIRAR DEBAJO DE LO QUE HAY APOYADO. Un sexto charco no se ve desde ningún
+//    ángulo porque está bajo el bidón de aceite. Solo aparece si se aparta el
+//    bidón. Es el hallazgo que da sentido a la frase "limpiar para
+//    inspeccionar", y por eso tiene su propia pregunta — de otro tipo que las
+//    otras dos: acá la causa física es obvia, lo que hay que explicar es por
+//    qué estuvo meses sin que nadie lo viera.
+
+/** El equipo va a la derecha del banco; su dorso mira al fondo del galpón. */
+const MAQUINA_X = 2.5;
+const MAQUINA_Z = -0.3;
+
 export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
   const gui = hud.gui;
@@ -28,9 +67,12 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // el techo proyectara la sombra de la luz direccional dejaría todo el
   // interior a oscuras. La luz de adentro la resuelve iluminarInteriorGaraje.
   void cargarGaraje(scene).catch((error) => console.error("[nivel3] garaje:", error));
-  // Tres focos, uno por cada zona que el jugador tiene que inspeccionar: el
-  // banco, el equipo con la fuga y la impresora del fondo. Sin el tercero, las
-  // manchas de tóner quedaban en penumbra y costaba encontrarlas.
+  // Los tres focos de siempre: banco, equipo e impresora.
+  //
+  // No se agrega un cuarto para el dorso de la máquina porque no serviría:
+  // iluminarInteriorGaraje cuelga todos sus focos en x = 0, y el equipo está
+  // en x = 2.5. La luz del dorso se pone aparte, más abajo, justo donde va a
+  // hacer falta mirar.
   iluminarInteriorGaraje(scene, [
     { z: -0.5, intensidad: 0.85 },
     { z: 0.4, intensidad: 0.8 },
@@ -48,9 +90,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // no el banco, y hay que dejarle lugar libre al costado.
   crearBancoDeTrabajo(scene, { nombre: "escritorioN3", ancho: 3, fondo: 1.4, z: -0.5 });
 
-  // La máquina se corrió de x=2.0 a x=2.5: con el banco compartido (3 m de
-  // ancho) su carcasa quedaba encajada dentro del tablero.
-  const maquina = crearMaquinaConFuga(scene, 2.5, -0.3);
+  const equipo = crearMaquinaConFuga(scene, MAQUINA_X, MAQUINA_Z);
 
   const impresora = crearImpresoraConToner(scene, -3.2, 1.7);
   // La impresora es un equipo de escritorio y estaba apoyada directamente
@@ -62,6 +102,17 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   crearLamparaDeTrabajo(scene);
 
+  // Luz de inspección sobre el dorso del equipo.
+  //
+  // La junta está donde el jugador no mira, y ese es el ejercicio — pero un
+  // punto de inspección en penumbra no es un desafío, es un problema de vista.
+  // Fría y de alcance corto: alumbra el rincón sin aclarar la escena entera ni
+  // pisar la luz cálida del taller.
+  const luzDorso = new PointLight("luzDorsoMaquina", new Vector3(MAQUINA_X + 0.3, 1.5, MAQUINA_Z + 1.4), scene);
+  luzDorso.diffuse = new Color3(0.86, 0.92, 1);
+  luzDorso.intensity = 0.5;
+  luzDorso.range = 3.2;
+
   // AMBIENTACIÓN
   //
   // Un galpón de 12 x 19 m con tres muebles se siente abandonado, no en uso.
@@ -72,18 +123,19 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   //
   // Todo va contra las paredes o fuera de la zona de juego. La zona ocupada es
   // x entre -4 y 3.6, z entre -1.3 y 2.5 — ahí están el banco, el equipo, la
-  // impresora y las cinco manchas. Nada de esto es interactivo: un objeto
-  // decorativo que tape o imite una mancha juega en contra del ejercicio.
+  // impresora, el bidón y las seis manchas. Nada de esto es interactivo: un
+  // objeto decorativo que tape o imite una mancha juega en contra del
+  // ejercicio.
   ambientarNivel(scene, 3);
 
-  // El goteo cae exactamente donde la junta de la máquina pierde aceite.
-  // Ese punto está en el costado izquierdo del equipo, y la primera mancha se
-  // colocó justo debajo: el jugador puede VER la causa, no deducirla.
-  crearGoteoDeFuga(scene, new Vector3(1.7, 0.2, -0.3));
+  // El goteo cae exactamente donde la junta del dorso pierde aceite. No es
+  // adorno: es la confirmación de que se llegó al punto correcto, y solo se ve
+  // desde atrás del equipo.
+  crearGoteoDeFuga(scene, equipo.puntoFuga);
 
   const instruccion = new TextBlock(
     "instruccionNivel3",
-    "Modo detective: limpia cada mancha, luego identifica la causa de cada incidente"
+    "Modo inspección: primero elimina la FUENTE, después la suciedad. Y mira debajo de lo que está apoyado."
   );
   instruccion.color = "white";
   instruccion.fontSize = TEXTO.cuerpo;
@@ -93,22 +145,38 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
   // queda centrado verticalmente, ignorando su propio 'top'.
   instruccion.resizeToFit = true;
-  instruccion.width = "480px";
+  instruccion.width = "560px";
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
 
-  const totalManchas = incidentesNivel3.reduce((sum, inc) => sum + inc.manchas.length, 0);
-  hud.definirTotalTarea(totalManchas);
+  // Las manchas ocultas no entran en la cuenta visible.
+  //
+  // Anunciar "0/6" delataría que falta una antes de haberla buscado, y todo el
+  // ejercicio consiste en descubrir que hay algo que no se está contando. El
+  // total sube solo cuando el jugador la destapa.
+  const incidentesVisibles = incidentesNivel3.filter((i) => !i.oculta);
+  let totalManchas = incidentesVisibles.reduce((sum, inc) => sum + inc.manchas.length, 0);
+  hud.definirTotalTarea(totalManchas + 1); // +1: la fuga también es una tarea
 
   const progreso = new TextBlock("progresoNivel3", `Manchas limpias: 0/${totalManchas}`);
   progreso.color = "white";
   progreso.fontSize = TEXTO.cuerpo;
   progreso.outlineWidth = 3;
   progreso.outlineColor = "rgba(0,0,0,0.6)";
-  progreso.top = "100px";
+  progreso.top = "108px";
   progreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(progreso);
+
+  const estadoFuente = new TextBlock("estadoFuenteNivel3", "Fuente de suciedad: ACTIVA — sin sellar");
+  estadoFuente.color = "#ff9a9a";
+  estadoFuente.fontSize = TEXTO.cuerpo;
+  estadoFuente.fontWeight = "700";
+  estadoFuente.outlineWidth = 3;
+  estadoFuente.outlineColor = "rgba(0,0,0,0.7)";
+  estadoFuente.top = "138px";
+  estadoFuente.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  gui.addControl(estadoFuente);
 
   // APERTURA DEL NIVEL
   //
@@ -145,12 +213,137 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let manchasLimpiasTotal = 0;
   let incidentesResueltos = 0;
   let intentosFallidos = 0;
+  let avisoFugaMostrado = false;
+  let ocultaRevelada = false;
+
+  const refrescarProgreso = (): void => {
+    progreso.text = `Manchas limpias: ${manchasLimpiasTotal}/${totalManchas}`;
+    // La fuga cuenta como una tarea más en la barra del HUD: es la mitad del
+    // trabajo de esta S, no un requisito escondido.
+    hud.actualizarProgreso(manchasLimpiasTotal + (equipo.estaSellada() ? 1 : 0));
+  };
+
+  // =========================================================================
+  // LA FUENTE: sellar la junta del dorso
+  // =========================================================================
+
+  // Rótulo pegado a la junta, en el dorso. Solo se lee al rodear el equipo, y
+  // ahí es imprescindible: una esfera oscura sobre una tubería no le dice a
+  // nadie que se pueda pinchar.
+  crearRotulo3D(
+    scene,
+    "avisoJuntaFuga",
+    "JUNTA CON FUGA — clic para sellar",
+    // Centrado en el equipo y mas angosto que su cuerpo (0.9 m): asi el propio
+    // equipo lo oculta cuando se mira de frente. Un cartel que asoma por los
+    // costados delata la respuesta antes de rodear nada.
+    new Vector3(MAQUINA_X, 0.85, MAQUINA_Z + 0.85),
+    {
+      ancho: 0.82,
+      alto: 0.22,
+      lineasMax: 2,
+      colorFondo: "#3a1f1c",
+      colorBorde: "rgba(230,140,120,0.6)",
+      mirarCamara: true,
+      alturaTextoMin: 0.07,
+    }
+  );
+
+  equipo.junta.actionManager = new ActionManager(scene);
+  equipo.junta.actionManager.registerAction(
+    new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
+      if (equipo.estaSellada()) return;
+
+      equipo.sellar();
+      reproducir("acierto");
+      chispasDeAcierto(scene, equipo.puntoFuga.clone(), 0.9);
+      gameManager.sumarPuntos(25);
+
+      estadoFuente.text = "Fuente de suciedad: SELLADA";
+      estadoFuente.color = "#8be29a";
+
+      hud.mostrarFeedback(
+        true,
+        "Junta sellada. Ahora sí tiene sentido limpiar: el aceite que quites no va a volver."
+      );
+      refrescarProgreso();
+    })
+  );
+
+  // =========================================================================
+  // EL BULTO QUE TAPA
+  // =========================================================================
+
+  const incidenteOculto = incidentesNivel3.find((i) => i.oculta);
+  const revelarOculta: Array<() => void> = [];
+
+  if (incidenteOculto?.oculta) {
+    const [bx, bz] = incidenteOculto.oculta.posicionBulto;
+    const hallazgo = incidenteOculto.oculta.hallazgo;
+
+    const bidon = crearBidonApartable(scene, "bidonOculta", bx, bz, {
+      xMin: -4.2,
+      xMax: 4.2,
+      zMin: -1.6,
+      zMax: 2.6,
+    });
+
+    bidon.onApartado.add(() => {
+      if (ocultaRevelada) return;
+      ocultaRevelada = true;
+      bidon.fijar();
+
+      // Recién acá sube el total: hasta que no se destapa, esa mancha no
+      // existe para el jugador.
+      totalManchas += incidenteOculto.manchas.length;
+      hud.definirTotalTarea(totalManchas + 1);
+
+      revelarOculta.forEach((abrir) => abrir());
+      reproducir("acierto");
+      gameManager.sumarPuntos(30);
+      hud.mostrarFeedback(true, hallazgo, new Vector3(bx, 0.2, bz));
+      refrescarProgreso();
+    });
+  }
+
+  // =========================================================================
+  // MANCHAS
+  // =========================================================================
 
   incidentesNivel3.forEach((incidente) => {
     let manchasLimpiasEsteIncidente = 0;
 
     incidente.manchas.forEach((datosMancha) => {
-      const { onLimpia } = crearMancha(scene, datosMancha.id, datosMancha.posicion[0], datosMancha.posicion[1], datosMancha.tipoVisual);
+      const { onLimpia, onBloqueada, revelar } = crearMancha(
+        scene,
+        datosMancha.id,
+        datosMancha.posicion[0],
+        datosMancha.posicion[1],
+        datosMancha.tipoVisual,
+        undefined,
+        {
+          // Las manchas alimentadas por la fuga no se dejan terminar hasta
+          // que la junta esté sellada.
+          puedeLimpiarse: incidente.requiereFuenteSellada ? () => equipo.estaSellada() : undefined,
+          ocultaAlInicio: incidente.oculta !== undefined,
+        }
+      );
+
+      if (incidente.oculta) revelarOculta.push(revelar);
+
+      onBloqueada.add(() => {
+        reproducir("error");
+        // Una sola vez. Repetir el mismo cartel en cada clic tapa la escena
+        // justo cuando el jugador necesita mirarla para encontrar la fuga.
+        if (avisoFugaMostrado) return;
+        avisoFugaMostrado = true;
+        intentosFallidos++;
+        hud.mostrarFeedback(
+          false,
+          "El aceite vuelve. Mientras la junta siga goteando, trapear es trabajo perdido: primero hay que eliminar la fuente. Rodea la máquina y busca de dónde sale.",
+          new Vector3(datosMancha.posicion[0], 0.15, datosMancha.posicion[1])
+        );
+      });
 
       onLimpia.add(() => {
         // Sonido al terminar de limpiar cada mancha.
@@ -167,20 +360,40 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         gameManager.sumarPuntos(5);
         manchasLimpiasTotal++;
         manchasLimpiasEsteIncidente++;
-        progreso.text = `Manchas limpias: ${manchasLimpiasTotal}/${totalManchas}`;
-        hud.actualizarProgreso(manchasLimpiasTotal);
+        refrescarProgreso();
 
         if (manchasLimpiasEsteIncidente === incidente.manchas.length) {
           abrirPreguntaDeIncidente(gui, incidente, () => {
             incidentesResueltos++;
-            if (incidentesResueltos === incidentesNivel3.length) {
-              finalizarNivel();
-            }
+            revisarCierre();
           });
         }
       });
     });
   });
+
+  /**
+   * ¿Se puede dar el nivel por terminado?
+   *
+   * Tres condiciones, y las tres son la 3S: la fuente eliminada, la suciedad
+   * quitada —incluida la que no se veía— y la causa de cada incidente
+   * identificada. Faltando cualquiera, se dice cuál falta en vez de dejar al
+   * jugador dando vueltas.
+   */
+  function revisarCierre(): void {
+    if (incidentesResueltos < incidentesNivel3.length) {
+      // Pista de la oculta: solo cuando ya no queda nada visible por hacer.
+      if (!ocultaRevelada && incidentesResueltos === incidentesNivel3.length - 1 && equipo.estaSellada()) {
+        hud.mostrarFeedback(
+          false,
+          "El área se ve limpia, pero el informe no cierra. Lo que no se mira tampoco se limpia: prueba a correr lo que está apoyado en el piso."
+        );
+      }
+      return;
+    }
+
+    finalizarNivel();
+  }
 
   function abrirPreguntaDeIncidente(
     gui: AdvancedDynamicTexture,
@@ -206,18 +419,23 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     corriendoTiempo = false;
     instruccion.isVisible = false;
     progreso.isVisible = false;
+    estadoFuente.isVisible = false;
 
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
-    // Recalibrado: 5 manchas + 2 investigaciones (antes 3 manchas + 1), toma más tiempo real.
-    const bonusTiempo = Math.max(0, 130 - segundosTotales);
+    // Recalibrado otra vez: ahora son 6 manchas, 3 investigaciones, una fuga
+    // que hay que encontrar rodeando el equipo y un bulto que apartar. El
+    // recorrido de inspección es lo que más tiempo agrega, y penalizarlo sería
+    // premiar justo lo contrario de lo que enseña la S.
+    const bonusTiempo = Math.max(0, 190 - segundosTotales);
     gameManager.sumarPuntos(bonusTiempo);
     onCompletado();
 
-    const puntosBase = manchasLimpiasTotal * 5 + incidentesResueltos * 20;
+    const puntosBase = manchasLimpiasTotal * 5 + incidentesResueltos * 20 + 25 + 30;
 
     hud.mostrarFeedback(
       true,
-      `¡Investigación completada! Intentos fallidos en las preguntas de causa: ${intentosFallidos} — mientras menos, mejor tu trabajo de detective.`
+      `Área inspeccionada: fuente eliminada, suciedad oculta encontrada y causas identificadas. ` +
+        `Intentos fallidos: ${intentosFallidos} — mientras menos, mejor tu trabajo de detective.`
     );
 
     luegoDe(scene, 1000, () => {
@@ -225,7 +443,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     });
   }
 
-  return { maquina, impresora };
+  return { maquina: equipo.root, impresora };
 }
 
 // Mesa auxiliar donde se apoya la impresora.
@@ -275,7 +493,7 @@ function crearLamparaDeTrabajo(scene: Scene): void {
   matMetal.roughness = 0.4;
   matMetal.metallic = 0.6;
 
-  const brazo = MeshBuilder.CreateCylinder("brazoLamparaTrabajo", { diameter: 0.03, height: 0.7 }, scene);
+  const brazo: Mesh = MeshBuilder.CreateCylinder("brazoLamparaTrabajo", { diameter: 0.03, height: 0.7 }, scene);
   brazo.position.set(2.95, 1.6, -0.5);
   brazo.rotation.z = 0.4;
   brazo.material = matMetal;

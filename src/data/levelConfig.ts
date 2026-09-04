@@ -385,6 +385,14 @@ export interface ManchaIncidente {
   tipoVisual: "aceite" | "polvo";
 }
 
+/** Dónde se esconde una mancha que no está a la vista. */
+export interface SuciedadOculta {
+  /** Punto donde se apoya el bulto que la tapa. */
+  posicionBulto: [number, number];
+  /** Aviso al destaparla. */
+  hallazgo: string;
+}
+
 export interface OpcionCausaNivel3 {
   id: string;
   texto: string;
@@ -398,6 +406,16 @@ export interface IncidenteNivel3 {
   manchas: ManchaIncidente[];
   pregunta: string;
   opciones: OpcionCausaNivel3[];
+  /**
+   * Estas manchas las alimenta una fuente activa.
+   *
+   * Mientras no se elimine la fuente, no se dejan limpiar: se puede frotar
+   * todo lo que se quiera y vuelven. Video 3.4 (1:40): hay que "eliminar la
+   * suciedad y las fuentes de suciedad".
+   */
+  requiereFuenteSellada?: boolean;
+  /** Si está, el incidente arranca tapado y hay que descubrirlo. */
+  oculta?: SuciedadOculta;
 }
 
 export const incidentesNivel3: IncidenteNivel3[] = [
@@ -409,6 +427,7 @@ export const incidentesNivel3: IncidenteNivel3[] = [
       { id: "m2", posicion: [2.8, 0.45], tipoVisual: "aceite" },
       { id: "m3", posicion: [3.3, -0.7], tipoVisual: "aceite" },
     ],
+    requiereFuenteSellada: true,
     pregunta: "¿Cuál es el origen más probable de estas manchas de aceite?",
     opciones: [
       { id: "fuga_maquina", texto: "Fuga de aceite en la máquina cercana", esCorrecta: true, explicacion: "Correcto — las manchas concentradas cerca del mismo punto suelen indicar una fuga activa, no derrames aislados." },
@@ -428,6 +447,56 @@ export const incidentesNivel3: IncidenteNivel3[] = [
       { id: "cartucho_danado", texto: "Cartucho de tóner dañado", esCorrecta: true, explicacion: "Correcto — un cartucho agrietado libera tóner en polvo, que se acumula cerca del equipo." },
       { id: "ventilacion", texto: "Falta de mantenimiento del ventilador", esCorrecta: false, explicacion: "Un ventilador sucio afecta la temperatura del equipo, pero no genera polvo negro visible en el suelo." },
       { id: "humedad", texto: "Humedad ambiental", esCorrecta: false, explicacion: "La humedad no produce residuo negro en polvo — ese patrón es típico de tóner, no de humedad." },
+    ],
+  },
+  {
+    // ---------------------------------------------------------------------
+    // EL INCIDENTE OCULTO
+    // ---------------------------------------------------------------------
+    //
+    // No se ve desde ningún ángulo: está debajo del bidón. Es el que convierte
+    // el nivel en una inspección — Video 3.4 (0:41), la limpieza se hace "con
+    // el objetivo final de poder realizar una inspección a nuestros equipos y
+    // áreas".
+    //
+    // SU PREGUNTA ES DE OTRA NATURALEZA, a propósito. Las dos anteriores
+    // preguntan por la causa física y se responden mirando el equipo. Esta ya
+    // no: la causa física es evidente en cuanto se aparta el bidón. Lo que hay
+    // que explicar es por qué estuvo meses ahí sin que nadie lo viera, que es
+    // una falla del método de limpieza y no del equipo. Repetir el mismo
+    // formato una tercera vez convertiría el nivel en un cuestionario; cambiar
+    // el tipo de pregunta lo cierra abriendo la puerta a Seiketsu.
+    id: "incidente_oculto",
+    nombreVisible: "Charco bajo el bidón de aceite",
+    oculta: {
+      posicionBulto: [-2.0, -0.9],
+      hallazgo:
+        "Un charco seco debajo del bidón. Llevaba meses ahí y nadie lo vio, porque nadie movió el bidón.",
+    },
+    manchas: [{ id: "m6", posicion: [-2.0, -0.9], tipoVisual: "aceite" }],
+    pregunta: "El charco estuvo meses tapado. ¿Qué hay que corregir para que no vuelva a pasar?",
+    opciones: [
+      {
+        id: "rutina_inspeccion",
+        texto: "La rutina de limpieza: debe incluir mover lo apoyado e inspeccionar debajo",
+        esCorrecta: true,
+        explicacion:
+          "Correcto — en Seiso se limpia PARA inspeccionar. Una rutina que solo pasa por lo que está a la vista deja fuera justo lo que lleva más tiempo sin revisarse.",
+      },
+      {
+        id: "limpiar_mas",
+        texto: "Aumentar la frecuencia de limpieza del piso",
+        esCorrecta: false,
+        explicacion:
+          "Limpiar más seguido lo mismo no descubre nada nuevo: el charco seguiría bajo el bidón la próxima vez y la siguiente.",
+      },
+      {
+        id: "mover_bidon",
+        texto: "Sacar el bidón del área de trabajo",
+        esCorrecta: false,
+        explicacion:
+          "Eso resuelve este bidón y ninguno más. El problema no es el objeto, es que la inspección no llega a lo que está debajo de las cosas.",
+      },
     ],
   },
 ];

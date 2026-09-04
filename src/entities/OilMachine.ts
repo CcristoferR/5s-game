@@ -1,8 +1,37 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, TransformNode } from "@babylonjs/core";
+import { Scene, MeshBuilder, PBRMaterial, Color3, TransformNode, Mesh, Vector3 } from "@babylonjs/core";
 import { texturaGrano, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
 import { materialPintado } from "./ObjetosComunes";
 
-export function crearMaquinaConFuga(scene: Scene, x: number, z: number): TransformNode {
+export interface MaquinaConFuga {
+  root: TransformNode;
+  /** La junta que pierde. Es lo que hay que pinchar para sellar. */
+  junta: Mesh;
+  /** De dónde caen las gotas, en coordenadas del mundo. */
+  puntoFuga: Vector3;
+  /** Elimina la fuente: corta el goteo y apaga el piloto de falla. */
+  sellar: () => void;
+  estaSellada: () => boolean;
+}
+
+// ---------------------------------------------------------------------------
+// ORIENTACIÓN — dónde está el frente y dónde el dorso
+// ---------------------------------------------------------------------------
+//
+// La cámara del juego observa desde Z NEGATIVO hacia +Z. O sea que la cara
+// visible de cualquier mueble es la de -Z.
+//
+// El tablero de control, la rejilla y el cartel de aviso estaban todos en
+// z = +0.36: el dorso. La máquina le mostraba al jugador una caja gris lisa y
+// escondía contra la pared el manómetro, las luces y el cartel — justo lo que
+// la hace legible como equipo averiado. Ahora van al frente.
+//
+// Y la junta que pierde hace el camino inverso: se va AL DORSO. Es deliberado.
+// Video 3.4 (0:41): la limpieza se hace "con el objetivo final de poder
+// realizar una inspección". Si la fuga se ve desde el sitio donde uno ya está
+// parado, no hay inspección: hay un botón. Desde el frente se ven las señales
+// —el piloto de falla parpadeando y el cartel que manda mirar al dorso— y para
+// encontrar la causa hay que rodear el equipo.
+export function crearMaquinaConFuga(scene: Scene, x: number, z: number): MaquinaConFuga {
   const root = new TransformNode("maquinaRoot", scene);
   root.position.set(x, 0, z);
 
@@ -34,7 +63,7 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
 
   for (let i = 0; i < 4; i++) {
     const listón = MeshBuilder.CreateBox(`rejilla_${i}`, { width: 0.5, height: 0.03, depth: 0.02 }, scene);
-    listón.position.set(0.15, 0.95 + i * 0.06, 0.36);
+    listón.position.set(0.15, 0.95 + i * 0.06, -0.36);
     listón.parent = root;
     listón.material = matRejilla;
   }
@@ -48,9 +77,11 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matTuberia.invertNormalMapY = true;
   matTuberia.microSurfaceTexture = texturaGrano(scene, 0.14);
 
-  const tuberia = MeshBuilder.CreateCylinder("tuberia", { diameter: 0.12, height: 0.6 }, scene);
-  tuberia.rotation.z = Math.PI / 2;
-  tuberia.position.set(-0.5, 0.4, 0);
+  // Sale por detrás, no por el costado: es el tramo que hay que seguir para
+  // llegar a la junta.
+  const tuberia = MeshBuilder.CreateCylinder("tuberia", { diameter: 0.12, height: 0.62 }, scene);
+  tuberia.rotation.x = Math.PI / 2;
+  tuberia.position.set(0.28, 0.45, 0.55);
   tuberia.parent = root;
   tuberia.material = matTuberia;
 
@@ -59,10 +90,12 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matFuga.roughness = 0.15;
   matFuga.microSurfaceTexture = texturaGrano(scene, 0.07); // aceite: húmedo, brilloso
 
-  const junta = MeshBuilder.CreateSphere("juntaFuga", { diameter: 0.14 }, scene);
-  junta.position.set(-0.8, 0.4, 0);
+  const junta = MeshBuilder.CreateSphere("juntaFuga", { diameter: 0.17 }, scene);
+  junta.position.set(0.28, 0.45, 0.9);
   junta.parent = root;
   junta.material = matFuga;
+  // Pinchable: es el único punto del equipo sobre el que se puede actuar.
+  junta.isPickable = true;
 
   // --- Lo que la vuelve reconocible como maquina ---
   //
@@ -154,7 +187,7 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   });
 
   const tablero = MeshBuilder.CreateBox("tableroMaquina", { width: 0.62, height: 0.46, depth: 0.03 }, scene);
-  tablero.position.set(-0.1, 0.98, 0.36);
+  tablero.position.set(-0.1, 0.98, -0.36);
   tablero.parent = root;
   tablero.material = matTablero;
 
@@ -201,12 +234,13 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
     ctx.fillStyle = "#1a1a1a";
     ctx.font = "bold 30px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("REVISAR", w / 2, 52);
-    ctx.fillText("JUNTA", w / 2, 92);
+    ctx.fillText("REVISAR JUNTA", w / 2, 52);
+    ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.fillText("AL DORSO \u21bb", w / 2, 96);
   });
 
-  const aviso = MeshBuilder.CreateBox("avisoMaquina", { width: 0.24, height: 0.12, depth: 0.012 }, scene);
-  aviso.position.set(-0.46, 0.62, 0.36);
+  const aviso = MeshBuilder.CreateBox("avisoMaquina", { width: 0.3, height: 0.15, depth: 0.012 }, scene);
+  aviso.position.set(-0.46, 0.62, -0.37);
   aviso.parent = root;
   aviso.material = matAviso;
 
@@ -216,10 +250,78 @@ export function crearMaquinaConFuga(scene: Scene, x: number, z: number): Transfo
   matGoteo.microSurfaceTexture = texturaGrano(scene, 0.07);
   matGoteo.alpha = 0.9;
 
-  const goteo = MeshBuilder.CreateCylinder("goteoFuga", { diameterTop: 0.02, diameterBottom: 0.06, height: 0.35 }, scene);
-  goteo.position.set(-0.8, 0.22, 0);
+  const goteo = MeshBuilder.CreateCylinder("goteoFuga", { diameterTop: 0.02, diameterBottom: 0.07, height: 0.4 }, scene);
+  goteo.position.set(0.28, 0.22, 0.9);
   goteo.parent = root;
   goteo.material = matGoteo;
+  goteo.isPickable = false;
 
-  return root;
+  // --- Piloto de falla, en la cara frontal --------------------------------
+  //
+  // La luz "FALLA" del tablero esta pintada en la textura, asi que no puede
+  // parpadear sin repintar el lienzo en cada cuadro. Este piloto es una pieza
+  // aparte por eso: late en rojo mientras la fuga sigue viva y queda en verde
+  // fijo al sellarla. Es la unica pista que se ve desde donde el jugador
+  // arranca, y la que lo manda a rodear el equipo.
+  const matPiloto = new PBRMaterial("matPilotoFalla", scene);
+  matPiloto.albedoColor = new Color3(0.5, 0.08, 0.06);
+  matPiloto.emissiveColor = new Color3(0.8, 0.1, 0.08);
+  matPiloto.roughness = 0.25;
+
+  const piloto = MeshBuilder.CreateSphere("pilotoFallaMaquina", { diameter: 0.11, segments: 12 }, scene);
+  piloto.position.set(0.3, 1.16, -0.37);
+  piloto.parent = root;
+  piloto.material = matPiloto;
+  piloto.isPickable = false;
+
+  let sellada = false;
+
+  const latido = scene.onBeforeRenderObservable.add(() => {
+    if (piloto.isDisposed()) {
+      scene.onBeforeRenderObservable.remove(latido);
+      return;
+    }
+    if (sellada) return;
+    // Latido lento. Una luz que parpadea rapido se lee como error de render;
+    // una que respira se lee como equipo encendido y averiado.
+    const pulso = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(performance.now() / 420));
+    matPiloto.emissiveColor.set(pulso, pulso * 0.12, pulso * 0.1);
+  });
+
+  const sellar = (): void => {
+    if (sellada) return;
+    sellada = true;
+
+    // El goteo se corta y la junta deja de estar aceitosa.
+    goteo.isVisible = false;
+    matFuga.albedoColor = new Color3(0.44, 0.46, 0.48);
+    matFuga.roughness = 0.35;
+    matFuga.metallic = 0.8;
+
+    // Abrazadera nueva sobre la junta: la reparacion tiene que VERSE, o el
+    // jugador no sabe si el clic hizo algo.
+    const abrazadera = MeshBuilder.CreateTorus(
+      "abrazaderaJunta",
+      { diameter: 0.22, thickness: 0.038, tessellation: 18 },
+      scene
+    );
+    abrazadera.rotation.x = Math.PI / 2;
+    abrazadera.position.copyFrom(junta.position);
+    abrazadera.parent = root;
+    abrazadera.material = matTuberia;
+    abrazadera.isPickable = false;
+
+    junta.isPickable = false;
+
+    matPiloto.albedoColor = new Color3(0.1, 0.4, 0.16);
+    matPiloto.emissiveColor = new Color3(0.16, 0.7, 0.26);
+  };
+
+  return {
+    root,
+    junta,
+    puntoFuga: new Vector3(x + 0.28, 0.24, z + 0.9),
+    sellar,
+    estaSellada: () => sellada,
+  };
 }
