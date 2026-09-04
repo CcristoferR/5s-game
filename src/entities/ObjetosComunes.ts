@@ -1,4 +1,5 @@
 import {
+  Texture,
   Scene,
   MeshBuilder,
   PBRMaterial,
@@ -114,6 +115,24 @@ export function materialPintado(
   dibujar: (ctx: CanvasRenderingContext2D, w: number, h: number) => void
 ): PBRMaterial {
   const textura = new DynamicTexture(`tex_${nombre}`, { width: anchoPx, height: altoPx }, scene, true);
+
+  // FILTRADO. Es de donde venía el texto sucio dentro del juego.
+  //
+  // Por acá pasan casi todos los rótulos del mundo 3D: las etiquetas de las
+  // baldas, las siluetas del tablero, las tarjetas rojas, los tableros de la
+  // maquinaria. Sin filtrado la textura se muestrea punto a punto, y como esas
+  // superficies casi nunca se miran de frente —la cámara orbita y están en
+  // ángulo— el texto salía dentado y con los bordes rotos.
+  //
+  // El menú se veía nítido porque es interfaz plana a resolución de pantalla;
+  // estas son texturas sobre geometría, y necesitan que se les diga cómo
+  // muestrear.
+  //
+  // Trilineal usa los niveles de detalle intermedios al alejarse; el
+  // anisotrópico es el que salva la lectura en ángulo, que es el caso normal.
+  textura.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+  textura.anisotropicFilteringLevel = 16;
+
   const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
   dibujar(ctx, anchoPx, altoPx);
   textura.update();

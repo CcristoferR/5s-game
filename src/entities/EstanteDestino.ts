@@ -149,18 +149,18 @@ export function crearEstanteDestino(scene: Scene, x: number, z: number, giroY: n
     // Frontal rotulado. El rótulo va IMPRESO en el mueble y no flotando al
     // lado: el sitio tiene que estar identificado en el sitio mismo, que es
     // literalmente lo que dice la regla de la etiqueta.
-    const matFrontal = materialPintado(scene, `matFrontalBalda_${nivel}`, 1024, 128, (ctx, w, h) => {
+    const matFrontal = materialPintado(scene, `matFrontalBalda_${nivel}`, 2048, 256, (ctx, w, h) => {
       ctx.fillStyle = "#1b2228";
       ctx.fillRect(0, 0, w, h);
 
       ctx.fillStyle = color;
-      ctx.fillRect(0, h - 10, w, 10);
+      ctx.fillRect(0, h - 20, w, 20);
 
       ctx.fillStyle = "#e8edf0";
-      ctx.font = "bold 58px system-ui, sans-serif";
+      ctx.font = "bold 116px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(rotulo, w / 2, h / 2 - 4);
+      ctx.fillText(rotulo, w / 2, h / 2 - 8);
     });
 
     const frontal = MeshBuilder.CreateBox(

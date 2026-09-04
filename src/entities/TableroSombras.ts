@@ -102,7 +102,7 @@ function caraHueco(
   id: SiluetaId,
   rotulo: string | null
 ): PBRMaterial {
-  return materialPintado(scene, nombre, 320, 440, (ctx, w, h) => {
+  return materialPintado(scene, nombre, 640, 880, (ctx, w, h) => {
     ctx.fillStyle = "#2f3a41";
     ctx.fillRect(0, 0, w, h);
 
