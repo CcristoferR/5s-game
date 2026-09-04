@@ -778,6 +778,123 @@
   font-size: calc(12px * var(--portal-escala));
 }
 
+/* ---------------------------------------------------------------------------
+   Bitácora de seguridad
+   ---------------------------------------------------------------------------
+
+   Línea de tiempo vertical: la hora al margen, un punto en el hilo y la frase
+   a la derecha. Todo con las variables del sistema, así que acompaña los dos
+   temas y la escala de texto sin una sola regla duplicada.
+   --------------------------------------------------------------------------- */
+
+.bitacora__dia {
+  margin-top: 26px;
+}
+
+.bitacora__fecha {
+  margin: 0 0 12px;
+  color: var(--portal-rotulo);
+  font-size: calc(12px * var(--portal-escala));
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bitacora__lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* El hilo vertical que une las entradas del día. Va como borde del contenedor
+     y no como pieza aparte, así crece solo con el contenido. */
+  border-left: 1px solid var(--portal-linea);
+  margin-left: 62px;
+}
+
+.bitacora__entrada {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 9px 0 9px 22px;
+  color: var(--portal-cuerpo);
+  font-size: calc(14px * var(--portal-escala));
+  line-height: 1.5;
+}
+
+/* La hora sale HACIA AFUERA del hilo, en la columna izquierda. Alineada en su
+   propia columna se puede recorrer el día de un vistazo sin leer el texto. */
+.bitacora__hora {
+  position: absolute;
+  left: -62px;
+  width: 48px;
+  text-align: right;
+  color: var(--portal-rotulo);
+  font-size: calc(12px * var(--portal-escala));
+  font-variant-numeric: tabular-nums;
+}
+
+.bitacora__punto {
+  position: absolute;
+  left: -4.5px;
+  top: 17px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--portal-tarjeta);
+  border: 2px solid var(--portal-rotulo);
+}
+
+/* El color marca la GRAVEDAD de la acción, no si salió bien.
+   Neutro para lo reversible, ámbar para lo que afecta el acceso de alguien,
+   rojo para lo que no tiene vuelta atrás. */
+.bitacora__entrada--aviso .bitacora__punto {
+  border-color: var(--portal-aviso);
+}
+
+.bitacora__entrada--riesgo .bitacora__punto {
+  border-color: var(--portal-error);
+  background: var(--portal-error);
+}
+
+.bitacora__texto strong {
+  color: var(--portal-titulo);
+  font-weight: 600;
+}
+
+.bitacora__objetivo {
+  color: var(--portal-titulo);
+  font-weight: 600;
+}
+
+.bitacora__extra {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--portal-realce);
+  color: var(--portal-rotulo);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: calc(12px * var(--portal-escala));
+}
+
+@media (max-width: 720px) {
+  /* En pantallas angostas la hora pasa arriba: mantenerla al margen dejaría
+     el texto en una columna de dos palabras de ancho. */
+  .bitacora__lista {
+    margin-left: 6px;
+  }
+
+  .bitacora__entrada {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .bitacora__hora {
+    position: static;
+    width: auto;
+    text-align: left;
+  }
+}
+
 /* --- Vista de administración --- */
 
 .portal__encabezadoAdmin {

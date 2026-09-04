@@ -31,6 +31,8 @@ import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida 
 import { HUD } from "../ui/HUD";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
+import { tomarFotografia } from "../core/FotografiaCero";
+import { mostrarPanelMejora } from "../ui/PanelMejora";
 import { reproducir } from "../core/Sonido";
 import { TEXTO, PALETA, altoDeTexto } from "../ui/EstiloUI";
 import type { PuntoEnganche } from "../core/InputController";
@@ -857,7 +859,132 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           gameManager.sumarPuntos(bonusTiempo);
           onCompletado();
 
-          // Pregunta de cierre: el nivel acaba de mostrar tres controles de
+          // La foto del "después" se toma ACÁ, no al salir.
+          //
+          // Antes se disparaba al apretar "Volver al menú" y el regreso
+          // esperaba a que terminara. Eso dejó el nivel congelado dos veces:
+          // cualquier cosa que se demore ahí dentro atrapa al jugador con el
+          // botón apretado. Los topes de tiempo tapaban el síntoma, pero el
+          // error era encadenar la salida a un trabajo que puede fallar.
+          //
+          // Tomada acá, la escena está viva y quieta, nadie está esperando, y
+          // si sale mal simplemente no habrá panel. Volver al menú vuelve a ser
+          // lo que debe ser: instantáneo y sin condiciones.
+          const fotoInicial = gameManager.getFotoCero();
+          if (fotoInicial) {
+            // Sin esperar a que la escena "esté armada": ese chequeo tarda seis
+            // segundos acá y no aporta nada, el galpón lleva minutos dibujado.
+            const captura = tomarFotografia(scene, fotoInicial.encuadre, false);
+
+            // Se anota la tarea en curso para que el panel pueda esperarla si
+            // el jugador cierra el nivel antes de que termine.
+            gameManager.anotarFotoFinalEnCurso(captura);
+
+            void captura
+              .then((foto) => {
+                if (foto) {
+                  gameManager.guardarFotoFinal(foto);
+                  console.info("[foto] fotografía final guardada");
+                } else {
+                  console.warn("[foto] no se pudo tomar la fotografía final");
+                }
+              })
+              .catch((e) => console.error("[foto] error en la fotografía final:", e));
+          }
+          
+
+
+          // ===================================================
+          // SE GUARDA LO QUE SOBRÓ
+          // ===================================================
+          //
+          // Cada estación trae una pieza de más: es el distractor que obliga a
+          // elegir en vez de repartir todo lo que hay. Cumplida su función,
+          // las sobrantes NO pueden quedarse tiradas en el suelo — el nivel
+          // acaba de instalar un estándar, y dejar material suelto es
+          // exactamente lo que ese estándar prohíbe.
+          //
+          // Importa además por la fotografía final: el "después" del panel de
+          // mejora se toma justo acá, y con dos piezas abandonadas en medio la
+          // comparación mostraría un taller a medio ordenar.
+          //
+          // Se retiran con una animación corta, no de golpe: desaparecer sin
+          // más se lee como un fallo del juego. Guardadas, se lee como que
+          // alguien las devolvió a su sitio.
+          // Una pieza colocada quedó fijada, y fijar la vuelve no pinchable.
+          // Eso distingue las que se usaron de las que sobraron, sin tener que
+          // llevar una lista aparte que se pueda desincronizar.
+          [...conectores, ...marcas, ...fichas]
+            .filter((pieza) => pieza.mesh.isPickable)
+            .forEach((pieza, i) => {
+              luegoDe(scene, 120 * i, () => {
+                moverMalla(
+                  scene,
+                  pieza.mesh,
+                  new Vector3(ARMARIO.x, 0.9, ARMARIO.z + 0.5),
+                  420
+                );
+                luegoDe(scene, 460, () => pieza.mesh.dispose());
+              });
+            });
+
+
+          /**
+   * Toma la foto del "después" y abre el panel comparativo.
+   *
+   * La foto se dispara con el ENCUADRE GUARDADO de la Fotografía Cero, no con
+   * la cámara donde el jugador la haya dejado. Es la condición de que la
+   * comparación signifique algo: mismo punto de vista, mismo recorte, y lo
+   * único que cambia es el área.
+   */
+  /**
+   * Abre el panel comparativo con lo que ya está guardado.
+   *
+   * Es SÍNCRONA a propósito: no consulta al servidor, no captura nada, no
+   * espera. Las dos fotos ya existen para cuando esto corre. Cualquier trabajo
+   * que se hiciera acá volvería a poner al jugador a esperar antes de salir
+   * del nivel, que es el error que ya cometimos dos veces.
+   *
+   * Si falta alguna de las dos, no se muestra nada y el juego sigue.
+   */
+  async function mostrarComparativa(): Promise<void> {
+    const antes = gameManager.getFotoCero();
+    if (!antes) {
+      console.warn("[foto] no hay Fotografía Cero: se jugó el Nivel 4 sin pasar por el 1");
+      return;
+    }
+
+    // Se ESPERA la foto final si todavía se está tomando.
+    //
+    // Esto es lo que fallaba: el panel comprobaba si estaba lista, veía que no
+    // y se rendía — y la foto llegaba medio segundo después, cuando ya no la
+    // miraba nadie. La consola lo mostraba en ese orden exacto.
+    //
+    // Esperar acá no retiene al jugador: quien llama a esta función ya mandó
+    // volver al menú en la misma línea, sin aguardar nada. El menú carga por
+    // detrás y el panel aparece encima cuando la foto esté.
+    const despues = await gameManager.esperarFotoFinal();
+
+    if (!despues) {
+      console.warn("[foto] la fotografía final no llegó a tiempo: sin panel de mejora");
+      return;
+    }
+
+    mostrarPanelMejora(
+      antes,
+      despues,
+      {
+        nombre: gameManager.getNombreJugador(),
+        metrosLiberados: gameManager.getMetrosLiberados(),
+        fases: 4,
+      },
+      () => {}
+    );
+  }
+
+
+
+  // Pregunta de cierre: el nivel acaba de mostrar tres controles de
           // distinta fuerza sobre el mismo error, así que acá se pide
           // reconocer cuál sostiene el estándar sin depender de nadie.
           preguntarCierreDeNivel(gui, hud, 4, (cierre) => {
@@ -865,7 +992,28 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
             // de él, así que ya no hay que esperar a que se apague ningún cartel:
             // esta pausa es solo para que el cierre no se sienta abrupto.
             luegoDe(scene, 700, () => {
-              hud.mostrarResultadoFinal("Nivel 4", puntosBase, bonusTiempo, segundosTotales, onVolverMenu, cierre);
+              hud.mostrarResultadoFinal(
+                "Nivel 4",
+                puntosBase,
+                bonusTiempo,
+                segundosTotales,
+                onVolverMenu,
+                cierre,
+                // ===================================================
+                // PANEL DE MEJORA 5S
+                // ===================================================
+                //
+                // Se muestra DESPUÉS del resultado del nivel, no en vez de él:
+                // primero el jugador ve cómo le fue, y recién entonces ve el
+                // área entera transformada. Al revés, la comparación
+                // competiría con el puntaje y ninguna de las dos se leería.
+                //
+                // Solo aparece si existe la fotografía inicial. Si alguien
+                // entra directo al Nivel 4 sin pasar por el 1, no hay "antes"
+                // que enseñar y el panel se salta sin decir nada — inventar
+                // una imagen de relleno sería peor que no mostrarlo.
+                () => void mostrarComparativa()
+              );
             });
           });
         });

@@ -830,6 +830,68 @@ export function explicarRechazoMiClave(
 }
 
 // ---------------------------------------------------------------------------
+// Bitácora de seguridad
+// ---------------------------------------------------------------------------
+
+export interface EntradaBitacora {
+  id: number;
+  ocurridoEn: string;
+  actorNombre: string;
+  accion: string;
+  objetivoNombre: string | null;
+  detalle: Record<string, unknown>;
+}
+
+/**
+ * Lee el registro de acciones administrativas.
+ *
+ * Va por función de base de datos y no por consulta directa: así el rol se
+ * comprueba en el servidor y el formato que llega es estable, aunque la tabla
+ * cambie de forma más adelante.
+ *
+ * La bitácora es de SOLO ESCRITURA. No existe función para editar ni borrar
+ * entradas, y dos disparadores lo impiden a nivel de base — un registro que un
+ * administrador pudiera limpiar no probaría nada.
+ */
+export async function leerBitacora(limite = 200): Promise<EntradaBitacora[]> {
+  const { data, error } = await supabase.rpc("leer_bitacora", { p_limite: limite });
+
+  if (error) {
+    avisarError("leerBitacora", error);
+    return [];
+  }
+
+  return (data as Array<Record<string, unknown>>).map((f) => ({
+    id: Number(f.id),
+    ocurridoEn: String(f.ocurrido_en),
+    actorNombre: String(f.actor_nombre),
+    accion: String(f.accion),
+    objetivoNombre: (f.objetivo_nombre as string | null) ?? null,
+    detalle: (f.detalle as Record<string, unknown>) ?? {},
+  }));
+}
+
+/** Texto legible de cada acción, para no mostrarle al usuario claves internas. */
+export function describirAccion(accion: string): { titulo: string; tono: "neutro" | "aviso" | "riesgo" } {
+  switch (accion) {
+    case "rol_ascenso":
+      return { titulo: "Ascendió a administrador", tono: "aviso" };
+    case "rol_descenso":
+      return { titulo: "Quitó el rol de administrador", tono: "aviso" };
+    case "cuenta_suspendida":
+      return { titulo: "Suspendió la cuenta", tono: "aviso" };
+    case "cuenta_reactivada":
+      return { titulo: "Reactivó la cuenta", tono: "neutro" };
+    case "clave_restablecida":
+      return { titulo: "Restableció la contraseña", tono: "aviso" };
+    case "cuenta_eliminada":
+      return { titulo: "Eliminó la cuenta por completo", tono: "riesgo" };
+    default:
+      return { titulo: accion, tono: "neutro" };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cursos
 // ---------------------------------------------------------------------------
 

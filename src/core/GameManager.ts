@@ -57,6 +57,8 @@ export interface TarjetaRojaEmitida {
   plazo: Date | null;
 }
 
+import type { Fotografia } from "./FotografiaCero";
+
 export class GameManager {
   private static instance: GameManager;
 
@@ -83,12 +85,102 @@ export class GameManager {
    * es progreso que haya que guardar en el servidor, es el estado de una
    * partida.
    */
+  /**
+   * Fotografía del estado inicial del área, tomada al abrir el Nivel 1.
+   *
+   * Video 2.2: documentar el punto de partida es "un paso crucial
+   * psicológicamente", y esas fotos son las que después permiten comparar y
+   * motivar al equipo al ver sus propios logros. Se guarda con su encuadre
+   * para que la foto final se tome desde el mismo sitio — dos ángulos
+   * distintos no se comparan.
+   */
+  private fotoCero: Fotografia | null = null;
+
+  /**
+   * Fotografía final, tomada al completar el Nivel 4.
+   *
+   * Se guarda apenas el nivel termina, no al salir de él: así el panel
+   * comparativo no tiene que capturar nada en el momento de mostrarse y volver
+   * al menú no depende de ninguna tarea pendiente.
+   */
+  private fotoFinal: Fotografia | null = null;
+
+  /**
+   * Captura de la foto final mientras está en curso.
+   *
+   * Se guarda la promesa, no solo el resultado, porque el jugador puede cerrar
+   * el nivel antes de que termine. Sin esto el panel comprobaba si la foto
+   * estaba lista, veía que no, y se rendía — la foto llegaba medio segundo
+   * después y ya no la miraba nadie.
+   */
+  private fotoFinalEnCurso: Promise<Fotografia | null> | null = null;
+
+  /** Nombre para el panel de mejora, leído una vez al abrir el portal. */
+  private nombreJugador = "Equipo del área";
+
+  /** Metros cuadrados liberados en el Nivel 1, para el panel comparativo. */
+  private metrosLiberados = 0;
+
   private tarjetasRojas: TarjetaRojaEmitida[] = [];
 
   private estandarNivel4: EstandarNivel4 = { checklist: [], senalizacion: [] };
   private resultadoAuditoriaNivel5: ResultadoAuditoriaNivel5 | null = null;
 
   private constructor() {}
+
+  guardarFotoFinal(foto: Fotografia): void {
+    this.fotoFinal = foto;
+  }
+
+  anotarFotoFinalEnCurso(tarea: Promise<Fotografia | null>): void {
+    this.fotoFinalEnCurso = tarea;
+  }
+
+  /**
+   * Devuelve la foto final, esperándola si todavía se está tomando.
+   *
+   * Con tope: si tarda más de lo razonable se sigue sin panel, pero nunca se
+   * deja al jugador esperando indefinidamente.
+   */
+  async esperarFotoFinal(topeMs = 6000): Promise<Fotografia | null> {
+    if (this.fotoFinal) return this.fotoFinal;
+    if (!this.fotoFinalEnCurso) return null;
+
+    const resultado = await Promise.race([
+      this.fotoFinalEnCurso,
+      new Promise<null>((listo) => setTimeout(() => listo(null), topeMs)),
+    ]);
+
+    return resultado ?? this.fotoFinal;
+  }
+
+  getFotoFinal(): Fotografia | null {
+    return this.fotoFinal;
+  }
+
+  definirNombreJugador(nombre: string): void {
+    if (nombre.trim().length > 0) this.nombreJugador = nombre.trim();
+  }
+
+  getNombreJugador(): string {
+    return this.nombreJugador;
+  }
+
+  guardarFotoCero(foto: Fotografia): void {
+    this.fotoCero = foto;
+  }
+
+  getFotoCero(): Fotografia | null {
+    return this.fotoCero;
+  }
+
+  guardarMetrosLiberados(metros: number): void {
+    this.metrosLiberados = metros;
+  }
+
+  getMetrosLiberados(): number {
+    return this.metrosLiberados;
+  }
 
   /** Registra una tarjeta roja al colocarla en el Nivel 1. */
   registrarTarjetaRoja(tarjeta: TarjetaRojaEmitida): void {

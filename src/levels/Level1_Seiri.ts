@@ -1,5 +1,4 @@
 import { Scene, MeshBuilder, Color3, Vector3, Mesh, ActionManager, ExecuteCodeAction } from "@babylonjs/core";
-import { TextBlock, Control } from "@babylonjs/gui";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { objetosNivel1, pesadosNivel1, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
@@ -21,8 +20,8 @@ import {
 } from "../entities/WorkshopProps";
 import { pedirDatosTarjeta, colocarTarjetaRoja, crearAreaDescarte, interpretarPlazo } from "../entities/TarjetaRoja";
 import { reproducir } from "../core/Sonido";
-import { TEXTO } from "../ui/EstiloUI";
 import { GameManager } from "../core/GameManager";
+import { tomarFotografia } from "../core/FotografiaCero";
 import { HUD } from "../ui/HUD";
 
 /**
@@ -233,34 +232,28 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     // ilegible. El problema no era la resolución de la textura —el rótulo va a
     // 1400 px por metro— sino el tamaño físico del cartel. Un rótulo de planta
     // se dimensiona por la distancia desde la que hay que leerlo.
-    // El rótulo se corre hacia el centro del galpón.
+    // Sin cartel permanente.
     //
-    // Los bultos están contra las paredes, y un cartel que mira siempre a la
-    // cámara sobresale medio metro hacia los lados: pegado al muro, la mitad
-    // del texto quedaba fuera de la pared y se veía cortado. Desplazarlo hacia
-    // dentro lo deja entero sin dejar de señalar su bulto.
-    const desplazado = px > 0 ? px - 0.9 : px < 0 ? px + 0.9 : px;
-
-    crearRotulo3D(scene, `pesado_${datos.id}`, datos.nombreVisible, new Vector3(desplazado, 1.62, pz), {
-      ancho: 2.1,
-      alto: 0.42,
-      lineasMax: 2,
-      colorFondo: "#1a1f24",
-      colorBorde: "rgba(255,255,255,0.3)",
-      mirarCamara: true,
-      alturaTextoMin: 0.135,
-    });
+    // Antes cada bulto pesado llevaba su rótulo encendido todo el tiempo. Eso
+    // tapaba la escena, competía con los objetos que hay que encontrar y —lo
+    // peor— salía en la Fotografía Cero: el "antes" se veía con tres carteles
+    // negros flotando en vez del taller. Ahora aparece al pasar el cursor,
+    // igual que en los objetos sueltos.
 
     return { datos, zona, etiquetado: false };
   });
 
   const realce = habilitarRealceAlPasar(scene, objetos.map((o) => o.mesh));
 
-  habilitarEtiquetasAlPasar(
-    scene,
-    gui,
-    objetos.map((o) => ({ mesh: o.mesh, texto: o.datos.nombreVisible }))
-  );
+  // Objetos sueltos y bultos pesados comparten el mismo sistema de etiquetas.
+  //
+  // Los pesados tenían su cartel encendido permanentemente, y eso tapaba la
+  // escena y salía en la Fotografía Cero. Al pasarlos acá se comportan igual
+  // que todo lo demás: el nombre aparece al apuntarlos y desaparece al salir.
+  habilitarEtiquetasAlPasar(scene, gui, [
+    ...objetos.map((o) => ({ mesh: o.mesh, texto: o.datos.nombreVisible })),
+    ...pesados.map((p) => ({ mesh: p.zona, texto: p.datos.nombreVisible })),
+  ]);
 
   // ===================================================================
   // DOS ZONAS, NO TRES
@@ -314,26 +307,22 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     objetosNivel1.reduce((suma, o) => suma + o.metros, 0) +
     pesadosNivel1.reduce((suma, o) => suma + o.metros, 0);
 
-  const contadorEspacio = new TextBlock(
-    "espacioRecuperado",
-    `Espacio recuperado: 0,00 m² de ${metrosTotales.toFixed(2).replace(".", ",")} m²`
-  );
-  contadorEspacio.color = "white";
-  contadorEspacio.fontSize = TEXTO.cuerpo;
-  contadorEspacio.fontWeight = "600";
-  contadorEspacio.outlineWidth = 3;
-  contadorEspacio.outlineColor = "rgba(0,0,0,0.6)";
-  contadorEspacio.top = "-96px";
-  contadorEspacio.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-  gui.addControl(contadorEspacio);
+  // El contador de metros vive en el panel del HUD, no en medio de la sala.
+  // Ver hud.definirMetrica: un KPI es un dato del tablero, no un letrero
+  // colgado sobre las cajas.
+  const textoMetros = (): string =>
+    `Espacio recuperado ${metrosLiberados.toFixed(2).replace(".", ",")} de ${metrosTotales
+      .toFixed(2)
+      .replace(".", ",")} m²`;
+
 
   const sumarMetros = (metros: number): void => {
     if (metros <= 0) return;
     metrosLiberados += metros;
-    contadorEspacio.text = `Espacio recuperado: ${metrosLiberados
-      .toFixed(2)
-      .replace(".", ",")} m² de ${metrosTotales.toFixed(2).replace(".", ",")} m²`;
+    hud.definirMetrica(textoMetros());
   };
+
+  hud.definirMetrica(textoMetros());
 
   let resueltos = 0;
   let tarjetasEmitidas = 0;
@@ -341,6 +330,31 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Se vacía el registro al empezar: si se rejuega el Nivel 1, las tarjetas de
   // la vuelta anterior no deben aparecer en la auditoría.
   gameManager.limpiarTarjetasRojas();
+
+  // ===================================================================
+  // FOTOGRAFÍA CERO
+  // ===================================================================
+  //
+  // Se dispara al abrir el nivel, ANTES de que el jugador toque nada. Es el
+  // "antes" del panel de mejora que se muestra al terminar el Nivel 4.
+  //
+  // Va sin await a propósito: la captura espera a que la escena esté completa
+  // y eso tarda; bloquear la carga del nivel por una foto sería cambiar una
+  // molestia visible por otra peor. Si falla, no pasa nada — el panel
+  // comparativo simplemente no aparece.
+  // Con catch: un fallo dentro de la captura lanzaba en una promesa sin
+  // manejar, y eso no aparece en consola de forma evidente. Así cualquier
+  // error futuro se ve en vez de esconderse.
+  void tomarFotografia(scene)
+    .then((foto) => {
+      if (foto) {
+        gameManager.guardarFotoCero(foto);
+        console.info("[foto] Fotografía Cero guardada");
+      } else {
+        console.warn("[foto] no se pudo tomar la Fotografía Cero: no habrá panel de mejora");
+      }
+    })
+    .catch((e) => console.error("[foto] error al tomar la Fotografía Cero:", e));
   const conteo = { necesario: 0, descartar: 0, tarjetaRoja: 0 };
 
   const registrarAvance = (): void => {
@@ -348,6 +362,10 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     hud.actualizarProgreso(resueltos);
 
     if (resueltos < objetosNivel1.length + pesadosNivel1.length) return;
+
+    // Los metros van al panel comparativo del Nivel 4: es el dato que traduce
+    // la limpieza en algo medible, y ahí es donde se muestra junto a las fotos.
+    gameManager.guardarMetrosLiberados(metrosLiberados);
 
     const segundosTotales = Math.round((performance.now() - inicioNivel) / 1000);
     const bonusTiempo = Math.max(0, 120 - segundosTotales);

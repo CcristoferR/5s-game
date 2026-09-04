@@ -9,6 +9,9 @@ import {
   explicarRechazoRol,
   crearAdministrador,
   restablecerClave,
+  leerBitacora,
+  describirAccion,
+  type EntradaBitacora,
   cambiarSuspension,
   explicarRechazoSuspension,
   explicarRechazoClave,
@@ -50,13 +53,14 @@ import { CURSO_ID } from "./Datos";
  * esta pantalla no cambia: cambia de dónde vienen los datos.
  */
 /** Secciones del panel. El orden es el de la barra de navegación. */
-type Pestana = "personas" | "codigos" | "cursos" | "reportes";
+type Pestana = "personas" | "codigos" | "cursos" | "reportes" | "seguridad";
 
 const PESTANAS: Array<{ id: Pestana; rotulo: string }> = [
   { id: "personas", rotulo: "Personas" },
   { id: "codigos", rotulo: "Códigos" },
   { id: "cursos", rotulo: "Cursos" },
   { id: "reportes", rotulo: "Reportes" },
+  { id: "seguridad", rotulo: "Seguridad" },
 ];
 
 export function mostrarAdministracion(onSalir: () => void): void {
@@ -82,7 +86,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
   void pintar();
 
   async function pintar(): Promise<void> {
-    const [perfiles, codigos, inscripciones, cursos, ranking, areas, sesion] = await Promise.all([
+    const [perfiles, codigos, inscripciones, cursos, ranking, areas, sesion, bitacora] = await Promise.all([
       listarPerfiles(),
       listarCodigos(),
       listarInscripciones(),
@@ -96,6 +100,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
       // quitaría su propio permiso: la base lo rechaza igual, pero es mejor
       // que el botón no esté a que aparezca y falle.
       leerSesion(),
+      leerBitacora(150),
     ]);
 
     raiz.innerHTML = plantilla(
@@ -106,7 +111,8 @@ export function mostrarAdministracion(onSalir: () => void): void {
       ranking,
       areas,
       sesion?.perfil.id ?? null,
-      pestanaActiva
+      pestanaActiva,
+      bitacora
     );
     conectar();
   }
@@ -522,7 +528,8 @@ function plantilla(
   ranking: FilaRankingAdmin[],
   areas: ResumenArea[],
   perfilPropio: string | null,
-  pestanaActiva: Pestana
+  pestanaActiva: Pestana,
+  bitacora: EntradaBitacora[]
 ): string {
   const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
   const activos = codigos.filter((c) => c.activo).length;
@@ -625,6 +632,12 @@ function plantilla(
           <div class="portal__tablaEnvoltorio">
             ${tablaCursos(cursos, inscripciones)}
           </div>
+        </section>`,
+
+    seguridad: `
+        <section class="portal__seccion">
+          <h2 class="portal__tituloSeccion">Bitácora de seguridad</h2>
+          ${bitacoraHtml(bitacora)}
         </section>`,
 
     reportes: `
@@ -1115,6 +1128,87 @@ function tablaPersonas(
  * esto, alguien que ponga etiquetas HTML en su nombre las ejecuta en el
  * navegador del administrador, que es justamente quien m\u00e1s permisos tiene.
  */
+/**
+ * Bitácora en línea de tiempo, no en tabla.
+ *
+ * Una tabla obliga a leer columna por columna para reconstruir qué pasó. Acá
+ * cada entrada es una frase —quién, qué y sobre quién— con la hora al margen,
+ * así que el recorrido es vertical y se escanea de un vistazo. Es la forma en
+ * que se leen los registros de actividad en un software real, y la que evita
+ * que la sección se vea cargada.
+ *
+ * Las entradas van agrupadas por día: sin eso, cien líneas repitiendo la fecha
+ * completa son exactamente el muro de datos que había que evitar.
+ */
+function bitacoraHtml(entradas: EntradaBitacora[]): string {
+  if (entradas.length === 0) {
+    return `
+      <p class="portal__nota">
+        Toda acción administrativa queda registrada acá: cambios de rol,
+        suspensiones, contraseñas restablecidas y cuentas eliminadas.
+      </p>
+      <p class="portal__vacio">Todavía no se registró ninguna acción.</p>`;
+  }
+
+  const porDia = new Map<string, EntradaBitacora[]>();
+  entradas.forEach((e) => {
+    const dia = new Date(e.ocurridoEn).toLocaleDateString("es-CL", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    if (!porDia.has(dia)) porDia.set(dia, []);
+    porDia.get(dia)!.push(e);
+  });
+
+  const dias = [...porDia.entries()]
+    .map(([dia, delDia]) => {
+      const filas = delDia
+        .map((e) => {
+          const { titulo, tono } = describirAccion(e.accion);
+          const hora = new Date(e.ocurridoEn).toLocaleTimeString("es-CL", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          const sobre = e.objetivoNombre
+            ? ` <span class="bitacora__objetivo">${escapar(e.objetivoNombre)}</span>`
+            : "";
+
+          const extra = e.detalle.identificador
+            ? `<span class="bitacora__extra">${escapar(String(e.detalle.identificador))}</span>`
+            : "";
+
+          return `
+            <li class="bitacora__entrada bitacora__entrada--${tono}">
+              <span class="bitacora__hora">${hora}</span>
+              <span class="bitacora__punto" aria-hidden="true"></span>
+              <span class="bitacora__texto">
+                <strong>${escapar(e.actorNombre)}</strong> · ${titulo}${sobre}
+                ${extra}
+              </span>
+            </li>`;
+        })
+        .join("");
+
+      return `
+        <div class="bitacora__dia">
+          <h3 class="bitacora__fecha">${dia}</h3>
+          <ul class="bitacora__lista">${filas}</ul>
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <p class="portal__nota">
+      Registro de solo escritura: las entradas no se pueden editar ni borrar,
+      ni desde acá ni desde la base de datos. Se muestran las
+      ${entradas.length} más recientes.
+    </p>
+    ${dias}`;
+}
+
 /**
  * Celda de avance: cuantas fases lleva y cuanto suma.
  *

@@ -1,0 +1,290 @@
+/* ---------------------------------------------------------------------------
+   Panel de mejora 5S
+   ---------------------------------------------------------------------------
+
+   Usa las mismas variables que el portal, así que acompaña el tema claro y el
+   oscuro sin duplicar una sola regla. Se importa desde PanelMejora.ts para que
+   el empaquetador lo incluya solo cuando el panel se usa.
+   --------------------------------------------------------------------------- */
+
+.panelMejora {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(6, 8, 10, 0.88);
+  backdrop-filter: blur(6px);
+  font-family: system-ui, "Segoe UI", sans-serif;
+
+  /* Entra y sale con una transición corta: aparecer de golpe justo después
+     del resultado del nivel se siente como un salto. */
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.panelMejora--visible {
+  opacity: 1;
+}
+
+.panelMejora--saliendo {
+  opacity: 0;
+}
+
+.panelMejora__marco {
+  width: min(1180px, 100%);
+  padding: 30px 34px 34px;
+  border: 1px solid var(--portal-borde, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  background: var(--portal-tarjeta, #14171b);
+  color: var(--portal-titulo, #f5f7f6);
+
+  transform: translateY(10px) scale(0.99);
+  transition: transform 0.22s ease;
+}
+
+.panelMejora--visible .panelMejora__marco {
+  transform: none;
+}
+
+/* --- Encabezado --- */
+
+.panelMejora__rotulo {
+  margin: 0;
+  color: var(--portal-acierto, #7fb495);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+
+.panelMejora__titulo {
+  margin: 6px 0 0;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.panelMejora__bajada {
+  margin: 6px 0 0;
+  color: var(--portal-cuerpo, #b9c2c0);
+  font-size: 14px;
+}
+
+.panelMejora__bajada strong {
+  color: var(--portal-titulo, #f5f7f6);
+}
+
+/* --- Comparador ---
+
+   Las dos imágenes ocupan EXACTAMENTE el mismo sitio: la de abajo en flujo
+   normal, la de arriba en posición absoluta encima. Así el mismo punto del
+   galpón cae en el mismo píxel en ambas, que es lo que hace que el recorte
+   revele el cambio en vez de mostrar dos encuadres desplazados. */
+
+.panelMejora__vista {
+  position: relative;
+  /* Tope de alto: en pantallas anchas una foto de 1600 px de ancho empujaba
+     las cifras y los botones fuera de la ventana, y no había forma de llegar
+     a "Continuar". */
+  max-height: min(60vh, 620px);
+  margin-top: 22px;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: ew-resize;
+  /* Sin selección de texto: arrastrar sobre la imagen no debe pintar nada. */
+  user-select: none;
+  touch-action: none;
+  line-height: 0;
+}
+
+.panelMejora__foto {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(60vh, 620px);
+  object-fit: contain;
+}
+
+.panelMejora__capaDespues {
+  position: absolute;
+  inset: 0;
+  /* El recorte lo fija el guion al mover la línea. */
+  clip-path: inset(0 0 0 50%);
+}
+
+/* La capa superior calca a la de abajo en tamaño, sin recortar ni escalar.
+   Con object-fit: cover una de las dos se ajustaba distinto que la otra y el
+   mismo punto del galpón no caía en el mismo píxel — que es justo lo que hace
+   ilegible una comparación. */
+.panelMejora__capaDespues .panelMejora__foto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.panelMejora__tirador {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 3px;
+  margin-left: -1.5px;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* El asa da un blanco de 40 px para agarrar. Sin ella habría que acertar a
+   una línea de 3 px, que es pedir puntería en vez de ofrecer un control. */
+.panelMejora__asa {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  background: rgba(12, 15, 18, 0.72);
+}
+
+.panelMejora__asa::before,
+.panelMejora__asa::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -5px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+.panelMejora__asa::before {
+  left: 8px;
+  border-right: 7px solid rgba(255, 255, 255, 0.92);
+}
+
+.panelMejora__asa::after {
+  right: 8px;
+  border-left: 7px solid rgba(255, 255, 255, 0.92);
+}
+
+.panelMejora__marca {
+  position: absolute;
+  top: 14px;
+  padding: 5px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.panelMejora__marca--antes {
+  left: 14px;
+  background: var(--portal-error, #c98d80);
+  color: #1a0f0d;
+}
+
+.panelMejora__marca--despues {
+  right: 14px;
+  background: var(--portal-acierto, #7fb495);
+  color: #0d1a13;
+}
+
+.panelMejora__ayuda {
+  margin: 10px 0 0;
+  color: var(--portal-rotulo, #8b9490);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* --- Cifras --- */
+
+.panelMejora__cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.panelMejora__cifra {
+  padding: 15px 18px;
+  border: 1px solid var(--portal-borde, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: var(--portal-realce, rgba(255, 255, 255, 0.05));
+}
+
+.panelMejora__dato {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.panelMejora__pie {
+  display: block;
+  margin-top: 3px;
+  color: var(--portal-rotulo, #8b9490);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* --- Acciones --- */
+
+.panelMejora__acciones {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.panelMejora__boton {
+  padding: 13px 26px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--portal-titulo, #f5f7f6);
+  color: #0d1013;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.panelMejora__boton:hover {
+  opacity: 0.88;
+}
+
+.panelMejora__boton--secundario {
+  border: 1px solid var(--portal-borde, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: var(--portal-titulo, #f5f7f6);
+}
+
+@media (max-width: 720px) {
+  .panelMejora__marco {
+    padding: 22px 18px 26px;
+  }
+
+  .panelMejora__titulo {
+    font-size: 23px;
+  }
+
+  .panelMejora__acciones {
+    flex-direction: column-reverse;
+  }
+
+  .panelMejora__boton {
+    width: 100%;
+  }
+}

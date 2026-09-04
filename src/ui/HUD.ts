@@ -32,6 +32,7 @@ export class HUD {
   private textoFase: TextBlock;
   private textoObjetivo: TextBlock;
   private textoProgreso: TextBlock;
+  private textoMetrica: TextBlock;
   private franjaFase: Rectangle;
   private filaProgreso: Rectangle;
   private barraProgreso: Rectangle;
@@ -203,6 +204,21 @@ export class HUD {
     this.barraProgreso.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.barraProgreso.isHitTestVisible = false;
     carrilProgreso.addControl(this.barraProgreso);
+
+    // --- Indicador del nivel ---
+    //
+    // Oculto salvo que el nivel informe uno. La mayoría no tiene KPI propio y
+    // una línea vacía dejaría un hueco sin explicación en el panel.
+    this.textoMetrica = new TextBlock("metricaNivel", "");
+    this.textoMetrica.color = PALETA.dato;
+    this.textoMetrica.fontSize = TEXTO.rotulo;
+    this.textoMetrica.fontWeight = "600";
+    this.textoMetrica.height = "24px";
+    this.textoMetrica.paddingLeft = "16px";
+    this.textoMetrica.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoMetrica.isVisible = false;
+    this.textoMetrica.isHitTestVisible = false;
+    panelMarcador.addControl(this.textoMetrica);
 
     // --- 4. Tiempo ---
     //
@@ -466,6 +482,19 @@ export class HUD {
     this.barraProgreso.width = Math.round((hechosAcotados / this.totalTarea) * 204) + "px";
   }
 
+  /**
+   * Indicador propio del nivel, bajo el progreso.
+   *
+   * Existe para el contador de metros cuadrados del Nivel 1, que estaba
+   * escrito en el centro de la pantalla: cruzaba las cajas y la estantería,
+   * rompía la inmersión y encima habría salido en la Fotografía Cero. Un KPI
+   * es un dato del tablero, no un letrero colgado en medio del taller.
+   */
+  definirMetrica(texto: string): void {
+    this.textoMetrica.text = texto;
+    this.textoMetrica.isVisible = texto.length > 0;
+  }
+
   actualizarPuntaje(puntaje: number): void {
     this.textoPuntaje.text = `${puntaje} pts`;
   }
@@ -658,7 +687,16 @@ export class HUD {
     bonusTiempo: number,
     segundosTotales: number,
     onVolverMenu: () => void,
-    cierre?: string
+    cierre?: string,
+    /**
+     * Paso opcional ANTES de volver al menú.
+     *
+     * Lo usa el Nivel 4 para abrir el panel de mejora: el jugador primero ve
+     * su resultado y, al continuar, ve el área entera transformada. Si se
+     * mostraran a la vez competirían entre sí y no se leería ninguno de los
+     * dos; encadenados, cada uno tiene su momento.
+     */
+    antesDeVolver?: () => void | Promise<void>
   ): void {
     // El cartel del último acierto no debe sobrevivir al cierre del nivel: su
     // temporizador seguía corriendo por debajo y quedaba flotando sobre el
@@ -688,7 +726,16 @@ export class HUD {
     this.botonVolverMenu.onPointerUpObservable.add(() => {
       this.fondoOverlay.isVisible = false;
       this.pantallaFinal.isVisible = false;
-      onVolverMenu();
+
+      if (!antesDeVolver) {
+        onVolverMenu();
+        return;
+      }
+
+      // La escena NO se destruye hasta que el paso intermedio termine: el
+      // panel de mejora necesita fotografiar el galpón, y no se puede
+      // fotografiar algo que ya se liberó.
+      void Promise.resolve(antesDeVolver()).finally(() => onVolverMenu());
     });
   }
 

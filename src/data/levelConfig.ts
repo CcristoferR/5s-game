@@ -74,6 +74,17 @@ export interface ObjetoNivel1 {
   donde: string;
 }
 
+// EL DESORDEN SE AGRUPA, NO SE REPARTE.
+//
+// Las posiciones anteriores estaban separadas casi a la misma distancia unas
+// de otras, y eso se lee como una cuadrícula invisible: parece material
+// colocado, no material abandonado. El caos real forma montones —la taza
+// encima de los papeles, el casco volcado donde rodó, las herramientas
+// rozando la caja que alguien dejó en medio.
+//
+// Por eso ahora hay tres focos: el rincón del basurero, la zona del portón y
+// el grupo del centro. Entre ellos queda piso libre, que es lo que hace que
+// los montones se vean como montones.
 export const objetosNivel1: ObjetoNivel1[] = [
   // --- Estorbando el paso al portón ---
   {
@@ -86,7 +97,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
     // Metida en el vano del portón, contra el marco. Bajada de escala 3,4 a
     // 2,4: a 3,4 no cabía en el cuadro del área de descarte al clasificarla, y
     // una vez etiquetada se encimaba con lo demás.
-    posicionInicial: [-0.15, 0, 4.05],
+    posicionInicial: [-0.5, 0, 5.75],
     rotacionY: 0.22,
     escala: 2.4,
     destino: "tarjetaRoja",
@@ -98,8 +109,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "chatarra_metal",
     nombreVisible: "Pieza de metal sin identificar",
-    posicionInicial: [-1.3, 0, 3.7],
-    rotacionY: 1.1,
+    posicionInicial: [-1.15, 0, 4.02],
+    rotacionY: 1.35,
     destino: "descartar",
     metros: 0.14,
     donde: "Tirada en el pasillo de circulación",
@@ -111,8 +122,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "diario_viejo",
     nombreVisible: "Diario de hace 6 meses",
-    posicionInicial: [0.85, 0, 3.9],
-    rotacionY: -0.25,
+    posicionInicial: [-3.28, 0, -0.78],
+    rotacionY: 0.28,
     destino: "basura",
     metros: 0.1,
     donde: "Tirado en el suelo, cerca del portón",
@@ -121,8 +132,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "guantes_ocasionales",
     nombreVisible: "Guantes de trabajo (uso ocasional)",
-    posicionInicial: [-1.5, 0, 0.9],
-    rotacionY: -0.4,
+    posicionInicial: [-0.95, 0, 3.38],
+    rotacionY: -0.55,
     destino: "tarjetaRoja",
     metros: 0.08,
     donde: "Olvidados en un rincón 'por si acaso'",
@@ -137,7 +148,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
     // Al suelo: el tambor que la sostenía se quitó al reordenar la
     // ambientación, y encima quedaba dentro del volumen de clic de la pila
     // registrable, que se llevaba el clic antes que ella.
-    posicionInicial: [1.35, 0, -0.75],
+    posicionInicial: [-3.16, 0.03, -0.7],
+    rotacionY: 0.9,
     destino: "basura",
     metros: 0.05,
     donde: "Olvidada en el suelo del taller",
@@ -149,7 +161,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "engrapadora",
     nombreVisible: "Engrapadora",
-    posicionInicial: [3.75, 0, 0.45],
+    posicionInicial: [0.92, 0, 1.42],
+    rotacionY: 0.75,
     destino: "necesario",
     metros: 0,
     donde: "Tirada en medio del taller",
@@ -158,8 +171,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "manual_procedimientos",
     nombreVisible: "Manual de procedimientos del área",
-    posicionInicial: [-2.45, 0, -0.45],
-    rotacionY: 0.1,
+    posicionInicial: [1.62, 0, 0.55],
+    rotacionY: -0.35,
     destino: "necesario",
     metros: 0,
     donde: "En el suelo, junto al puesto",
@@ -168,8 +181,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "casco_agrietado",
     nombreVisible: "Casco de seguridad agrietado",
-    posicionInicial: [3.4, 0, -0.9],
-    rotacionY: 0.8,
+    posicionInicial: [-3.35, 0, 0.3],
+    rotacionY: 2.1,
     destino: "descartar",
     metros: 0.12,
     donde: "Tirado en el suelo del taller",
@@ -181,8 +194,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "cinta_metrica",
     nombreVisible: "Cinta métrica",
-    posicionInicial: [-3.9, 0, 3.9],
-    rotacionY: 1.4,
+    posicionInicial: [0.45, 0, 1.85],
+    rotacionY: 1.15,
     destino: "necesario",
     metros: 0,
     donde: "Caída junto a la pared, donde nadie mira",
@@ -192,8 +205,8 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "carpeta_activa",
     nombreVisible: "Carpeta 'Proyecto Activo'",
-    posicionInicial: [0.45, 0, 0.85],
-    rotacionY: -0.6,
+    posicionInicial: [2.55, 0, -0.78],
+    rotacionY: -0.5,
     destino: "necesario",
     metros: 0,
     donde: "En el suelo, en plena zona de paso",

@@ -426,10 +426,31 @@ export function crearZonasPiso(scene: Scene, zonas: ZonaPisoNivel4[]): ZonasPiso
         ctx.strokeRect(10, 10, w - 20, h - 20);
         ctx.setLineDash([]);
 
-        ctx.fillStyle = "rgba(200, 189, 138, 0.85)";
-        ctx.font = `bold ${Math.round(h / 6)}px system-ui, sans-serif`;
+        // Texto legible desde de pie, pero SIN salirse de la plantilla.
+        //
+        // El tamaño se calcula en dos pasos. El primero lo ata al alto —a un
+        // sexto no se leía sin acercarse—, y el segundo lo achica si la
+        // palabra no entra a lo ancho. Sin ese segundo paso, un rótulo largo
+        // como "EXTINTOR" en una zona pequeña se desbordaba por los dos lados
+        // y quedaba escrito sobre el piso, fuera de su propia demarcación.
+        //
+        // El color sí sube de opacidad: el problema del tono casi igual al
+        // fondo era real y no dependía del tamaño.
+        ctx.fillStyle = "rgba(88, 78, 40, 0.92)";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
+
+        const anchoUtil = w * 0.82;
+        let tamanoRotulo = Math.round(h / 4.4);
+
+        ctx.font = `bold ${tamanoRotulo}px system-ui, sans-serif`;
+        const anchoTexto = ctx.measureText(zona.etiqueta).width;
+
+        if (anchoTexto > anchoUtil) {
+          tamanoRotulo = Math.floor(tamanoRotulo * (anchoUtil / anchoTexto));
+          ctx.font = `bold ${tamanoRotulo}px system-ui, sans-serif`;
+        }
+
         ctx.fillText(zona.etiqueta, w / 2, h / 2);
       }
     );
@@ -863,11 +884,19 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
   cable.material = matCable;
   cable.isPickable = false;
 
+  // LA PANTALLA LLEVA EL COLOR EXACTO DEL INTERRUPTOR.
+  //
+  // Antes se le sumaba emisión al mismo color, y eso lo aclara: el rojo del
+  // foco salía rosado y el de la tarjeta rojo pleno, así que no se veían como
+  // el mismo color. Y ese emparejamiento es literalmente la lección del video
+  // 4.2 — pintar el interruptor del color del foco que enciende.
+  //
+  // Ahora la pantalla es mate y sin emisión: el color que se ve es el que se
+  // pintó. La luz la da la bombilla, que va aparte.
   const matPantalla = new PBRMaterial(`matPantallaFoco_${id}`, scene);
   matPantalla.albedoColor = color;
-  matPantalla.emissiveColor = color.scale(0.55);
-  matPantalla.roughness = 0.55;
-  matPantalla.metallic = 0.2;
+  matPantalla.roughness = 0.75;
+  matPantalla.metallic = 0.05;
 
   const pantalla = MeshBuilder.CreateCylinder(
     `pantallaFoco_${id}`,
@@ -877,6 +906,32 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
   pantalla.position.set(x, ALTURA, z);
   pantalla.material = matPantalla;
   pantalla.isPickable = false;
+
+  // Casquillo entre el cable y la pantalla, y roseta en el techo. Sin estas
+  // dos piezas el conjunto se lee como una forma suspendida en el aire: no se
+  // ve de dónde cuelga ni cómo se sujeta.
+  const matHerraje = new PBRMaterial(`matHerrajeFoco_${id}`, scene);
+  matHerraje.albedoColor = new Color3(0.2, 0.21, 0.23);
+  matHerraje.roughness = 0.45;
+  matHerraje.metallic = 0.7;
+
+  const casquillo = MeshBuilder.CreateCylinder(
+    `casquilloFoco_${id}`,
+    { diameter: 0.07, height: 0.09, tessellation: 12 },
+    scene
+  );
+  casquillo.position.set(x, ALTURA + 0.16, z);
+  casquillo.material = matHerraje;
+  casquillo.isPickable = false;
+
+  const roseta = MeshBuilder.CreateCylinder(
+    `rosetaFoco_${id}`,
+    { diameter: 0.16, height: 0.05, tessellation: 14 },
+    scene
+  );
+  roseta.position.set(x, ALTURA + 1.0, z);
+  roseta.material = matHerraje;
+  roseta.isPickable = false;
 
   const matBombilla = new PBRMaterial(`matBombillaFoco_${id}`, scene);
   matBombilla.albedoColor = color;

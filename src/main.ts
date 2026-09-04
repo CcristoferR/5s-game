@@ -388,6 +388,13 @@ async function volverAlCatalogo(): Promise<void> {
 // registro, no de la sesión guardada. Esta variante se usa al entrar por la
 // puerta. Para una sesión ya abierta se usa abrirSesionGuardada, que revalida.
 function abrirSegunRol(perfil: Perfil): void {
+  // El nombre se guarda acá, en el único punto por el que pasa todo acceso.
+  //
+  // Lo usa el panel de mejora del Nivel 4. Leerlo en ese momento significaba
+  // una consulta al servidor justo cuando el jugador quiere salir del nivel, y
+  // una consulta sin respuesta lo dejaba encerrado. Acá ya está leído.
+  GameManager.getInstance().definirNombreJugador(perfil.nombreCompleto);
+
   if (perfil.rol === "administrador") {
     mostrarAdministracion(() => {
       // Al cerrar sesión desde administración se vuelve a la puerta, no al
