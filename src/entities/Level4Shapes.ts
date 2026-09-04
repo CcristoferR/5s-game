@@ -126,7 +126,17 @@ export function crearConector(scene: Scene, datos: ConectorNivel4): Mesh {
 // ---------------------------------------------------------------------------
 
 /**
- * Plantilla de marcado, del tipo que se apoya en el piso para pintar encima.
+ * Plantilla de marcado, DE PIE.
+ *
+ * Antes iba tumbada en el suelo, que es como se usa de verdad — y era
+ * ilegible. Una lamina apoyada en el piso se mira siempre en escorzo: por
+ * mucha resolucion que tenga la textura, el texto llega a la pantalla
+ * aplastado, y acercar la camara no arregla el angulo. Las fichas de color se
+ * leian bien desde el primer dia justo porque estaban de pie.
+ *
+ * Asi que se apoya sobre unos tacos, como los carteles plegables de obra. Da
+ * igual para el resultado: al colocarla se retira y lo que queda es la pintura
+ * sobre el piso.
  *
  * Lleva escrito lo que va a quedar pintado. Es deliberado: la diferencia entre
  * "PASILLO · DESPEJADO 1,20 m" y "ZONA ORDENADA" tiene que poder leerse ANTES
@@ -136,44 +146,51 @@ export function crearConector(scene: Scene, datos: ConectorNivel4): Mesh {
 export function crearMarcaPiso(scene: Scene, datos: MarcaNivel4): Mesh {
   const partes: Mesh[] = [];
 
+  const ANCHO = 0.72;
+  const ALTO = 0.46;
+  const ESPESOR = 0.035;
+  // Altura del centro. La base queda casi a ras del piso.
+  const CENTRO_Y = ALTO / 2 + 0.05;
+
   const matBastidor = new PBRMaterial(`matMarcaBastidor_${datos.id}`, scene);
   matBastidor.albedoColor = new Color3(0.32, 0.34, 0.37);
   matBastidor.roughness = 0.55;
   matBastidor.metallic = 0.5;
 
-  const ANCHO = 0.78;
-  const FONDO = 0.34;
+  // Cuerpo de la plantilla, DE PIE.
+  const cuerpo = MeshBuilder.CreateBox(
+    `marcaCuerpo_${datos.id}`,
+    { width: ANCHO, height: ALTO, depth: ESPESOR },
+    scene
+  );
+  cuerpo.position.y = CENTRO_Y;
+  cuerpo.material = matBastidor;
+  partes.push(cuerpo);
 
-  // Bastidor: cuatro listones que enmarcan la lámina.
-  const listones: Array<[number, number, number, number]> = [
-    [0, -FONDO / 2, ANCHO, 0.035],
-    [0, FONDO / 2, ANCHO, 0.035],
-    [-ANCHO / 2, 0, 0.035, FONDO],
-    [ANCHO / 2, 0, 0.035, FONDO],
-  ];
-  listones.forEach(([lx, lz, ancho, fondo], i) => {
-    const liston = MeshBuilder.CreateBox(
-      `marcaListon_${datos.id}_${i}`,
-      { width: ancho, height: 0.045, depth: fondo },
+  // Pie: dos tacos que la apoyan. Sin ellos se lee como un cartel flotando.
+  [-1, 1].forEach((lado) => {
+    const taco = MeshBuilder.CreateBox(
+      `marcaPie_${datos.id}_${lado}`,
+      { width: 0.1, height: 0.05, depth: 0.16 },
       scene
     );
-    liston.position.set(lx, 0.022, lz);
-    liston.material = matBastidor;
-    partes.push(liston);
+    taco.position.set(lado * (ANCHO / 2 - 0.09), 0.025, 0);
+    taco.material = matBastidor;
+    partes.push(taco);
   });
 
-  const matLamina = materialPintadoNitido(scene, `matMarcaLamina_${datos.id}`, 768, 320, NITIDEZ_LAMINA, (ctx, w, h) => {
+  const matLamina = materialPintadoNitido(scene, `matMarcaLamina_${datos.id}`, 768, 480, NITIDEZ_LAMINA, (ctx, w, h) => {
     ctx.fillStyle = datos.esEspecifica ? "#e9c65a" : "#b9b39a";
     ctx.fillRect(0, 0, w, h);
 
-    // Rayado de seguridad en los bordes.
+    // Rayado de seguridad en el marco.
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, w, h);
     ctx.clip();
     ctx.strokeStyle = "rgba(30,30,30,0.5)";
-    ctx.lineWidth = 12;
-    for (let i = -h; i < w + h; i += 46) {
+    ctx.lineWidth = 14;
+    for (let i = -h; i < w + h; i += 50) {
       ctx.beginPath();
       ctx.moveTo(i, 0);
       ctx.lineTo(i + h, h);
@@ -181,27 +198,58 @@ export function crearMarcaPiso(scene: Scene, datos: MarcaNivel4): Mesh {
     }
     ctx.restore();
 
+    // Ventana negra del texto, con margen ajustado: cada pixel que se le quita
+    // al marco es letra mas grande.
     ctx.fillStyle = "#171a1c";
-    ctx.fillRect(26, 84, w - 52, h - 168);
+    ctx.fillRect(22, 92, w - 44, h - 184);
 
     ctx.fillStyle = datos.esEspecifica ? "#f2d47a" : "#d8d3c0";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    let tamano = 62;
+
+    // El texto se parte en dos renglones antes que encogerse: "PASILLO ·
+    // DESPEJADO 1,20 m" en una linea obliga a bajar la letra a la mitad.
+    const palabras = datos.textoPintado.split(" ");
+    let tamano = 96;
     ctx.font = `bold ${tamano}px system-ui, sans-serif`;
-    while (ctx.measureText(datos.textoPintado).width > w - 88 && tamano > 20) {
-      tamano -= 3;
+
+    const partir = (): string[] => {
+      const lineas: string[] = [];
+      let actual = "";
+      palabras.forEach((palabra) => {
+        const prueba = actual ? `${actual} ${palabra}` : palabra;
+        if (ctx.measureText(prueba).width > w - 74 && actual) {
+          lineas.push(actual);
+          actual = palabra;
+        } else {
+          actual = prueba;
+        }
+      });
+      if (actual) lineas.push(actual);
+      return lineas;
+    };
+
+    let lineas = partir();
+    while (lineas.length > 2 && tamano > 34) {
+      tamano -= 6;
       ctx.font = `bold ${tamano}px system-ui, sans-serif`;
+      lineas = partir();
     }
-    ctx.fillText(datos.textoPintado, w / 2, h / 2);
+
+    const centro = h / 2;
+    const paso = tamano + 12;
+    lineas.forEach((linea, i) => {
+      ctx.fillText(linea, w / 2, centro + (i - (lineas.length - 1) / 2) * paso);
+    });
   });
 
+  // La cara impresa mira a -Z, que es de donde mira la camara.
   const lamina = MeshBuilder.CreateBox(
     `marcaLamina_${datos.id}`,
-    { width: ANCHO - 0.06, height: 0.02, depth: FONDO - 0.06 },
+    { width: ANCHO - 0.05, height: ALTO - 0.05, depth: 0.014 },
     scene
   );
-  lamina.position.y = 0.03;
+  lamina.position.set(0, CENTRO_Y, -ESPESOR / 2);
   lamina.material = matLamina;
   partes.push(lamina);
 

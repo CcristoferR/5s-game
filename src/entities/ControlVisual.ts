@@ -6,6 +6,8 @@ import {
   Mesh,
   Vector3,
   PointLight,
+  ActionManager,
+  ExecuteCodeAction,
 } from "@babylonjs/core";
 import { materialPintado, materialPintadoNitido } from "./ObjetosComunes";
 
@@ -20,6 +22,25 @@ import { materialPintado, materialPintadoNitido } from "./ObjetosComunes";
  * Las zonas del piso quedan fuera: son manchas de cinco metros con dos
  * palabras enormes, y ahi la densidad no es el problema.
  */
+/**
+ * Alto del lienzo de una zona del piso.
+ *
+ * Estaba en 256 px, y como la franja del pasillo mide cinco metros de largo, a
+ * ese tamano tocaban 205 pixeles por metro: el rayado de seguridad se veia
+ * lavado y el rotulo, borroso. El piso se mira siempre en escorzo y desde
+ * lejos, asi que no necesita la densidad de un objeto de mano — pero 205 es
+ * menos de la decima parte de lo que tiene un libro del Nivel 1.
+ */
+const ALTO_LIENZO_ZONA = 512;
+
+/** Ancho del lienzo de una zona, conservando su proporcion en planta. */
+function anchoDeLienzoDeZona(ancho: number, fondo: number): number {
+  // El tope existe porque el lienzo de una franja de cinco metros creceria sin
+  // limite: 2048 deja el pasillo por encima de 400 px por metro, que para algo
+  // pintado en el suelo alcanza de sobra.
+  return Math.round(Math.min(2048, Math.max(ALTO_LIENZO_ZONA, ALTO_LIENZO_ZONA * (ancho / fondo))));
+}
+
 const NITIDEZ_ROTULO = 2;
 const NITIDEZ_PIEZA = 2.5;
 import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
@@ -138,7 +159,10 @@ export interface ArmarioResult {
   resaltar: (id: string | null) => void;
 }
 
-const ANCHO_PUERTO = 0.3;
+// Las bocas se agrandaron de 0.30 a 0.38. La FORMA de cada puerto es la unica
+// pista que tiene el jugador para saber que cable va donde, y a 30 cm no se
+// distinguia un triangulo de un circulo desde el sitio donde nacen los cables.
+const ANCHO_PUERTO = 0.38;
 
 /** Dibuja el hueco de un puerto: la forma que solo acepta su conector. */
 function dibujarBoca(ctx: CanvasRenderingContext2D, forma: FormaConector, w: number, h: number): void {
@@ -384,14 +408,13 @@ export function crearZonasPiso(scene: Scene, zonas: ZonaPisoNivel4[]): ZonasPiso
     // Contorno punteado: dice que ahí FALTA algo, sin decir qué. El grosor de
     // la línea se dibuja en la textura y no con geometría, así que una zona de
     // 5 m y una de 1 m se ven con el mismo trazo.
-    const proporcion = zona.ancho / zona.fondo;
-    const anchoPx = Math.round(Math.min(1024, Math.max(256, 256 * proporcion)));
+    const anchoPx = anchoDeLienzoDeZona(zona.ancho, zona.fondo);
 
     const matContorno = materialPintado(
       scene,
       `matContornoZona_${zona.id}`,
       anchoPx,
-      256,
+      ALTO_LIENZO_ZONA,
       (ctx, w, h) => {
         ctx.clearRect(0, 0, w, h);
         ctx.fillStyle = "rgba(210, 200, 150, 0.10)";
@@ -486,14 +509,13 @@ export function crearZonasPiso(scene: Scene, zonas: ZonaPisoNivel4[]): ZonasPiso
     contorno.reposo = new Color3(0.05, 0.04, 0.01);
     contorno.material.emissiveColor.copyFrom(contorno.reposo);
 
-    const proporcion = zona.ancho / zona.fondo;
-    const anchoPx = Math.round(Math.min(1024, Math.max(256, 256 * proporcion)));
+    const anchoPx = anchoDeLienzoDeZona(zona.ancho, zona.fondo);
 
     contorno.mesh.material = materialPintado(
       scene,
       `matZonaPintada_${id}`,
       anchoPx,
-      256,
+      ALTO_LIENZO_ZONA,
       (ctx, w, h) => {
         ctx.clearRect(0, 0, w, h);
 
@@ -558,6 +580,24 @@ export interface PanelInterruptoresResult {
   resaltar: (id: string | null) => void;
   /** Pinta la placa del interruptor del color elegido. No valida nada. */
   rotular: (id: string, color: ColorNivel4) => void;
+  /**
+   * Apaga todos los focos menos el de este circuito, un instante.
+   *
+   * ─── POR QUE EXISTE ─────────────────────────────────────────────────────
+   *
+   * Sin esto la estacion era imposible de resolver mirando. La placa dice
+   * BANCO, y para saber de que color etiquetarla hay que averiguar CUAL de los
+   * tres focos del techo es el del banco. Estaban los tres encendidos a la vez
+   * y a tres metros de altura: no habia ninguna forma de atar uno con otro que
+   * no fuera adivinar.
+   *
+   * Ahora se prueba la llave y se ve cual queda encendido, que es exactamente
+   * lo que hace un electricista cuando llega a un tablero sin rotular. Y es el
+   * argumento entero de la 4S: Video 4.2 (5:29) manda señalizar interruptores y
+   * focos con el mismo color PARA NO TENER QUE HACER ESTO NUNCA MAS. El jugador
+   * pasa por la molestia una vez y despues instala el control que la elimina.
+   */
+  probar: (id: string) => void;
 }
 
 export function crearPanelInterruptores(
@@ -572,8 +612,8 @@ export function crearPanelInterruptores(
   const frente = frenteDe(giroY);
   const lado = ladoDe(giroY);
 
-  const ANCHO = circuitos.length * 0.44 + 0.2;
-  const ALTO = 0.62;
+  const ANCHO = circuitos.length * 0.56 + 0.24;
+  const ALTO = 0.78;
   const FONDO = 0.12;
 
   const matPanel = new PBRMaterial("matPanelInterruptores", scene);
@@ -617,49 +657,50 @@ export function crearPanelInterruptores(
 
   const marcos = new Map<string, Mesh>();
   const placas = new Map<string, Mesh>();
+  const focos = new Map<string, FocoMontado>();
   const montados: InterruptorMontado[] = [];
 
   /** Cara de la placa. Vacía al montar, con el color elegido al asignarlo. */
-  const caraPlaca = (id: string, descripcion: string, color: ColorNivel4 | null): PBRMaterial =>
-    materialPintadoNitido(scene, `matPlaca_${id}_${color?.id ?? "vacia"}`, 320, 256, NITIDEZ_PIEZA, (ctx, w, h) => {
-      ctx.fillStyle = color ? color.hex : "#2b343a";
+  /**
+   * Cara de la placa. Vacia al montar, con el color elegido al asignarlo.
+   *
+   * Lleva la ETIQUETA CORTA, no la descripcion completa. Un rotulo de planta se
+   * lee de lejos o no sirve, y "Circuito de la zona de pallets" en una placa de
+   * 34 cm deja una letra de cuatro milimetros. El nombre largo sigue estando: lo
+   * muestra el aviso en pantalla cuando el cursor apunta al interruptor.
+   */
+  const caraPlaca = (id: string, etiqueta: string, color: ColorNivel4 | null): PBRMaterial =>
+    materialPintadoNitido(scene, `matPlaca_${id}_${color?.id ?? "vacia"}`, 320, 384, NITIDEZ_PIEZA, (ctx, w, h) => {
+      // Sin asignar va en gris claro, no en gris oscuro: antes la placa vacia
+      // era casi del color del panel y no se distinguia que hubiera algo ahi.
+      ctx.fillStyle = color ? color.hex : "#4a565e";
       ctx.fillRect(0, 0, w, h);
 
       // Palanca del interruptor, dibujada. Deja claro que la placa pertenece a
       // un interruptor y no es un cartel suelto.
-      ctx.fillStyle = "#1b2126";
-      ctx.fillRect(w / 2 - 34, 26, 68, 96);
-      ctx.fillStyle = "#c6ccd0";
-      ctx.fillRect(w / 2 - 24, 36, 48, 44);
+      ctx.fillStyle = "#151a1e";
+      ctx.fillRect(w / 2 - 46, 24, 92, 130);
+      ctx.fillStyle = "#dfe4e7";
+      ctx.fillRect(w / 2 - 34, 36, 68, 58);
 
-      ctx.fillStyle = color ? "rgba(0,0,0,0.28)" : "#20272c";
-      ctx.fillRect(0, h - 96, w, 96);
+      // Banda del rotulo: casi la mitad de la placa, en negro, para que la
+      // letra tenga contraste tanto sobre el gris de vacia como sobre el color.
+      ctx.fillStyle = "rgba(0,0,0,0.62)";
+      ctx.fillRect(0, h - 176, w, 176);
 
-      ctx.fillStyle = color ? "#ffffff" : "#7d8b95";
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.font = "600 34px system-ui, sans-serif";
       ctx.textAlign = "center";
-      let tamano = 26;
+      ctx.fillText("CIRCUITO", w / 2, h - 122);
+
+      ctx.fillStyle = "#ffffff";
+      let tamano = 62;
       ctx.font = `bold ${tamano}px system-ui, sans-serif`;
-
-      // El texto se parte en dos renglones si hace falta: "Circuito de la zona
-      // de pallets" no entra de una en 320 px.
-      const palabras = descripcion.split(" ");
-      const lineas: string[] = [];
-      let actual = "";
-      palabras.forEach((palabra) => {
-        const prueba = actual ? `${actual} ${palabra}` : palabra;
-        if (ctx.measureText(prueba).width > w - 26 && actual) {
-          lineas.push(actual);
-          actual = palabra;
-        } else {
-          actual = prueba;
-        }
-      });
-      if (actual) lineas.push(actual);
-
-      const visibles = lineas.slice(0, 3);
-      visibles.forEach((linea, i) => {
-        ctx.fillText(linea, w / 2, h - 70 + i * 30);
-      });
+      while (ctx.measureText(etiqueta).width > w - 26 && tamano > 24) {
+        tamano -= 3;
+        ctx.font = `bold ${tamano}px system-ui, sans-serif`;
+      }
+      ctx.fillText(etiqueta, w / 2, h - 56);
     });
 
   circuitos.forEach((circuito) => {
@@ -667,18 +708,18 @@ export function crearPanelInterruptores(
 
     const placa = MeshBuilder.CreateBox(
       `placa_${circuito.id}`,
-      { width: 0.34, height: 0.4, depth: 0.014 },
+      { width: 0.46, height: 0.55, depth: 0.014 },
       scene
     );
     placa.position.set(x + lado.x * d + frente.x * CARA, y, z + lado.z * d + frente.z * CARA);
     placa.rotation.y = giroY;
-    placa.material = caraPlaca(circuito.id, circuito.descripcion, null);
+    placa.material = caraPlaca(circuito.id, circuito.etiquetaCorta, null);
     placa.isPickable = false;
     placas.set(circuito.id, placa);
 
     const marco = MeshBuilder.CreateBox(
       `marcoInterruptor_${circuito.id}`,
-      { width: 0.39, height: 0.45, depth: 0.008 },
+      { width: 0.51, height: 0.6, depth: 0.008 },
       scene
     );
     marco.position.set(
@@ -694,7 +735,7 @@ export function crearPanelInterruptores(
 
     const receptor = MeshBuilder.CreateBox(
       `receptorInterruptor_${circuito.id}`,
-      { width: 0.4, height: 0.46, depth: 0.02 },
+      { width: 0.52, height: 0.62, depth: 0.02 },
       scene
     );
     receptor.position.set(
@@ -731,7 +772,16 @@ export function crearPanelInterruptores(
     // sería adivinar; con esto es inspeccionar.
     const color = colores.find((c) => c.id === circuito.colorCorrectoId);
     const [lx, lz] = circuito.lampara;
-    crearFocoColgado(scene, circuito.id, lx, lz, color?.hex ?? "#ffffff");
+    focos.set(circuito.id, crearFocoColgado(scene, circuito.id, lx, lz, color?.hex ?? "#ffffff"));
+
+    // El receptor es la lamina invisible a la que apunta el iman al arrastrar.
+    // Se aprovecha tambien como boton: es la unica malla pinchable que hay
+    // delante de la placa, asi que un clic sobre el interruptor cae siempre
+    // aqui. Se le cuelga la prueba del circuito.
+    receptor.actionManager = new ActionManager(scene);
+    receptor.actionManager.registerAction(
+      new ExecuteCodeAction(ActionManager.OnPickTrigger, () => probar(circuito.id))
+    );
   });
 
   const resaltar = (id: string | null): void => {
@@ -740,14 +790,40 @@ export function crearPanelInterruptores(
     });
   };
 
+  let pruebaEnCurso = 0;
+
+  const probar = (id: string): void => {
+    const marca = ++pruebaEnCurso;
+
+    focos.forEach((foco, clave) => {
+      const encendido = clave === id;
+      // Los demas no se apagan del todo: quedan en brasa. Apagarlos por
+      // completo deja el galpon a oscuras y el jugador cree que se rompio algo.
+      const nivel = encendido ? 1.9 : 0.06;
+      foco.material.emissiveColor = foco.color.scale(nivel);
+      foco.pantalla.emissiveColor = foco.color.scale(encendido ? 0.75 : 0.04);
+      foco.luz.intensity = encendido ? 1.4 : 0.05;
+    });
+
+    window.setTimeout(() => {
+      // Si el jugador probo otra llave mientras tanto, manda la ultima.
+      if (scene.isDisposed || marca !== pruebaEnCurso) return;
+      focos.forEach((foco) => {
+        foco.material.emissiveColor = foco.color.scale(1.6);
+        foco.pantalla.emissiveColor = foco.color.scale(0.55);
+        foco.luz.intensity = 0.95;
+      });
+    }, 1800);
+  };
+
   const rotular = (id: string, color: ColorNivel4): void => {
     const placa = placas.get(id);
     const circuito = circuitos.find((c) => c.id === id);
     if (!placa || !circuito) return;
-    placa.material = caraPlaca(circuito.id, circuito.descripcion, color);
+    placa.material = caraPlaca(circuito.id, circuito.etiquetaCorta, color);
   };
 
-  return { interruptores: montados, resaltar, rotular };
+  return { interruptores: montados, resaltar, rotular, probar };
 }
 
 /** Convierte "#rrggbb" en Color3. */
@@ -755,13 +831,22 @@ function desdeHex(hex: string): Color3 {
   return Color3.FromHexString(hex.startsWith("#") ? hex : `#${hex}`);
 }
 
+/** Un foco montado, con lo necesario para encenderlo y apagarlo. */
+interface FocoMontado {
+  material: PBRMaterial;
+  pantalla: PBRMaterial;
+  luz: PointLight;
+  color: Color3;
+}
+
 /**
  * Foco colgado del techo, con la pantalla del color de su circuito.
  *
- * Cuelga alto y encendido desde el primer cuadro. Es una pista de lectura, no
- * un objetivo: no se toca, se mira.
+ * Cuelga alto y encendido. Es una pista de lectura, no un objetivo: no se toca,
+ * se mira — pero sí se puede hacer PARPADEAR desde su interruptor, que es como
+ * se averigua en la vida real qué gobierna cada llave.
  */
-function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: string): void {
+function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: string): FocoMontado {
   const ALTURA = 2.85;
   const color = desdeHex(hex);
 
@@ -812,6 +897,12 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
   // galpón ni competir con los focos del garaje.
   const luz = new PointLight(`luzFoco_${id}`, new Vector3(x, ALTURA - 0.3, z), scene);
   luz.diffuse = color;
-  luz.intensity = 0.55;
-  luz.range = 3.4;
+  // Mas intensa y de mas alcance que antes: la mancha de color en el piso es
+  // lo que ata cada foco a SU zona. Con la intensidad de antes apenas se
+  // notaba, y sin esa mancha no habia como saber que ese foco era el del
+  // extintor y no otro.
+  luz.intensity = 0.95;
+  luz.range = 4.6;
+
+  return { material: matBombilla, pantalla: matPantalla, luz, color };
 }

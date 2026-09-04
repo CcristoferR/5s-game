@@ -27,7 +27,6 @@ import {
 import { crearNPCWorker } from "../entities/NPCWorker";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { ambientarNivel } from "../entities/AmbienteNivel";
-import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 import { moverMalla, luegoDe } from "../core/Animacion";
@@ -166,17 +165,20 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Banco de trabajo compartido con los niveles 1, 2, 3 y 5. Es el mismo
   // puesto a lo largo de las cinco fases: acá hace de mesa de trabajo desde la
   // que se reparten las piezas, y de zona del primer circuito de luz.
-  // Corrido al rincon delantero izquierdo, y mas chico.
+  // SIN BANCO DE TRABAJO EN ESTE NIVEL.
   //
-  // Estaba centrado en x = 0, justo entre donde nacen las piezas y las
-  // estaciones del fondo: para llevar una plantilla al pasillo o un conector
-  // al tablero habia que arrastrarla POR DEBAJO de la tapa, con la pieza
-  // desapareciendo detras de la madera a mitad de camino. Contra la pared
-  // izquierda deja libre toda la franja central, que es por donde se trabaja.
+  // Estaba de adorno y estorbaba. En el centro cortaba el camino entre las
+  // piezas y las estaciones, y corriendolo al rincon seguia tapando la esquina
+  // izquierda sin cumplir ninguna funcion: aqui no se apoya nada encima ni se
+  // trabaja sobre el.
   //
-  // Sigue haciendo falta: es la zona del primer circuito de luz, y sin un
-  // puesto de trabajo el foco rojo colgaria sobre un pedazo de piso vacio.
-  crearBancoDeTrabajo(scene, { nombre: "escritorioN4", ancho: 2.4, fondo: 1.0, x: -4.0, z: -1.2 });
+  // Lo unico que lo sostenia era ser la zona del primer circuito de luz, y eso
+  // se resolvio mejor sin el: los tres circuitos son ahora las tres areas
+  // demarcadas del piso —pasillo, pallets y extintor—, que es la serie que el
+  // jugador acaba de pintar con las plantillas. Cada foco cuelga sobre su area.
+  //
+  // El piso queda despejado de pared a pared, que es lo que este nivel
+  // necesita: once piezas viajando desde el frente hasta el fondo.
 
   // === LAS TRES ESTACIONES ===============================================
 
@@ -430,8 +432,10 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         armario.resaltar(null);
         pisos.resaltar(null);
         panel.resaltar(interruptor.id);
+        // Dice el circuito Y el criterio. Es el unico momento en que hace
+        // falta: cuando ya se tiene la ficha en la mano sobre el interruptor.
         mostrarAviso(
-          `Señalizar: ${circuitosNivel4[sitio.indice].descripcion}`,
+          `${circuitosNivel4[sitio.indice].descripcion} — pega el color del foco que enciende`,
           "#a9e0bd"
         );
         return { punto: interruptor.sostenido, enElAire: true };
@@ -460,58 +464,62 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   // === PANTALLA ==========================================================
 
-  const instruccion = new TextBlock(
-    "instruccionNivel4",
-    "Instala los controles visuales en el taller: conecta los tres cables, marca las tres zonas del piso y señaliza los tres interruptores."
-  );
-  instruccion.color = "white";
-  instruccion.fontSize = TEXTO.cuerpo;
-  instruccion.outlineWidth = 3;
-  instruccion.outlineColor = "rgba(0,0,0,0.6)";
-  instruccion.textWrapping = true;
-  // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
-  // queda centrado verticalmente, ignorando su propio 'top'.
-  instruccion.resizeToFit = true;
-  instruccion.width = "620px";
-  instruccion.top = "70px";
-  instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(instruccion);
-
-  // Se avisa que sobra material ANTES de que lo busquen.
+  // ─── GUÍA DE ESTACIONES ─────────────────────────────────────────────────
   //
-  // Hay cuatro plantillas para tres zonas y cuatro fichas para tres
-  // interruptores. Sin decirlo, al terminar quedan dos piezas en el piso y el
-  // jugador se pone a buscarles un sitio que no existe — con el contador
-  // marcando 9/9, que es peor todavia. Y decirlo no regala nada: cual descartar
-  // sigue siendo la decision.
-  const ayuda = new TextBlock(
-    "ayudaNivel4",
-    "Hay más plantillas y etiquetas de las que necesitas: elegir cuáles usar es parte del trabajo. " +
-      "Cada foco del techo lleva el color de su circuito — míralo antes de etiquetar el interruptor."
+  // Reemplaza al párrafo que había antes.
+  //
+  // Eran cinco renglones de prosa encima de la escena, y para saber qué hacer
+  // había que leerlos enteros y acordarse. Este nivel tiene once piezas de tres
+  // clases distintas y tres destinos distintos: es exactamente el caso en el
+  // que un texto corrido no sirve, porque el jugador necesita consultar "y esto
+  // dónde va" veinte veces, no leerlo una.
+  //
+  // Y hay algo más: este es el nivel de la GESTIÓN VISUAL. Explicar la gestión
+  // visual con un muro de texto es predicar lo contrario de lo que se enseña.
+  // Tres renglones, uno por estación, cada uno con QUÉ se mueve, ADÓNDE va y
+  // cuántos llevas — y el renglón se pone verde y se tacha al terminarlo.
+  // ─── EL PASO QUE FALTABA ────────────────────────────────────────────────
+  //
+  // La placa dice BANCO, pero saber DE QUE COLOR etiquetarla exige averiguar
+  // cual de los tres focos del techo es el del banco — y estaban los tres
+  // encendidos, a tres metros de altura. No habia forma de atarlos: solo
+  // quedaba adivinar.
+  //
+  // Ahora se prueba la llave y se ve cual queda encendido. Es lo que hace
+  // cualquiera frente a un tablero sin rotular, y es el argumento entero de la
+  // 4S — Video 4.2 (5:29) manda señalizar interruptor y foco con el mismo color
+  // PARA NO TENER QUE HACER ESTO NUNCA MAS. El jugador pasa por la molestia una
+  // vez y despues instala el control que la elimina.
+  //
+  // El cartel se retira solo a los quince segundos: es una consigna de
+  // arranque, no algo que tenga que estar ahi toda la partida.
+  const pistaInterruptores = new TextBlock(
+    "pistaInterruptoresNivel4",
+    "¿No sabes qué foco es de cada interruptor? Haz clic en la llave: se apagan los demás."
   );
-  ayuda.color = "#c9d4dd";
-  ayuda.fontSize = TEXTO.menor;
-  ayuda.outlineWidth = 3;
-  ayuda.outlineColor = "rgba(0,0,0,0.6)";
-  ayuda.textWrapping = true;
-  ayuda.resizeToFit = true;
-  ayuda.width = "600px";
-  ayuda.top = "118px";
-  ayuda.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(ayuda);
+  pistaInterruptores.color = "#e8c07a";
+  pistaInterruptores.fontSize = TEXTO.menor;
+  pistaInterruptores.outlineWidth = 4;
+  pistaInterruptores.outlineColor = "rgba(0,0,0,0.8)";
+  pistaInterruptores.textWrapping = true;
+  pistaInterruptores.resizeToFit = true;
+  pistaInterruptores.width = "560px";
+  pistaInterruptores.top = "-96px";
+  pistaInterruptores.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+  gui.addControl(pistaInterruptores);
+  luegoDe(scene, 15000, () => {
+    pistaInterruptores.isVisible = false;
+  });
+
+  const guia = crearGuiaEstaciones(gui, [
+    { clave: "cables", pieza: "Cables", destino: "tablero" },
+    { clave: "plantillas", pieza: "Plantillas", destino: "zonas del piso" },
+    { clave: "etiquetas", pieza: "Etiquetas", destino: "interruptores" },
+  ]);
 
   const TOTAL_TAREAS = puertosNivel4.length + zonasPisoNivel4.length + circuitosNivel4.length;
   hud.definirObjetivo("Deja el estándar instalado en el taller, no escrito en un papel.");
   hud.definirTotalTarea(TOTAL_TAREAS);
-
-  const progreso = new TextBlock("progresoNivel4", `Controles instalados: 0/${TOTAL_TAREAS}`);
-  progreso.color = "white";
-  progreso.fontSize = TEXTO.cuerpo;
-  progreso.outlineWidth = 3;
-  progreso.outlineColor = "rgba(0,0,0,0.6)";
-  progreso.top = "160px";
-  progreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(progreso);
 
   const botonProbar = Button.CreateSimpleButton("btnProbarEstandar", "Probar estándar");
   botonProbar.width = "240px";
@@ -580,16 +588,19 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   function refrescarProgreso(): void {
     const hechos = instalados();
-    progreso.text = `Controles instalados: ${hechos}/${TOTAL_TAREAS}`;
     hud.actualizarProgreso(hechos);
 
-    if (hechos === TOTAL_TAREAS) {
-      botonProbar.isVisible = true;
-      instruccion.text =
-        "Todo instalado. Lo que quedó en el piso es el material que descartaste — no va a ningún sitio. " +
-        "Presiona 'Probar estándar': entra un operario del turno siguiente y trabaja guiándose solo por lo que dejaste puesto.";
-      ayuda.isVisible = false;
-    }
+    guia.actualizar("cables", conectadas, puertosNivel4.length);
+    guia.actualizar("plantillas", marcaPorZona.size, zonasPisoNivel4.length);
+    guia.actualizar("etiquetas", colorPorCircuito.size, circuitosNivel4.length);
+
+    if (hechos < TOTAL_TAREAS) return;
+
+    botonProbar.isVisible = true;
+    guia.cerrar(
+      "Listo. Lo que quedó en el piso es el material que descartaste: no va a ningún sitio. " +
+        "Pulsa 'Probar estándar' y entra un operario del turno siguiente."
+    );
   }
 
   // --- Conectores ---------------------------------------------------------
@@ -723,8 +734,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   botonProbar.onPointerUpObservable.add(() => {
     botonProbar.isVisible = false;
-    instruccion.isVisible = false;
-    progreso.isVisible = false;
+    guia.ocultar();
     ejecutarPrueba();
   });
 
@@ -870,6 +880,128 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     zonas: [] as Mesh[],
     senales: fichas,
     npc,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Guía de estaciones
+// ---------------------------------------------------------------------------
+//
+// Tres renglones fijos en pantalla: qué se mueve, adónde va, y cuántos llevas.
+//
+// Sustituye al párrafo de cinco líneas que había antes. La diferencia no es de
+// estilo: un texto corrido se lee UNA vez y después hay que acordarse, y este
+// nivel obliga a preguntarse "y esto dónde va" once veces seguidas, con tres
+// clases de pieza y tres destinos. Lo que hace falta es algo que se CONSULTE de
+// un vistazo, no que se lea.
+//
+// Y viene al caso: este es el nivel de la gestión visual. Explicarla con un
+// muro de texto sería predicar lo contrario de lo que enseña.
+
+interface RenglonGuia {
+  clave: string;
+  /** Qué se mueve. Una palabra. */
+  pieza: string;
+  /** Adónde va. Dos o tres palabras. */
+  destino: string;
+}
+
+interface GuiaResult {
+  actualizar: (clave: string, hechos: number, total: number) => void;
+  /** Cambia la guía por un mensaje final. */
+  cerrar: (mensaje: string) => void;
+  ocultar: () => void;
+}
+
+function crearGuiaEstaciones(gui: AdvancedDynamicTexture, renglones: RenglonGuia[]): GuiaResult {
+  const marco = new Rectangle("guiaEstacionesNivel4");
+  // Angosta y en la esquina.
+  //
+  // La primera version ocupaba 600 px en el centro superior y tapaba
+  // exactamente lo que hay que mirar: el tablero de conexiones y el panel de
+  // interruptores. Una guia que hay que apartar para trabajar no es una guia.
+  // Tres renglones cortos, sin la explicacion del criterio — esa aparece en el
+  // aviso cuando el cursor apunta al destino, que es cuando hace falta.
+  marco.width = "268px";
+  marco.adaptHeightToChildren = true;
+  marco.cornerRadius = 10;
+  marco.thickness = 1;
+  marco.color = PALETA.borde;
+  marco.background = "rgba(16, 19, 23, 0.82)";
+  marco.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+  marco.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  marco.left = "-16px";
+  marco.top = "16px";
+  // Deja pasar el puntero: el jugador arrastra por debajo todo el rato.
+  marco.isPointerBlocker = false;
+  gui.addControl(marco);
+
+  const columna = new StackPanel("columnaGuiaNivel4");
+  columna.isVertical = true;
+  columna.width = "244px";
+  columna.paddingTop = "10px";
+  columna.paddingBottom = "10px";
+  marco.addControl(columna);
+
+  const textos = new Map<string, TextBlock>();
+
+  renglones.forEach((renglon, i) => {
+    const fila = new Rectangle(`filaGuia_${i}`);
+    fila.width = "232px";
+    fila.height = "26px";
+    fila.thickness = 0;
+    fila.background = "transparent";
+    fila.isHitTestVisible = false;
+    columna.addControl(fila);
+
+    const texto = new TextBlock(`textoGuia_${renglon.clave}`, "");
+    texto.color = PALETA.titulo;
+    texto.fontSize = TEXTO.rotulo;
+    texto.width = "224px";
+    texto.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    texto.left = "8px";
+    texto.isHitTestVisible = false;
+    fila.addControl(texto);
+
+    textos.set(renglon.clave, texto);
+  });
+
+  const pintar = (renglon: RenglonGuia, hechos: number, total: number): void => {
+    const texto = textos.get(renglon.clave);
+    if (!texto) return;
+
+    const completo = hechos >= total;
+    texto.text = `${completo ? "\u2713" : "\u2022"}  ${renglon.pieza} \u2192 ${renglon.destino}   ${hechos}/${total}`;
+    // Verde al terminar: el renglon deja de pedir atencion sin desaparecer, que
+    // es lo que permite mirar la guia y ver de un golpe que falta.
+    texto.color = completo ? PALETA.acierto : PALETA.titulo;
+  };
+
+  renglones.forEach((renglon) => pintar(renglon, 0, 3));
+
+  return {
+    actualizar: (clave, hechos, total) => {
+      const renglon = renglones.find((r) => r.clave === clave);
+      if (renglon) pintar(renglon, hechos, total);
+    },
+    cerrar: (mensaje) => {
+      textos.forEach((texto) => {
+        texto.isVisible = false;
+      });
+      const cierre = new TextBlock("cierreGuiaNivel4", mensaje);
+      cierre.color = PALETA.acierto;
+      cierre.fontSize = TEXTO.rotulo;
+      cierre.textWrapping = true;
+      cierre.resizeToFit = true;
+      cierre.width = "228px";
+      cierre.paddingTop = "4px";
+      cierre.paddingBottom = "4px";
+      cierre.isHitTestVisible = false;
+      columna.addControl(cierre);
+    },
+    ocultar: () => {
+      marco.isVisible = false;
+    },
   };
 }
 

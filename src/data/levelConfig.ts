@@ -665,8 +665,17 @@ export interface ColorNivel4 {
 
 export interface CircuitoNivel4 {
   id: string;
-  /** Lo que dice la placa del interruptor. */
+  /** Nombre completo. Va en los avisos y en el informe, no en la placa. */
   descripcion: string;
+  /**
+   * Lo que va IMPRESO en la placa del interruptor.
+   *
+   * Una palabra, en mayusculas. "Circuito de la zona de pallets" son treinta
+   * caracteres en una placa de 34 cm: por muy nitida que sea la textura, esa
+   * letra queda de cuatro milimetros y desde el otro lado del taller no se lee
+   * nada. Un rotulo de planta se lee de lejos o no sirve.
+   */
+  etiquetaCorta: string;
   colorCorrectoId: string;
   /** Donde cuelga el foco de este circuito. */
   lampara: [number, number];
@@ -683,16 +692,24 @@ export const coloresNivel4: ColorNivel4[] = [
 
 export const circuitosNivel4: CircuitoNivel4[] = [
   {
-    id: "circuito_banco",
-    descripcion: "Circuito del banco de trabajo",
+    // Era el circuito del banco de trabajo, pero el banco se quito del Nivel 4:
+    // estorbaba en medio del recorrido y no aportaba nada al ejercicio.
+    //
+    // El cambio salio mejor de lo previsto. Ahora los tres circuitos son las
+    // tres AREAS DEMARCADAS del piso, las mismas que el jugador acaba de pintar
+    // con las plantillas: cada foco cuelga sobre la zona que ilumina y lleva su
+    // color. Antes habia que relacionar un mueble con dos areas pintadas, que
+    // no es una serie coherente; ahora las tres cosas se leen igual.
+    id: "circuito_pasillo",
+    etiquetaCorta: "PASILLO",
+    descripcion: "Circuito del pasillo de tránsito",
     colorCorrectoId: "color_rojo",
-    // Sigue al banco, que en el Nivel 4 se corrio al rincon izquierdo. Un foco
-    // colgado sobre piso vacio no identifica ningun circuito.
-    lampara: [-4.0, -1.2],
-    desplazamiento: -0.44,
+    lampara: [0, 2.1],
+    desplazamiento: -0.56,
   },
   {
     id: "circuito_pallets",
+    etiquetaCorta: "PALLETS",
     descripcion: "Circuito de la zona de pallets",
     colorCorrectoId: "color_azul",
     lampara: [3.6, 0.6],
@@ -700,10 +717,11 @@ export const circuitosNivel4: CircuitoNivel4[] = [
   },
   {
     id: "circuito_extintor",
+    etiquetaCorta: "EXTINTOR",
     descripcion: "Circuito del extintor",
     colorCorrectoId: "color_verde",
     lampara: [-3.9, 0.6],
-    desplazamiento: 0.44,
+    desplazamiento: 0.56,
   },
 ];
 

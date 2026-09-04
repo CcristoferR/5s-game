@@ -362,8 +362,10 @@ export function cargarNivel5(
         desalineadas.length > 0
           ? `${desalineadas.length} interruptor${desalineadas.length === 1 ? "" : "es"} lleva${desalineadas.length === 1 ? "" : "n"} un color distinto al de su foco. Nada lo impidió y nada lo avisó cuando se instaló: la convención de color es el control más débil, y este es el único momento en que el fallo se ve.`
           : "Cada interruptor lleva el color de su foco. Se puede cortar el circuito correcto sin probar los tres.",
-      centro: new Vector3(1.9, 1.2, 3.0),
-      tamano: { ancho: 1.9, alto: 1.1, fondo: 0.8 },
+      // El panel de interruptores crecio: su volumen tiene que cubrirlo entero
+      // o quedan placas que no responden al clic.
+      centro: new Vector3(1.9, 1.25, 3.0),
+      tamano: { ancho: 2.3, alto: 1.3, fondo: 0.8 },
     });
   }
 
