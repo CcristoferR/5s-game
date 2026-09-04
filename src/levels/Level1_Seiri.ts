@@ -12,7 +12,13 @@ import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { crearRotulo3D } from "../entities/Rotulo3D";
-import { crearPalletConCajas, crearTamboresAceite, crearPilaDeCajas } from "../entities/WorkshopProps";
+import {
+  crearPalletConCajas,
+  crearTamboresAceite,
+  crearPilaDeCajas,
+  crearExtintor,
+  crearBasureroIndustrial,
+} from "../entities/WorkshopProps";
 import { pedirDatosTarjeta, colocarTarjetaRoja, crearAreaDescarte, interpretarPlazo } from "../entities/TarjetaRoja";
 import { reproducir } from "../core/Sonido";
 import { TEXTO } from "../ui/EstiloUI";
@@ -44,10 +50,15 @@ const Z_ZONA = 2.4;
  * (x = 5.8, z = 9.2) para que nada quede pegado contra una pared.
  */
 const LIMITES_ARRASTRE = {
-  xMin: -4.9,
-  xMax: 4.9,
-  zMin: -2.4,
-  zMax: Z_ZONA + 2.0,
+  // Cerrado de ±4,9 a ±4,3.
+  //
+  // A 4,9 los objetos seguían metiéndose en el muro: el límite mide el CENTRO
+  // de la malla, y con la escala del nivel las piezas sobresalen medio metro
+  // hacia los lados. Restando ese medio metro dejan de tocar la pared.
+  xMin: -4.3,
+  xMax: 4.3,
+  zMin: -2.0,
+  zMax: Z_ZONA + 1.7,
 };
 
 /**
@@ -169,6 +180,27 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   //
   // Su forma sale de la utilería del taller que ya existía, sin modelar nada
   // nuevo.
+  // Extintor en la pared derecha, DETRÁS de la pila de cajas.
+  //
+  // El curso insiste en que el desorden no solo estorba: oculta riesgos. Un
+  // pasillo con cajas delante del extintor no es un problema de estética — es
+  // que el día del incendio nadie lo alcanza. Se monta antes que la pila para
+  // que quede tapado, y al retirarla aparecen el cartel y la marca del piso
+  // que explican solos por qué había que despejar.
+  crearExtintor(scene, 5.55, 0.2, -Math.PI / 2);
+
+  // Basurero, separado del área de descarte.
+  const basurero = crearBasureroIndustrial(scene, -4.55, -0.55);
+  crearRotulo3D(scene, "basurero", "BASURA", new Vector3(-4.55, 1.6, -0.55), {
+    ancho: 0.95,
+    alto: 0.24,
+    lineasMax: 1,
+    colorFondo: "#1a1f24",
+    colorBorde: "rgba(255,255,255,0.22)",
+    mirarCamara: true,
+    alturaTextoMin: 0.1,
+  });
+
   const pesados = pesadosNivel1.map((datos) => {
     const [px, pz] = datos.posicion;
     if (datos.forma === "pallet") crearPalletConCajas(scene, px, pz);
@@ -201,7 +233,15 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     // ilegible. El problema no era la resolución de la textura —el rótulo va a
     // 1400 px por metro— sino el tamaño físico del cartel. Un rótulo de planta
     // se dimensiona por la distancia desde la que hay que leerlo.
-    crearRotulo3D(scene, `pesado_${datos.id}`, datos.nombreVisible, new Vector3(px, 1.62, pz), {
+    // El rótulo se corre hacia el centro del galpón.
+    //
+    // Los bultos están contra las paredes, y un cartel que mira siempre a la
+    // cámara sobresale medio metro hacia los lados: pegado al muro, la mitad
+    // del texto quedaba fuera de la pared y se veía cortado. Desplazarlo hacia
+    // dentro lo deja entero sin dejar de señalar su bulto.
+    const desplazado = px > 0 ? px - 0.9 : px < 0 ? px + 0.9 : px;
+
+    crearRotulo3D(scene, `pesado_${datos.id}`, datos.nombreVisible, new Vector3(desplazado, 1.62, pz), {
       ancho: 2.1,
       alto: 0.42,
       lineasMax: 2,
@@ -236,7 +276,14 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     -3.0,
     new Color3(0.2, 0.7, 0.3),
     gui,
-    "NECESARIO — se queda en el área"
+    // NO se llama "Necesario".
+    //
+    // En Seiri lo necesario no se lleva a ninguna zona: se queda donde está y
+    // se despeja alrededor. La zona existe solo por mecánica —hay que poder
+    // comprobar que el jugador lo reconoció— así que el cartel dice lo que de
+    // verdad es: un área donde se retiene lo útil mientras se limpia. El orden
+    // fino llega en Seiton.
+    "ÁREA DE RETENCIÓN — lo que se conserva"
   );
 
   // Área de descarte con su cinta roja perimetral. Video 3.1: los objetos
@@ -455,6 +502,46 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       // lado de la demarcación, que es lo que se ve pintado en el piso.
       const dentroDe = (centroX: number): boolean =>
         Math.abs(mesh.position.x - centroX) <= 1.4 && Math.abs(mesh.position.z - Z_ZONA) <= 1.4;
+
+      // --- ¿Al basurero? ---
+      //
+      // Se comprueba primero y NO abre ningún formulario: la basura no lleva
+      // tarjeta ni responsable ni plazo. Que la interacción sea distinta es
+      // parte de la lección — soltar y desaparece, sin trámite.
+      const enBasurero =
+        Math.abs(mesh.position.x - basurero.position.x) < 1.0 &&
+        Math.abs(mesh.position.z - basurero.position.z) < 1.0;
+
+      if (enBasurero) {
+        if (objeto.datos.destino !== "basura") {
+          reproducir("error");
+          hud.mostrarFeedback(
+            false,
+            objeto.datos.destino === "necesario"
+              ? "Eso sirve. Al tacho va solo el residuo evidente."
+              : "Esto no es basura: hay que decidir qué hacer con ello. Va al área de descarte, con tarjeta si corresponde.",
+            mesh.position.clone()
+          );
+          moverMalla(scene, mesh, new Vector3(objeto.datos.posicionInicial[0], 0, objeto.datos.posicionInicial[2]), 300);
+          luegoDe(scene, 320, () => apoyarSobre(mesh, objeto.datos.posicionInicial[1]));
+          return;
+        }
+
+        objeto.fijar();
+        realce.quitar(mesh);
+
+        // Cae dentro y desaparece: no ocupa sitio en ninguna zona, porque
+        // dejó de existir para el área.
+        moverMalla(scene, mesh, new Vector3(basurero.position.x, 0.75, basurero.position.z), 240);
+        luegoDe(scene, 260, () => mesh.dispose());
+
+        sumarMetros(objeto.datos.metros);
+        gameManager.sumarPuntos(10);
+        reproducir("acierto");
+        hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
+        registrarAvance();
+        return;
+      }
 
       const enNecesario = dentroDe(-3.0);
       const enDescarte = dentroDe(3.0);

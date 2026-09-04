@@ -30,7 +30,20 @@
 // el área de innecesarios que hemos liberado" (3.1). De ahí que cada objeto
 // declare cuánto espacio libera.
 
-export type DestinoSeiri = "necesario" | "descartar" | "tarjetaRoja";
+/**
+ * Cuatro destinos, no tres.
+ *
+ * "basura" se separó de "descartar" porque el curso es explícito: la basura
+ * obvia —un vaso usado, un diario viejo— NO lleva tarjeta roja ni pasa por el
+ * área de descarte. Video 3.1: "la basura es basura", no hay que perder tiempo
+ * evaluándola. Va al tacho y punto.
+ *
+ * El área de descarte queda para lo que hay que RETENER mientras alguien
+ * decide: chatarra grande, pallets, material sin identificar. Distinguir una
+ * cosa de la otra es media lección de Seiri, y con un solo destino para ambas
+ * no se podía enseñar.
+ */
+export type DestinoSeiri = "necesario" | "basura" | "descartar" | "tarjetaRoja";
 
 export interface ObjetoNivel1 {
   id: string;
@@ -85,7 +98,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "chatarra_metal",
     nombreVisible: "Pieza de metal sin identificar",
-    posicionInicial: [-0.75, 0, 3.55],
+    posicionInicial: [-1.3, 0, 3.7],
     rotacionY: 1.1,
     destino: "descartar",
     metros: 0.14,
@@ -100,15 +113,15 @@ export const objetosNivel1: ObjetoNivel1[] = [
     nombreVisible: "Diario de hace 6 meses",
     posicionInicial: [0.85, 0, 3.9],
     rotacionY: -0.25,
-    destino: "descartar",
+    destino: "basura",
     metros: 0.1,
     donde: "Tirado en el suelo, cerca del portón",
-    explicacion: "Información desactualizada — ya no aporta valor vigente.",
+    explicacion: "Papel sin valor vigente. No hay nada que decidir ni nadie a quien consultar: se tira. Ponerle tarjeta roja sería burocracia sobre un residuo.",
   },
   {
     id: "guantes_ocasionales",
     nombreVisible: "Guantes de trabajo (uso ocasional)",
-    posicionInicial: [-3.95, 0, 0.5],
+    posicionInicial: [-1.5, 0, 0.9],
     rotacionY: -0.4,
     destino: "tarjetaRoja",
     metros: 0.08,
@@ -125,11 +138,11 @@ export const objetosNivel1: ObjetoNivel1[] = [
     // ambientación, y encima quedaba dentro del volumen de clic de la pila
     // registrable, que se llevaba el clic antes que ella.
     posicionInicial: [1.35, 0, -0.75],
-    destino: "descartar",
+    destino: "basura",
     metros: 0.05,
     donde: "Olvidada en el suelo del taller",
     explicacion:
-      "Residuo que no debe permanecer en el área. El curso lo dice sin rodeos: la basura es basura, no hace falta evaluarla ni etiquetarla.",
+      "Residuo evidente. El curso lo dice sin rodeos: la basura es basura, no hace falta evaluarla ni etiquetarla. Va directo al tacho, no al área de descarte.",
   },
 
   // --- En la estantería, mezclado bueno con malo ---
@@ -155,7 +168,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "casco_agrietado",
     nombreVisible: "Casco de seguridad agrietado",
-    posicionInicial: [2.05, 0, -0.6],
+    posicionInicial: [3.4, 0, -0.9],
     rotacionY: 0.8,
     destino: "descartar",
     metros: 0.12,
@@ -168,7 +181,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "cinta_metrica",
     nombreVisible: "Cinta métrica",
-    posicionInicial: [-4.35, 0, -0.55],
+    posicionInicial: [-3.9, 0, 3.9],
     rotacionY: 1.4,
     destino: "necesario",
     metros: 0,
@@ -228,13 +241,13 @@ export const pesadosNivel1: PesadoNivel1[] = [
   },
   {
     id: "cajas_apiladas",
-    nombreVisible: "Pila de cajas sin identificar",
-    posicion: [5.25, 4.4],
+    nombreVisible: "Pila de cajas frente al extintor",
+    posicion: [4.75, 0.2],
     forma: "pila",
     metros: 0.81,
-    donde: "Amontonadas contra la pared derecha",
+    donde: "Tapando el extintor de la pared derecha",
     explicacion:
-      "Ninguna tiene rótulo y llevan meses ahí. Una tarjeta para toda la pila: no tiene sentido etiquetar caja por caja cuando comparten origen, destino y responsable — eso solo multiplica el papeleo sin acelerar la decisión.",
+      "Bloquean el acceso al extintor. Esto ya no es desorden, es un riesgo de seguridad: el día que haga falta, nadie lo alcanza. Una tarjeta para toda la pila, porque comparten origen, destino y responsable.",
   },
 ];
 
@@ -439,8 +452,8 @@ export const incidentesNivel3: IncidenteNivel3[] = [
     id: "incidente_polvo",
     nombreVisible: "Polvo negro junto a la impresora",
     manchas: [
-      { id: "m4", posicion: [-3.7, 1.1], tipoVisual: "polvo" },
-      { id: "m5", posicion: [-2.7, 2.2], tipoVisual: "polvo" },
+      { id: "m4", posicion: [-1.2, 4.9], tipoVisual: "polvo" },
+      { id: "m5", posicion: [1.4, 5.2], tipoVisual: "polvo" },
     ],
     pregunta: "¿Cuál es el origen más probable de este polvo negro junto a la impresora?",
     opciones: [

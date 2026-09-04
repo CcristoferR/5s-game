@@ -1,5 +1,6 @@
 import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh, Vector3 } from "@babylonjs/core";
 import { texturaGrano, texturaCarton, texturaMetalCepillado, normalMetalCepillado } from "./TexturasSuperficie";
+import { materialPintado } from "./ObjetosComunes";
 
 // ---------------------------------------------------------------------------
 // Utilería de taller
@@ -529,4 +530,129 @@ export function crearPilaDeCajas(scene: Scene, x: number, z: number, cantidad = 
 
     altura += alto;
   }
+}
+/**
+ * Extintor de pared con su senalizacion.
+ *
+ * Existe para poder taparlo. El curso insiste en que el desorden no solo
+ * estorba: OCULTA RIESGOS. Un pasillo con cajas apiladas delante del extintor
+ * no es un problema de estetica, es que el dia del incendio nadie lo alcanza.
+ *
+ * Por eso lleva su cartel y su marca en el piso: cuando el jugador retire las
+ * cajas y aparezca todo eso debajo, el motivo de haberlo despejado se explica
+ * solo.
+ */
+export function crearExtintor(scene: Scene, x: number, z: number, giroY: number): void {
+  const id = `${x}_${z}`;
+
+  const rojo = new PBRMaterial(`matExtintor_${id}`, scene);
+  rojo.albedoColor = new Color3(0.62, 0.09, 0.07);
+  rojo.roughness = 0.32;
+  rojo.metallic = 0.35;
+  rojo.microSurfaceTexture = texturaGrano(scene, 0.05);
+
+  const cuerpo = MeshBuilder.CreateCylinder(`extintorCuerpo_${id}`, { diameter: 0.19, height: 0.52, tessellation: 18 }, scene);
+  cuerpo.position.set(x, 0.95, z);
+  cuerpo.rotation.y = giroY;
+  cuerpo.material = rojo;
+  cuerpo.receiveShadows = true;
+
+  const cuello = MeshBuilder.CreateCylinder(`extintorCuello_${id}`, { diameter: 0.07, height: 0.1, tessellation: 12 }, scene);
+  cuello.position.set(x, 1.25, z);
+  cuello.material = material(scene, `matExtintorCuello_${id}`, new Color3(0.55, 0.56, 0.6), 0.35, 0.85);
+
+  const maneta = MeshBuilder.CreateBox(`extintorManeta_${id}`, { width: 0.14, height: 0.03, depth: 0.05 }, scene);
+  maneta.position.set(x, 1.31, z);
+  maneta.rotation.y = giroY;
+  maneta.material = material(scene, `matExtintorManeta_${id}`, new Color3(0.5, 0.51, 0.55), 0.35, 0.85);
+
+  // Cartel normalizado encima. Es lo que convierte el objeto en senalizacion.
+  const matCartel = materialPintado(scene, `matCartelExtintor_${id}`, 512, 640, (ctx, w, h) => {
+    ctx.fillStyle = "#b0231c";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 14;
+    ctx.strokeRect(22, 22, w - 44, h - 44);
+
+    // Silueta blanca del extintor.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(w / 2 - 46, 168, 92, 250);
+    ctx.fillRect(w / 2 - 16, 122, 32, 50);
+    ctx.fillRect(w / 2 - 62, 108, 124, 24);
+
+    ctx.font = "bold 62px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("EXTINTOR", w / 2, h - 60);
+  });
+
+  const cartel = MeshBuilder.CreateBox(`cartelExtintor_${id}`, { width: 0.3, height: 0.38, depth: 0.012 }, scene);
+  cartel.position.set(x - Math.sin(giroY) * 0.11, 1.65, z - Math.cos(giroY) * 0.11);
+  cartel.rotation.y = giroY;
+  cartel.material = matCartel;
+
+  // Marca en el piso: el area que debe quedar libre siempre.
+  const matPiso = materialPintado(scene, `matPisoExtintor_${id}`, 512, 512, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(176,35,28,0.16)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(232,72,60,0.95)";
+    ctx.lineWidth = 26;
+    ctx.setLineDash([46, 26]);
+    ctx.strokeRect(16, 16, w - 32, h - 32);
+  });
+
+  const marca = MeshBuilder.CreateGround(`pisoExtintor_${id}`, { width: 1.0, height: 1.0 }, scene);
+  marca.position.set(x - Math.sin(giroY) * 0.45, 0.013, z - Math.cos(giroY) * 0.45);
+  marca.material = matPiso;
+  marca.isPickable = false;
+}
+
+/**
+ * Basurero industrial.
+ *
+ * Separado del area de descarte a proposito, y es una distincion del curso:
+ * "la basura es basura", no se le pone tarjeta roja ni se lleva a una zona
+ * temporal a esperar decision. Un vaso de cafe o un diario viejo no necesitan
+ * responsable ni plazo — necesitan un tacho.
+ *
+ * Tenerlos separados obliga a distinguir lo que se DESCARTA de lo que se
+ * RETIENE para decidir, que es media leccion de Seiri.
+ */
+export function crearBasureroIndustrial(scene: Scene, x: number, z: number): Mesh {
+  const id = `${x}_${z}`;
+
+  const matCuerpo = new PBRMaterial(`matBasurero_${id}`, scene);
+  matCuerpo.albedoColor = new Color3(0.16, 0.28, 0.2);
+  matCuerpo.roughness = 0.6;
+  matCuerpo.metallic = 0.25;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.07);
+
+  const cuerpo = MeshBuilder.CreateCylinder(`basureroCuerpo_${id}`, { diameterTop: 0.72, diameterBottom: 0.6, height: 0.95, tessellation: 18 }, scene);
+  cuerpo.position.set(x, 0.475, z);
+  cuerpo.material = matCuerpo;
+  cuerpo.receiveShadows = true;
+
+  // Aro superior mas oscuro: da el canto de chapa doblada.
+  const aro = MeshBuilder.CreateTorus(`basureroAro_${id}`, { diameter: 0.74, thickness: 0.05, tessellation: 20 }, scene);
+  aro.position.set(x, 0.95, z);
+  aro.material = material(scene, `matBasureroAro_${id}`, new Color3(0.24, 0.26, 0.28), 0.45, 0.7);
+  aro.isPickable = false;
+
+  // Rotulo, para que no haya duda de que es un tacho y no un tambor.
+  const matRotulo = materialPintado(scene, `matRotuloBasurero_${id}`, 1024, 384, (ctx, w, h) => {
+    ctx.fillStyle = "#1e3327";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#e8edf0";
+    ctx.font = "bold 118px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("BASURA", w / 2, h / 2);
+  });
+
+  const rotulo = MeshBuilder.CreateCylinder(`basureroRotulo_${id}`, { diameter: 0.73, height: 0.26, tessellation: 18 }, scene);
+  rotulo.position.set(x, 0.6, z);
+  rotulo.material = matRotulo;
+  rotulo.isPickable = false;
+
+  return cuerpo;
 }

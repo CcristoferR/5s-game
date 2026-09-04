@@ -65,9 +65,16 @@ export interface EstanteResult {
   resaltar: (nivel: NivelBalda | null) => void;
 }
 
-const ANCHO = 2.6;
-const FONDO = 0.62;
-const ALTO_BALDA_MEDIA = 1.05;
+// ESTANTERÍA MÁS GRANDE Y ROBUSTA.
+//
+// A 2,6 x 0,62 m se veía como un mueble de oficina perdido en un galpón de
+// 12 x 19, y sobre todo no parecía que una caja de herramientas o un bidón
+// cupieran en la balda de abajo — que es justo lo que el nivel pide hacer.
+// Un mueble industrial tiene el fondo suficiente para que la pieza entre
+// entera, no apoyada en el borde.
+const ANCHO = 3.4;
+const FONDO = 0.95;
+const ALTO_BALDA_MEDIA = 1.25;
 const ALTO_BALDA_INFERIOR = 0.32;
 
 /** Separación entre sitios dentro de una balda. Cuatro por balda. */
@@ -92,7 +99,7 @@ export function crearEstanteDestino(scene: Scene, x: number, z: number, giroY: n
     [-1, 1].forEach((lz) => {
       const montante = MeshBuilder.CreateBox(
         `estDestMontante_${lx}_${lz}`,
-        { width: 0.07, height: 1.55, depth: 0.07 },
+        { width: 0.1, height: 1.85, depth: 0.1 },
         scene
       );
       const dx = lx * (ANCHO / 2 - 0.05);
@@ -137,7 +144,7 @@ export function crearEstanteDestino(scene: Scene, x: number, z: number, giroY: n
   definiciones.forEach(({ nivel, y, altoHueco, rotulo, color }) => {
     const bandeja = MeshBuilder.CreateBox(
       `baldaDestino_${nivel}`,
-      { width: ANCHO, height: 0.05, depth: FONDO },
+      { width: ANCHO, height: 0.07, depth: FONDO },
       scene
     );
     bandeja.position.set(x, y, z);
@@ -149,7 +156,7 @@ export function crearEstanteDestino(scene: Scene, x: number, z: number, giroY: n
     // Frontal rotulado. El rótulo va IMPRESO en el mueble y no flotando al
     // lado: el sitio tiene que estar identificado en el sitio mismo, que es
     // literalmente lo que dice la regla de la etiqueta.
-    const matFrontal = materialPintado(scene, `matFrontalBalda_${nivel}`, 2048, 256, (ctx, w, h) => {
+    const matFrontal = materialPintado(scene, `matFrontalBalda_${nivel}`, 4096, 512, (ctx, w, h) => {
       ctx.fillStyle = "#1b2228";
       ctx.fillRect(0, 0, w, h);
 
@@ -157,7 +164,10 @@ export function crearEstanteDestino(scene: Scene, x: number, z: number, giroY: n
       ctx.fillRect(0, h - 20, w, 20);
 
       ctx.fillStyle = "#e8edf0";
-      ctx.font = "bold 116px system-ui, sans-serif";
+      // La franja mide 3,4 x 0,22 m: una proporción de 15 a 1. Con una textura
+      // de 2048 x 256 el texto se estiraba a lo ancho y se aplastaba a lo
+      // alto. Con 4096 x 512 y letra proporcional al alto, se lee entero.
+      ctx.font = `bold ${Math.round(h * 0.52)}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(rotulo, w / 2, h / 2 - 8);
@@ -165,7 +175,7 @@ export function crearEstanteDestino(scene: Scene, x: number, z: number, giroY: n
 
     const frontal = MeshBuilder.CreateBox(
       `frontalBalda_${nivel}`,
-      { width: ANCHO, height: 0.13, depth: 0.02 },
+      { width: ANCHO, height: 0.22, depth: 0.025 },
       scene
     );
     frontal.position.set(

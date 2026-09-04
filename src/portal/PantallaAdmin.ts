@@ -3,7 +3,8 @@ import {
   cambiarEstadoCodigo,
   darDeBajaInscripcion,
   reactivarInscripcion,
-  eliminarPersona,
+  eliminarCuenta,
+  explicarRechazoEliminar,
   cambiarRol,
   explicarRechazoRol,
   crearAdministrador,
@@ -468,9 +469,23 @@ export function mostrarAdministracion(onSalir: () => void): void {
           boton.classList.add("portal__accion--confirma");
           return;
         }
-        await eliminarPersona(boton.dataset.eliminar!);
+        boton.disabled = true;
+        const resultado = await eliminarCuenta(boton.dataset.eliminar!);
+        boton.disabled = false;
+
+        if (!resultado.ok) {
+          confirmando = false;
+          boton.textContent = "Eliminar cuenta";
+          boton.classList.remove("portal__accion--confirma");
+          avisar(explicarRechazoEliminar(resultado.motivo), "error");
+          return;
+        }
+
         await pintar();
-        avisar("Registro eliminado.", "ok");
+        avisar(
+          `${resultado.nombre} se eliminó por completo. Su RUT vuelve a estar disponible para registrarse.`,
+          "ok"
+        );
       });
     });
   }
@@ -954,7 +969,8 @@ function tablaPersonas(
       // mas y se borraba un historial irrecuperable. Ahora, en cuanto hay una
       // sola fase registrada, la accion destructiva desaparece y queda
       // "Dar de baja", que conserva el historial.
-      const sinAvance = fases === 0;
+      // Ya no se usa para ocultar el botón de eliminar: ese ahora está siempre
+      // disponible y la protección la da la confirmación de dos pasos.
 
       const esAdmin = p.rol === "administrador";
       const esUnoMismo = p.id === perfilPropio;
@@ -1020,9 +1036,16 @@ function tablaPersonas(
           `<button class="portal__accion" data-reactivar="${inscripcion.id}">Reactivar</button>`
         );
       }
-      if (sinAvance) {
+      // El botón aparece SIEMPRE, también sobre quien ya terminó el curso.
+      //
+      // Antes se ocultaba a quien tuviera avance, para evitar borrados
+      // accidentales. Pero eso hacía imposible limpiar una cuenta de prueba
+      // una vez jugada, que es justo lo que hay que poder hacer. La protección
+      // ahora está en la confirmación y en el propio texto del botón, no en
+      // esconder la acción.
+      {
         acciones.push(
-          `<button class="portal__accion portal__accion--riesgo" data-eliminar="${p.id}">Eliminar</button>`
+          `<button class="portal__accion portal__accion--riesgo" data-eliminar="${p.id}">Eliminar cuenta</button>`
         );
       }
 

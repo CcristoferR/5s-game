@@ -60,69 +60,124 @@ const ANCHO_HUECO = 0.46;
 const ALTO_HUECO = 0.62;
 const FONDO_PANEL = 0.07;
 
-/** Dibuja la silueta de una herramienta, centrada en el lienzo. */
-function dibujarSilueta(ctx: CanvasRenderingContext2D, id: SiluetaId, w: number, h: number): void {
-  ctx.save();
-  ctx.translate(w / 2, h / 2 - 30);
-  ctx.fillStyle = "#8a99a3";
-  ctx.strokeStyle = "#8a99a3";
-  ctx.lineCap = "round";
-
-  if (id === "llave") {
-    ctx.fillRect(-16, -150, 32, 300);
-    ctx.beginPath();
-    ctx.arc(0, -168, 46, Math.PI * 0.15, Math.PI * 0.85, true);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(0, 168, 46, Math.PI * 1.15, Math.PI * 1.85, true);
-    ctx.fill();
-  } else if (id === "destornillador") {
-    ctx.fillRect(-26, -170, 52, 130);
-    ctx.fillRect(-9, -40, 18, 190);
-    ctx.fillRect(-18, 150, 36, 22);
-  } else if (id === "martillo") {
-    ctx.fillRect(-84, -168, 168, 56);
-    ctx.fillRect(-16, -112, 32, 288);
-  } else {
-    [-0.2, 0.2].forEach((giro) => {
-      ctx.save();
-      ctx.rotate(giro);
-      ctx.fillRect(-14, -180, 28, 350);
-      ctx.restore();
-    });
-  }
-
-  ctx.restore();
-}
-
-/** Pinta la cara de un hueco. Se usa vacía al montar y rotulada al acertar. */
-function caraHueco(
-  scene: Scene,
-  nombre: string,
-  id: SiluetaId,
-  rotulo: string | null
-): PBRMaterial {
+/**
+ * Cara de un hueco: silueta arriba y banda de rótulo abajo.
+ *
+ * Se redibuja entera al rotular en vez de superponer otra malla, para que el
+ * nombre quede impreso EN el panel — en una planta la etiqueta está pintada en
+ * el tablero, no colgando al lado.
+ */
+function caraHueco(scene: Scene, nombre: string, id: SiluetaId, rotulo: string | null) {
   return materialPintado(scene, nombre, 640, 880, (ctx, w, h) => {
     ctx.fillStyle = "#2f3a41";
     ctx.fillRect(0, 0, w, h);
 
     dibujarSilueta(ctx, id, w, h);
 
-    // Banda inferior: es donde se escribe el rótulo al acertar. Vacía desde el
-    // principio para que se vea que ahí falta algo.
+    const banda = h * 0.168;
     ctx.fillStyle = rotulo ? "#1d2a23" : "#242d33";
-    ctx.fillRect(0, h - 74, w, 74);
+    ctx.fillRect(0, h - banda, w, banda);
     ctx.strokeStyle = rotulo ? "#4e9c6b" : "#3f4b53";
-    ctx.lineWidth = rotulo ? 5 : 4;
-    ctx.strokeRect(0, h - 74, w, 74);
+    ctx.lineWidth = w * (rotulo ? 0.0156 : 0.0125);
+    ctx.strokeRect(0, h - banda, w, banda);
 
     if (rotulo) {
       ctx.fillStyle = "#a9e0bd";
-      ctx.font = "bold 34px system-ui, sans-serif";
+      ctx.font = `bold ${Math.round(w * 0.086)}px system-ui, sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText(rotulo.toUpperCase(), w / 2, h - 26);
+      ctx.fillText(rotulo.toUpperCase(), w / 2, h - banda * 0.35);
     }
   });
+}
+
+/** Dibuja la silueta de una herramienta, centrada en el lienzo. */
+function dibujarSilueta(ctx: CanvasRenderingContext2D, id: SiluetaId, w: number, h: number): void {
+  ctx.save();
+  ctx.translate(w / 2, h / 2 - 30 * (w / 320));
+
+  // El dibujo está trazado para un lienzo de 320 px. Al subir la resolución se
+  // escala, así que se puede volver a subir sin reescribir coordenadas.
+  const k = w / 320;
+  ctx.scale(k, k);
+
+  ctx.fillStyle = "#8a99a3";
+  ctx.strokeStyle = "#8a99a3";
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // LAS SILUETAS COPIAN LA FORMA DEL MODELO, no una idea de la herramienta.
+  //
+  // Si no coinciden, el tablero deja de enseñar: el jugador no puede decidir
+  // mirando y termina probando hueco por hueco. El alicate salía como una X
+  // —dos barras cruzadas— cuando el modelo tiene dos ramas que se juntan
+  // arriba y se abren abajo, y el martillo tenía la cabeza al revés respecto
+  // de cómo queda colgado.
+
+  if (id === "llave") {
+    // Cuerpo recto con una boca en U en cada punta, como el modelo.
+    ctx.fillRect(-15, -140, 30, 280);
+
+    [-1, 1].forEach((lado) => {
+      const y = lado * 158;
+      ctx.fillRect(-38, y - 22, 76, 44);
+      // El hueco de la boca: se recorta pintando el fondo del panel.
+      ctx.fillStyle = "#2f3a41";
+      ctx.fillRect(-13, y - lado * 24, 26, 34);
+      ctx.fillStyle = "#8a99a3";
+    });
+  } else if (id === "destornillador") {
+    // Mango grueso arriba, vástago fino abajo, punta plana. Vertical, que es
+    // como cuelga.
+    ctx.beginPath();
+    ctx.moveTo(-30, -170);
+    ctx.lineTo(30, -170);
+    ctx.lineTo(24, -48);
+    ctx.lineTo(-24, -48);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillRect(-8, -48, 16, 190);
+    ctx.fillRect(-17, 142, 34, 26);
+  } else if (id === "martillo") {
+    // Cabeza ARRIBA y cabo hacia abajo: así queda al colgarlo del tablero.
+    // Antes estaba invertido y no coincidía con la pieza.
+    ctx.fillRect(-88, -168, 176, 52);
+
+    // Uña curva a un lado, que es lo que lo distingue de un mazo.
+    ctx.beginPath();
+    ctx.moveTo(-88, -168);
+    ctx.lineTo(-124, -140);
+    ctx.lineTo(-118, -108);
+    ctx.lineTo(-88, -116);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillRect(-16, -116, 32, 286);
+  } else {
+    // Alicate: ramas que CONVERGEN arriba (las mordazas) y se abren abajo (los
+    // mangos), con el eje en medio. Antes eran dos barras cruzadas en aspa.
+    [-1, 1].forEach((lado) => {
+      ctx.beginPath();
+      ctx.moveTo(lado * 10, -180);
+      ctx.lineTo(lado * 26, -40);
+      ctx.lineTo(lado * 62, 176);
+      ctx.lineTo(lado * 26, 176);
+      ctx.lineTo(lado * 4, -40);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    ctx.beginPath();
+    ctx.arc(0, -34, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#2f3a41";
+    ctx.beginPath();
+    ctx.arc(0, -34, 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 }
 
 /**

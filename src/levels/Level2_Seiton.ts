@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, Vector3, Mesh, AbstractMesh } from "@babylonjs/core";
-import { TextBlock, Control } from "@babylonjs/gui";
+import { TextBlock, Control, StackPanel, Rectangle } from "@babylonjs/gui";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { objetosNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
@@ -348,6 +348,20 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // seguidas, y tenerla delante convierte el nivel en un ejercicio de criterio
   // en vez de uno de memoria. La etiqueta al pasar el cursor dice QUÉ es cada
   // objeto; decidir DÓNDE va sigue siendo suyo.
+  // Los dos textos van en una COLUMNA, no en alturas fijas.
+  //
+  // Antes cada uno tenía su "top" en píxeles. El primero se ajusta a dos
+  // renglones según el ancho de la ventana, así que crecía hacia abajo y se
+  // montaba sobre el segundo — que estaba clavado a 104 px y no se enteraba.
+  // Apilados, el segundo siempre queda debajo del primero, mida lo que mida.
+  const consignas = new StackPanel("consignasNivel2");
+  consignas.isVertical = true;
+  consignas.width = "900px";
+  consignas.top = "62px";
+  consignas.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  consignas.isHitTestVisible = false;
+  gui.addControl(consignas);
+
   const criterios = new TextBlock(
     "criteriosNivel2",
     "Uso diario → tablero de siluetas   ·   Uso ocasional → repisa media   ·   Objetos pesados → repisa inferior"
@@ -358,10 +372,15 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   criterios.outlineColor = "rgba(0,0,0,0.6)";
   criterios.textWrapping = true;
   criterios.resizeToFit = true;
-  criterios.width = "620px";
-  criterios.top = "70px";
-  criterios.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(criterios);
+  criterios.width = "880px";
+  consignas.addControl(criterios);
+
+  const separacion = new Rectangle("aireConsignas");
+  separacion.width = "1px";
+  separacion.height = "12px";
+  separacion.thickness = 0;
+  separacion.background = "transparent";
+  consignas.addControl(separacion);
 
   const ayuda = new TextBlock(
     "ayudaNivel2",
@@ -371,11 +390,10 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   ayuda.fontSize = TEXTO.menor;
   ayuda.outlineWidth = 3;
   ayuda.outlineColor = "rgba(0,0,0,0.6)";
+  ayuda.textWrapping = true;
   ayuda.resizeToFit = true;
-  ayuda.width = "560px";
-  ayuda.top = "104px";
-  ayuda.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(ayuda);
+  ayuda.width = "760px";
+  consignas.addControl(ayuda);
 
   let inicioNivel = performance.now();
   let corriendoTiempo = false;

@@ -402,13 +402,61 @@ export async function listarPerfiles(): Promise<Perfil[]> {
   return (data as FilaPerfil[]).map(desdePerfil);
 }
 
-export async function eliminarPersona(perfilId: string): Promise<void> {
-  // Borrar el perfil arrastra inscripciones y progreso por las claves foráneas
-  // en cascada. La cuenta de autenticación queda: eliminarla exige permisos de
-  // servidor que el navegador no tiene, y por seguridad así debe ser.
-  const { error } = await supabase.from("perfiles").delete().eq("id", perfilId);
-  if (error) avisarError("eliminarPersona", error);
+export type ResultadoEliminar =
+  | { ok: true; nombre: string }
+  | {
+      ok: false;
+      motivo: "sin_sesion" | "sin_permiso" | "sin_perfil" | "auto_eliminacion" | "otro_administrador" | "otro";
+    };
+
+/**
+ * Elimina una cuenta por completo, incluida la de acceso.
+ *
+ * La versión anterior borraba solo el perfil y dejaba viva la cuenta de
+ * autenticación. Como el correo interno se arma con el RUT, ese RUT quedaba
+ * ocupado para siempre: no se podía volver a registrar ni para probar. Y esas
+ * cuentas fantasma no aparecían en ninguna tabla del panel, así que no había
+ * forma de darse cuenta desde la aplicación.
+ *
+ * Borrar auth.users exige la clave de servicio, que no puede estar en el
+ * navegador, así que va por función del servidor. Con la cuenta se van en
+ * cascada el perfil, la inscripción, el progreso, los resultados y el
+ * certificado — es definitivo y no hay papelera.
+ */
+export async function eliminarCuenta(perfilId: string): Promise<ResultadoEliminar> {
+  const { data, error } = await supabase.rpc("eliminar_cuenta", { p_perfil_id: perfilId });
+
+  if (error) {
+    avisarError("eliminarCuenta", error);
+    return { ok: false, motivo: "otro" };
+  }
+
+  const r = data as { ok: boolean; nombre?: string; motivo?: string };
+  return r.ok
+    ? { ok: true, nombre: r.nombre ?? "La cuenta" }
+    : { ok: false, motivo: (r.motivo as "otro") ?? "otro" };
 }
+
+/** Texto para el administrador cuando la eliminación no procede. */
+export function explicarRechazoEliminar(
+  motivo: Exclude<ResultadoEliminar, { ok: true }>["motivo"]
+): string {
+  switch (motivo) {
+    case "auto_eliminacion":
+      return "No puedes eliminar tu propia cuenta.";
+    case "otro_administrador":
+      return "No puedes eliminar a otro administrador. Quítale el rol primero.";
+    case "sin_permiso":
+      return "Solo un administrador puede eliminar cuentas.";
+    case "sin_perfil":
+      return "Esa persona ya no existe. Actualiza la página.";
+    case "sin_sesion":
+      return "Tu sesión expiró. Vuelve a entrar.";
+    default:
+      return "No se pudo eliminar la cuenta. Revisa tu conexión.";
+  }
+}
+
 
 /**
  * Resultado de cambiar el rol de una persona.
