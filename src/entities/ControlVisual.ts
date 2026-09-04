@@ -7,7 +7,21 @@ import {
   Vector3,
   PointLight,
 } from "@babylonjs/core";
-import { materialPintado } from "./ObjetosComunes";
+import { materialPintado, materialPintadoNitido } from "./ObjetosComunes";
+
+/**
+ * Densidad de textura de los rotulos de las estaciones.
+ *
+ * La boca del puerto y la placa del interruptor son piezas chicas con
+ * informacion que decide la partida: la FORMA que solo acepta un conector y el
+ * circuito que gobierna cada interruptor. Al tamano de antes no se leian ni
+ * con la camara pegada.
+ *
+ * Las zonas del piso quedan fuera: son manchas de cinco metros con dos
+ * palabras enormes, y ahi la densidad no es el problema.
+ */
+const NITIDEZ_ROTULO = 2;
+const NITIDEZ_PIEZA = 2.5;
 import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
 import type {
   PuertoNivel4,
@@ -205,7 +219,7 @@ export function crearArmarioConectores(
 
   // Cartel del armario. Video 4.2 (1:32): letreros y carteles son control
   // visual tanto como el Andon.
-  const matRotulo = materialPintado(scene, "matRotuloArmario", 768, 128, (ctx, w, h) => {
+  const matRotulo = materialPintadoNitido(scene, "matRotuloArmario", 768, 128, NITIDEZ_ROTULO, (ctx, w, h) => {
     ctx.fillStyle = "#182026";
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = "#d4a017";
@@ -250,7 +264,7 @@ export function crearArmarioConectores(
   puertos.forEach((puerto) => {
     const d = puerto.desplazamiento;
 
-    const matBoca = materialPintado(scene, `matBoca_${puerto.id}`, 256, 320, (ctx, w, h) => {
+    const matBoca = materialPintadoNitido(scene, `matBoca_${puerto.id}`, 256, 320, NITIDEZ_PIEZA, (ctx, w, h) => {
       ctx.fillStyle = "#333f47";
       ctx.fillRect(0, 0, w, h);
 
@@ -607,7 +621,7 @@ export function crearPanelInterruptores(
 
   /** Cara de la placa. Vacía al montar, con el color elegido al asignarlo. */
   const caraPlaca = (id: string, descripcion: string, color: ColorNivel4 | null): PBRMaterial =>
-    materialPintado(scene, `matPlaca_${id}_${color?.id ?? "vacia"}`, 320, 256, (ctx, w, h) => {
+    materialPintadoNitido(scene, `matPlaca_${id}_${color?.id ?? "vacia"}`, 320, 256, NITIDEZ_PIEZA, (ctx, w, h) => {
       ctx.fillStyle = color ? color.hex : "#2b343a";
       ctx.fillRect(0, 0, w, h);
 

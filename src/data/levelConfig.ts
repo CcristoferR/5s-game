@@ -686,7 +686,9 @@ export const circuitosNivel4: CircuitoNivel4[] = [
     id: "circuito_banco",
     descripcion: "Circuito del banco de trabajo",
     colorCorrectoId: "color_rojo",
-    lampara: [0, -0.5],
+    // Sigue al banco, que en el Nivel 4 se corrio al rincon izquierdo. Un foco
+    // colgado sobre piso vacio no identifica ningun circuito.
+    lampara: [-4.0, -1.2],
     desplazamiento: -0.44,
   },
   {

@@ -126,6 +126,56 @@ export function materialPintado(
   return mat;
 }
 
+/**
+ * Igual que materialPintado, pero con la textura dibujada a mayor densidad.
+ *
+ * ─── PARA QUE SIRVE ────────────────────────────────────────────────────────
+ *
+ * Lo que decide si un texto se lee no es el tamano del lienzo: es cuantos
+ * pixeles de textura le tocan a cada metro de la pieza en el mundo. Los
+ * objetos que se leen bien en el juego rondan los 2000-2800 px por metro; los
+ * que no, andan por 850. A 850 px/m la letra directamente no existe en la
+ * textura, asi que acercar la camara solo agranda el borron.
+ *
+ * ─── POR QUE UN FACTOR Y NO PASAR EL TAMANO GRANDE ────────────────────────
+ *
+ * Porque todo el codigo de dibujo esta escrito en pixeles: fuentes de 40 px,
+ * franjas de 74 px, margenes de 26. Pasando un lienzo tres veces mas grande
+ * habria que multiplicar a mano cada una de esas constantes en cada funcion, y
+ * cualquier numero que se escape deja la pieza descuadrada.
+ *
+ * Con el factor, el lienzo crece y el contexto se escala en el mismo paso: la
+ * funcion de dibujo sigue recibiendo el ancho y el alto de siempre y no hay
+ * que tocarle una sola coordenada. Cambiar la nitidez de una pieza es cambiar
+ * un numero.
+ *
+ * @param factor  Cuantas veces mas denso que el tamano base. 2 a 3 alcanza;
+ *                mas arriba solo se gana memoria de video.
+ */
+export function materialPintadoNitido(
+  scene: Scene,
+  nombre: string,
+  anchoBase: number,
+  altoBase: number,
+  factor: number,
+  dibujar: (ctx: CanvasRenderingContext2D, w: number, h: number) => void
+): PBRMaterial {
+  return materialPintado(
+    scene,
+    nombre,
+    Math.round(anchoBase * factor),
+    Math.round(altoBase * factor),
+    (ctx) => {
+      ctx.save();
+      ctx.scale(factor, factor);
+      // Se le pasan las medidas BASE, no las del lienzo: para quien dibuja,
+      // nada cambio.
+      dibujar(ctx, anchoBase, altoBase);
+      ctx.restore();
+    }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Primitivas
 // ---------------------------------------------------------------------------

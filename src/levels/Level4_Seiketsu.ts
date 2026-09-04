@@ -94,18 +94,23 @@ const PANEL_INTERRUPTORES = { x: 1.9, y: 1.35, z: 3.4 };
 const LIMITES = { xMin: -4.6, xMax: 4.6, zMin: -1.7, zMax: 2.9 };
 
 /** Dónde arranca cada plantilla y cada ficha, repartidas por delante del banco. */
+// Dos hileras ordenadas por delante, fuera del banco y de las tres zonas.
+//
+// Antes estaban desparramadas y dos fichas caian encima del banco. Puestas en
+// fila se lee de un vistazo que hay CUATRO plantillas y CUATRO fichas para tres
+// sitios cada una — o sea que sobra material y elegir es parte del trabajo.
 const PARTIDA_MARCAS: Array<[number, number]> = [
-  [-2.7, -1.2],
-  [-1.3, -1.4],
-  [0.2, -1.4],
-  [1.6, -1.2],
+  [-2.4, -1.5],
+  [-0.9, -1.5],
+  [0.6, -1.5],
+  [2.1, -1.5],
 ];
 
 const PARTIDA_FICHAS: Array<[number, number]> = [
-  [2.7, -1.3],
-  [3.5, -0.9],
-  [-3.4, -1.3],
-  [-4.1, -0.8],
+  [-2.4, -0.7],
+  [-0.9, -0.7],
+  [0.6, -0.7],
+  [2.1, -0.7],
 ];
 
 /** Qué control protegía cada punto del estándar. Es la columna que enseña. */
@@ -161,7 +166,17 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Banco de trabajo compartido con los niveles 1, 2, 3 y 5. Es el mismo
   // puesto a lo largo de las cinco fases: acá hace de mesa de trabajo desde la
   // que se reparten las piezas, y de zona del primer circuito de luz.
-  crearBancoDeTrabajo(scene, { nombre: "escritorioN4", ancho: 3.4, fondo: 1.2, z: -0.5 });
+  // Corrido al rincon delantero izquierdo, y mas chico.
+  //
+  // Estaba centrado en x = 0, justo entre donde nacen las piezas y las
+  // estaciones del fondo: para llevar una plantilla al pasillo o un conector
+  // al tablero habia que arrastrarla POR DEBAJO de la tapa, con la pieza
+  // desapareciendo detras de la madera a mitad de camino. Contra la pared
+  // izquierda deja libre toda la franja central, que es por donde se trabaja.
+  //
+  // Sigue haciendo falta: es la zona del primer circuito de luz, y sin un
+  // puesto de trabajo el foco rojo colgaria sobre un pedazo de piso vacio.
+  crearBancoDeTrabajo(scene, { nombre: "escritorioN4", ancho: 2.4, fondo: 1.0, x: -4.0, z: -1.2 });
 
   // === LAS TRES ESTACIONES ===============================================
 
@@ -462,9 +477,17 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
 
+  // Se avisa que sobra material ANTES de que lo busquen.
+  //
+  // Hay cuatro plantillas para tres zonas y cuatro fichas para tres
+  // interruptores. Sin decirlo, al terminar quedan dos piezas en el piso y el
+  // jugador se pone a buscarles un sitio que no existe — con el contador
+  // marcando 9/9, que es peor todavia. Y decirlo no regala nada: cual descartar
+  // sigue siendo la decision.
   const ayuda = new TextBlock(
     "ayudaNivel4",
-    "Cada foco del techo lleva el color de su circuito: míralo antes de elegir la etiqueta del interruptor."
+    "Hay más plantillas y etiquetas de las que necesitas: elegir cuáles usar es parte del trabajo. " +
+      "Cada foco del techo lleva el color de su circuito — míralo antes de etiquetar el interruptor."
   );
   ayuda.color = "#c9d4dd";
   ayuda.fontSize = TEXTO.menor;
@@ -563,7 +586,8 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     if (hechos === TOTAL_TAREAS) {
       botonProbar.isVisible = true;
       instruccion.text =
-        "Todo instalado. Presiona 'Probar estándar': entra un operario del turno siguiente y trabaja guiándose solo por lo que dejaste puesto.";
+        "Todo instalado. Lo que quedó en el piso es el material que descartaste — no va a ningún sitio. " +
+        "Presiona 'Probar estándar': entra un operario del turno siguiente y trabaja guiándose solo por lo que dejaste puesto.";
       ayuda.isVisible = false;
     }
   }

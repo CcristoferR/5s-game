@@ -1,5 +1,19 @@
 import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh } from "@babylonjs/core";
-import { materialPintado } from "./ObjetosComunes";
+import { materialPintadoNitido } from "./ObjetosComunes";
+
+/**
+ * Densidad de textura de las piezas de este nivel.
+ *
+ * Las plantillas y las fichas llevan texto que hay que PODER LEER antes de
+ * colocarlas: la diferencia entre "PASILLO 1,20 m" y "ZONA ORDENADA" es la
+ * unica decision del nivel que ningun control automatico corrige despues. A la
+ * densidad de antes esa letra era un borron incluso con la camara encima.
+ *
+ * La lamina va con menos factor que la ficha porque es cinco veces mas grande
+ * en el mundo: al mismo factor su textura pesaria cuatro veces mas por nada.
+ */
+const NITIDEZ_LAMINA = 2;
+const NITIDEZ_FICHA = 2.5;
 import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
 import type { ConectorNivel4, MarcaNivel4, ColorNivel4 } from "../data/levelConfig";
 
@@ -148,7 +162,7 @@ export function crearMarcaPiso(scene: Scene, datos: MarcaNivel4): Mesh {
     partes.push(liston);
   });
 
-  const matLamina = materialPintado(scene, `matMarcaLamina_${datos.id}`, 768, 320, (ctx, w, h) => {
+  const matLamina = materialPintadoNitido(scene, `matMarcaLamina_${datos.id}`, 768, 320, NITIDEZ_LAMINA, (ctx, w, h) => {
     ctx.fillStyle = datos.esEspecifica ? "#e9c65a" : "#b9b39a";
     ctx.fillRect(0, 0, w, h);
 
@@ -226,7 +240,7 @@ export function crearFichaColor(scene: Scene, datos: ColorNivel4): Mesh {
   cuerpo.material = matCuerpo;
   partes.push(cuerpo);
 
-  const matCara = materialPintado(scene, `matFichaCara_${datos.id}`, 256, 288, (ctx, w, h) => {
+  const matCara = materialPintadoNitido(scene, `matFichaCara_${datos.id}`, 256, 288, NITIDEZ_FICHA, (ctx, w, h) => {
     ctx.fillStyle = datos.hex;
     ctx.fillRect(0, 0, w, h);
 
@@ -234,12 +248,20 @@ export function crearFichaColor(scene: Scene, datos: ColorNivel4): Mesh {
     ctx.lineWidth = 8;
     ctx.strokeRect(12, 12, w - 24, h - 24);
 
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.fillRect(0, h - 74, w, 74);
+    // Banda del nombre: casi un tercio de la ficha. El color solo no basta —
+    // rojo y amarillo se confunden bajo la luz calida del galpon, y el jugador
+    // tiene que estar seguro de cual esta agarrando antes de pegarla.
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fillRect(0, h - 96, w, 96);
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 40px system-ui, sans-serif";
+    ctx.font = "bold 54px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(datos.nombreVisible.toUpperCase(), w / 2, h - 26);
+    let tamanoFicha = 54;
+    while (ctx.measureText(datos.nombreVisible.toUpperCase()).width > w - 24 && tamanoFicha > 22) {
+      tamanoFicha -= 3;
+      ctx.font = `bold ${tamanoFicha}px system-ui, sans-serif`;
+    }
+    ctx.fillText(datos.nombreVisible.toUpperCase(), w / 2, h - 32);
   });
 
   const cara = MeshBuilder.CreateBox(

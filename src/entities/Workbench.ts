@@ -13,6 +13,14 @@ export interface OpcionesBanco {
   fondo?: number;
   /** Posicion en Z del centro del banco. */
   z?: number;
+  /**
+   * Posicion en X del centro del banco. Por defecto 0.
+   *
+   * Existe para el Nivel 4, donde el banco tenia que salir del centro: alli el
+   * jugador arrastra piezas desde el frente hasta unas estaciones del fondo, y
+   * con el banco en medio habia que pasarlas por debajo de la tapa.
+   */
+  x?: number;
 }
 
 /**
@@ -29,6 +37,7 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   const ANCHO = opciones.ancho ?? 3.9;
   const FONDO = opciones.fondo ?? 1.5;
   const CENTRO_Z = opciones.z ?? -0.5;
+  const CENTRO_X = opciones.x ?? 0;
 
   // El tablero mide 0.09 de alto y su cara superior queda en
   // ALTURA_SUPERFICIE_BANCO, asi que su centro va media altura mas abajo.
@@ -47,7 +56,7 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   matTablero.metallic = 0;
 
   const tablero = MeshBuilder.CreateBox(nombre, { width: ANCHO, height: 0.09, depth: FONDO }, scene);
-  tablero.position.set(0, ALTO_TABLERO, CENTRO_Z);
+  tablero.position.set(CENTRO_X, ALTO_TABLERO, CENTRO_Z);
   tablero.material = matTablero;
   tablero.receiveShadows = true;
 
@@ -58,7 +67,7 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   matCanto.roughness = 0.5;
 
   const canto = MeshBuilder.CreateBox(`canto_${nombre}`, { width: ANCHO + 0.04, height: 0.035, depth: FONDO + 0.04 }, scene);
-  canto.position.set(0, ALTO_TABLERO - 0.055, CENTRO_Z);
+  canto.position.set(CENTRO_X, ALTO_TABLERO - 0.055, CENTRO_Z);
   canto.material = matCanto;
   canto.receiveShadows = true;
 
@@ -82,7 +91,7 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
 
   patas.forEach(([px, pz], i) => {
     const pata = MeshBuilder.CreateBox(`pata_${nombre}_${i}`, { width: 0.08, height: ALTO_TABLERO - 0.07, depth: 0.08 }, scene);
-    pata.position.set(px, (ALTO_TABLERO - 0.07) / 2, pz);
+    pata.position.set(CENTRO_X + px, (ALTO_TABLERO - 0.07) / 2, pz);
     pata.material = matMetal;
     pata.receiveShadows = true;
   });
@@ -90,13 +99,13 @@ export function crearBancoDeTrabajo(scene: Scene, opciones: OpcionesBanco = {}):
   // Travesanios laterales: sin ellos las patas parecen cuatro palos sueltos.
   [-1, 1].forEach((lado, i) => {
     const travesanio = MeshBuilder.CreateBox(`travesanio_${nombre}_${i}`, { width: 0.06, height: 0.06, depth: FONDO - 0.28 }, scene);
-    travesanio.position.set(lado * (ANCHO / 2 - 0.14), 0.28, CENTRO_Z);
+    travesanio.position.set(CENTRO_X + lado * (ANCHO / 2 - 0.14), 0.28, CENTRO_Z);
     travesanio.material = matMetal;
     travesanio.receiveShadows = true;
   });
 
   const estante = MeshBuilder.CreateBox(`estante_${nombre}`, { width: ANCHO - 0.34, height: 0.04, depth: FONDO - 0.34 }, scene);
-  estante.position.set(0, 0.3, CENTRO_Z);
+  estante.position.set(CENTRO_X, 0.3, CENTRO_Z);
   estante.material = matCanto;
   estante.receiveShadows = true;
 }
