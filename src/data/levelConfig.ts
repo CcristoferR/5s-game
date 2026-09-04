@@ -239,35 +239,143 @@ export const pesadosNivel1: PesadoNivel1[] = [
 ];
 
 // Datos del Nivel 2 (Seiton / Ordenar).
-export interface SlotNivel2 {
-  id: string;
-  posicionX: number;
-  descripcion: string;
-}
+// ---------------------------------------------------------------------------
+// Nivel 2 — Seiton (Ordenar)
+// ---------------------------------------------------------------------------
+//
+// REESTRUCTURADO SEGÚN EL CURSO.
+//
+// Lo anterior eran cuatro casillas con carteles de frecuencia —"uso muy
+// frecuente", "consulta ocasional"— y el jugador soltaba cada objeto en la
+// categoría que le correspondía. Eso es CLASIFICAR, y clasificar ya se hizo en
+// el Nivel 1. Seiton es otra cosa: es diseñar el sitio físico.
+//
+// Video 3.2 (1:52): "un lugar para cada cosa... una etiqueta para cada cosa y
+// cada cosa con su etiqueta". Y en 1:38: "es en esta S donde se debe lograr
+// que el Gemba o área de trabajo hable por sí solo".
+//
+// De ahí los tres destinos, que ahora son LUGARES y no conceptos:
+//
+//   TABLERO DE SOMBRAS   Lo de uso diario, encajado en su silueta pintada. La
+//                        silueta ES el lugar: no hay que recordar dónde va
+//                        nada, se ve.
+//   REPISA MEDIA         Lo de uso ocasional. A la altura de la mano pero sin
+//                        ocupar el sitio de lo que se usa a diario.
+//   REPISA INFERIOR      Lo pesado, obligatoriamente. Video 3.3 (1:13): "en
+//                        estanterías los objetos de gran peso suelen ser
+//                        colocados en la parte inferior".
+//
+// Y la etiqueta aparece sola al acertar: es la segunda mitad de la regla, y
+// verla escribirse enseña que sin rótulo el orden no se sostiene.
+
+export type DestinoSeiton = "tablero" | "media" | "inferior";
 
 export interface ObjetoNivel2 {
   id: string;
   nombreVisible: string;
   posicionInicial: [number, number, number];
-  slotCorrectoId: string;
+  rotacionY?: number;
+  destino: DestinoSeiton;
+  /** Silueta del tablero que le corresponde. Solo para destino "tablero". */
+  silueta?: "llave" | "destornillador" | "martillo" | "alicate";
+  /** Motivo de su sitio, en el idioma del curso. */
+  criterio: string;
   explicacion: string;
 }
 
-export const slotsNivel2: SlotNivel2[] = [
-  { id: "slot_telefono", posicionX: -3.3, descripcion: "Uso muy frecuente — al alcance inmediato" },
-  { id: "slot_engrapadora", posicionX: -1.1, descripcion: "Uso diario — cerca del área de trabajo" },
-  { id: "slot_carpetas", posicionX: 1.1, descripcion: "Consulta ocasional — puede estar más lejos" },
-  { id: "slot_lapices", posicionX: 3.3, descripcion: "Alcance rápido — borde del escritorio" },
-];
-
+// Las posiciones iniciales reparten los ocho objetos POR DELANTE de los
+// muebles: el puesto de trabajo va a z=3.0 y la estanteria a z=3.2. Ninguno
+// arranca dentro de un destino ni encima de un mueble — el nivel empieza con
+// todo por el suelo, que es el estado del que parte Seiton.
 export const objetosNivel2: ObjetoNivel2[] = [
-  { id: "telefono", nombreVisible: "Teléfono de oficina", posicionInicial: [-2.15, 0.945, -0.8], slotCorrectoId: "slot_telefono", explicacion: "Se usa constantemente durante el día — debe quedar al alcance inmediato." },
-  { id: "engrapadora2", nombreVisible: "Engrapadora", posicionInicial: [-0.72, 0.945, -0.8], slotCorrectoId: "slot_engrapadora", explicacion: "Uso diario pero no constante — cerca del área de trabajo es suficiente." },
-  { id: "carpeta_activa2", nombreVisible: "Carpeta 'Proyecto Activo'", posicionInicial: [0.72, 0.945, -0.8], slotCorrectoId: "slot_carpetas", explicacion: "Se consulta pocas veces al día — puede estar un poco más lejos." },
-  { id: "taza_lapices", nombreVisible: "Taza de lápices", posicionInicial: [2.15, 0.945, -0.8], slotCorrectoId: "slot_lapices", explicacion: "Se necesita tomar rápido y seguido — mejor en el borde, a mano." },
-  { id: "llavero", nombreVisible: "Llavero con llaves de oficina", posicionInicial: [-1.45, 0.945, -0.2], slotCorrectoId: "slot_telefono", explicacion: "Se necesita cada vez que se entra o sale — debe quedar al alcance inmediato, igual que el teléfono." },
-  { id: "tijeras", nombreVisible: "Tijeras de oficina", posicionInicial: [0, 0.945, -0.2], slotCorrectoId: "slot_engrapadora", explicacion: "Uso diario, similar a la engrapadora — cerca del área de trabajo es suficiente." },
-  { id: "manual_referencia", nombreVisible: "Manual de referencia rápida", posicionInicial: [1.45, 0.945, -0.2], slotCorrectoId: "slot_carpetas", explicacion: "Se consulta pocas veces al día — puede estar un poco más lejos, igual que las carpetas." },
+  // --- Uso diario: tablero de siluetas, sobre el banco de trabajo ---
+  {
+    id: "llave_fija",
+    nombreVisible: "Llave fija",
+    posicionInicial: [-3.2, 0, 1.5],
+    rotacionY: 0.5,
+    destino: "tablero",
+    silueta: "llave",
+    criterio: "Frecuencia · uso diario",
+    explicacion:
+      "Se usa todos los días, así que va en el tablero, a la vista y al alcance. Su silueta marca el sitio: si falta, se nota sin abrir ningún inventario.",
+  },
+  {
+    id: "destornillador",
+    nombreVisible: "Destornillador",
+    posicionInicial: [2.5, 0, 1.8],
+    rotacionY: -0.3,
+    destino: "tablero",
+    silueta: "destornillador",
+    criterio: "Frecuencia · uso diario",
+    explicacion:
+      "Herramienta de uso diario. En el tablero cada una tiene su hueco dibujado — eso es 'un lugar para cada cosa'.",
+  },
+  {
+    id: "martillo",
+    nombreVisible: "Martillo",
+    posicionInicial: [0.5, 0, -1.2],
+    rotacionY: 1.2,
+    destino: "tablero",
+    silueta: "martillo",
+    criterio: "Frecuencia · uso diario",
+    explicacion:
+      "Uso diario y hay que tomarlo rápido. Colgado en su silueta se agarra de un movimiento, sin buscar en un cajón.",
+  },
+  {
+    id: "alicate",
+    nombreVisible: "Alicate",
+    posicionInicial: [-1.7, 0, 0.3],
+    rotacionY: -0.8,
+    destino: "tablero",
+    silueta: "alicate",
+    criterio: "Frecuencia · uso diario",
+    explicacion:
+      "Al tablero, junto a las demás herramientas de mano. Todas juntas y todas a la vista: el área habla por sí sola.",
+  },
+
+  // --- Uso ocasional: repisa media ---
+  {
+    id: "manual_referencia",
+    nombreVisible: "Manual de referencia",
+    posicionInicial: [-3.5, 0, -0.7],
+    rotacionY: 0.2,
+    destino: "media",
+    criterio: "Frecuencia · consulta ocasional",
+    explicacion:
+      "Se consulta algunas veces por semana. A la altura de la mano, pero sin quitarle el sitio a lo que se usa todos los días.",
+  },
+  {
+    id: "carpeta_activa2",
+    nombreVisible: "Carpeta de mantenimiento",
+    posicionInicial: [1.5, 0, 0.7],
+    rotacionY: -0.5,
+    destino: "media",
+    criterio: "Frecuencia · consulta ocasional",
+    explicacion:
+      "Uso ocasional: repisa media. El criterio no es si sirve o no —eso se resolvió en Seiri— sino cada cuánto se toma.",
+  },
+
+  // --- Pesado: repisa inferior, obligatoriamente ---
+  {
+    id: "caja_herramientas",
+    nombreVisible: "Caja de herramientas",
+    posicionInicial: [-0.6, 0, 2.0],
+    rotacionY: 0.4,
+    destino: "inferior",
+    criterio: "Peso · va abajo",
+    explicacion:
+      "Pesa demasiado para levantarla a la altura del pecho. Va en la repisa inferior: se toma sin forzar la espalda y, si se cae, no cae desde arriba.",
+  },
+  {
+    id: "bidon_aceite",
+    nombreVisible: "Bidón de aceite",
+    posicionInicial: [3.4, 0, -0.6],
+    destino: "inferior",
+    criterio: "Peso · va abajo",
+    explicacion:
+      "Lleno pesa más de veinte kilos. El peso manda sobre la frecuencia: aunque se usara a diario, arriba sería un riesgo cada vez que hay que bajarlo.",
+  },
 ];
 
 // Datos del Nivel 3 (Seiso / Limpiar) — dos incidentes independientes.

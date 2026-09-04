@@ -34,7 +34,9 @@ import {
 //
 // ZONAS OCUPADAS POR EL JUEGO — no invadir:
 //   Nivel 1   x -2.7 a 2.7, z -1 a 2      (zonas de clasificación)
-//   Nivel 2   x -3.3 a 3.3, z de estación (casillas del estante)
+//   Nivel 2   x -1.7 a 1.7, z 2.5 a 3.7   (puesto de trabajo y tablero)
+//             x  2.2 a 4.8, z 2.7 a 3.6   (estantería de destino)
+//             x -4.3 a 4.3, z -2 a 2.3    (recinto de arrastre)
 //   Nivel 3   x -4 a 3.6,   z -1.3 a 2.5  (manchas, equipo, impresora)
 //   Nivel 4   x -3.6 a 3.6, z 1.8         (tablero y papelera)
 //             x -2 a 2,     z 4.2         (zonas de señalización)
@@ -99,12 +101,22 @@ export function ambientarNivel(scene: Scene, numeroNivel: number): void {
       break;
 
     case 2:
-      // Seiton: dos estanterías enfrentadas encuadran la estación de trabajo,
-      // y el tablero de sombras dice sin palabras de qué trata la S.
-      crearEstanteriaTaller(scene, 5.1, 2.4, -Math.PI / 2);
+      // Seiton: la utilería se va TODA al lado izquierdo y al fondo.
+      //
+      // El derecho lo ocupa la estantería de destino (x 2.2 a 4.8) y el centro
+      // del fondo el puesto de trabajo con su tablero de siluetas. Los dos
+      // destinos tienen que verse a la vez y sin nada delante: si hay que
+      // girar la cámara para comparar dónde va cada cosa, el nivel deja de ser
+      // un ejercicio de criterio y pasa a ser uno de puntería.
+      //
+      // Y SIN TABLERO DE HERRAMIENTAS DECORATIVO. Había uno colgado en la
+      // pared derecha, idéntico al del ejercicio: el jugador arrastraba hasta
+      // él y no pasaba nada, porque no recibe objetos. Un señuelo así no
+      // enseña nada, solo hace perder tiempo.
       crearEstanteriaTaller(scene, -5.1, 2.4, Math.PI / 2);
-      crearTableroHerramientas(scene, 5.85, 0.6, -Math.PI / 2);
-      crearPalletConCajas(scene, -5.0, 4.7);
+      crearEstanteriaTaller(scene, -5.1, 4.7, Math.PI / 2);
+      crearPalletConCajas(scene, -4.9, 6.4);
+      crearCarroDeLimpieza(scene, 5.2, 5.6, Math.PI);
       break;
 
     case 3:

@@ -97,7 +97,7 @@ function escalar(mesh: Mesh, factor: number): Mesh {
 const ESCALA_PROPIOS = 1.3;
 
 /** Ids que se construyen acá y necesitan el ajuste de escala. */
-const PROPIOS = new Set(["telefono", "taza_lapices", "llavero", "tijeras"]);
+const PROPIOS = new Set(["telefono", "taza_lapices", "llavero", "tijeras", "llave_fija", "destornillador", "martillo", "alicate", "caja_herramientas", "bidon_aceite"]);
 
 function construirForma(scene: Scene, datos: ObjetoNivel2): Mesh {
   switch (datos.id) {
@@ -119,6 +119,18 @@ function construirForma(scene: Scene, datos: ObjetoNivel2): Mesh {
     case "manual_referencia":
       // Mismo manual, otra portada: en el Nivel 2 es el de referencia rápida.
       return crearManualComun(scene, datos.id, "REFERENCIA");
+    case "llave_fija":
+      return crearLlaveFija(scene, datos.id);
+    case "destornillador":
+      return crearDestornillador(scene, datos.id);
+    case "martillo":
+      return crearMartillo(scene, datos.id);
+    case "alicate":
+      return crearAlicate(scene, datos.id);
+    case "caja_herramientas":
+      return crearCajaHerramientas(scene, datos.id);
+    case "bidon_aceite":
+      return crearBidon(scene, datos.id);
     default: {
       const mesh = MeshBuilder.CreateBox(datos.id, { size: 0.4 }, scene);
       mesh.material = plastico(scene, `mat_${datos.id}`, new Color3(0.6, 0.6, 0.65));
@@ -452,3 +464,182 @@ function crearTijeras(scene: Scene, id: string): Mesh {
 // ---------------------------------------------------------------------------
 // Manual de referencia
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Herramientas del tablero de sombras y objetos pesados
+// ---------------------------------------------------------------------------
+//
+// Cada herramienta tiene que reconocerse por su SILUETA, porque el tablero
+// enseña exactamente eso: el hueco pintado tiene la forma de la pieza. Si dos
+// se parecieran de perfil, el ejercicio dejaria de funcionar — de ahi que cada
+// una exagere su rasgo distintivo (la boca de la llave, el mango grueso del
+// destornillador, la cabeza en T del martillo, las dos ramas del alicate).
+
+function acero(scene: Scene, nombre: string, claro = 0.68): PBRMaterial {
+  const mat = new PBRMaterial(nombre, scene);
+  mat.albedoColor = new Color3(claro, claro, claro + 0.03);
+  mat.roughness = 0.34;
+  mat.metallic = 0.9;
+  mat.microSurfaceTexture = texturaGrano(scene, 0.05);
+  return mat;
+}
+
+function crearLlaveFija(scene: Scene, id: string): Mesh {
+  const mat = acero(scene, `matLlave_${id}`);
+
+  const cuerpo = MeshBuilder.CreateBox(`llaveCuerpo_${id}`, { width: 0.035, height: 0.012, depth: 0.26 }, scene);
+  cuerpo.material = mat;
+
+  const partes: Mesh[] = [cuerpo];
+
+  // Las dos bocas, una en cada punta. Se arman con tres piezas cada una para
+  // que quede el hueco en U caracteristico.
+  [-1, 1].forEach((lado, i) => {
+    const base = MeshBuilder.CreateBox(`llaveBase_${id}_${i}`, { width: 0.075, height: 0.014, depth: 0.03 }, scene);
+    base.position.set(0, 0, lado * 0.15);
+    base.material = mat;
+    partes.push(base);
+
+    [-1, 1].forEach((borde, j) => {
+      const diente = MeshBuilder.CreateBox(`llaveDiente_${id}_${i}_${j}`, { width: 0.022, height: 0.014, depth: 0.045 }, scene);
+      diente.position.set(borde * 0.026, 0, lado * 0.185);
+      diente.material = mat;
+      partes.push(diente);
+    });
+  });
+
+  return fusionar(partes, id);
+}
+
+function crearDestornillador(scene: Scene, id: string): Mesh {
+  const matMango = new PBRMaterial(`matMangoDest_${id}`, scene);
+  matMango.albedoColor = new Color3(0.72, 0.18, 0.14);
+  matMango.roughness = 0.62;
+  matMango.metallic = 0.04;
+
+  const mango = MeshBuilder.CreateCylinder(`destMango_${id}`, { diameter: 0.052, height: 0.11, tessellation: 14 }, scene);
+  mango.position.y = 0.055;
+  mango.material = matMango;
+
+  const vastago = MeshBuilder.CreateCylinder(`destVastago_${id}`, { diameter: 0.014, height: 0.16, tessellation: 10 }, scene);
+  vastago.position.y = -0.08;
+  vastago.material = acero(scene, `matDestAcero_${id}`, 0.74);
+
+  const punta = MeshBuilder.CreateBox(`destPunta_${id}`, { width: 0.024, height: 0.02, depth: 0.006 }, scene);
+  punta.position.y = -0.168;
+  punta.material = acero(scene, `matDestPunta_${id}`, 0.74);
+
+  return fusionar([mango, vastago, punta], id);
+}
+
+function crearMartillo(scene: Scene, id: string): Mesh {
+  const matMadera = new PBRMaterial(`matCaboMartillo_${id}`, scene);
+  matMadera.albedoColor = new Color3(0.52, 0.36, 0.2);
+  matMadera.roughness = 0.78;
+  matMadera.metallic = 0;
+
+  const cabo = MeshBuilder.CreateBox(`martilloCabo_${id}`, { width: 0.028, height: 0.026, depth: 0.24 }, scene);
+  cabo.material = matMadera;
+
+  const cabeza = MeshBuilder.CreateBox(`martilloCabeza_${id}`, { width: 0.13, height: 0.042, depth: 0.042 }, scene);
+  cabeza.position.z = 0.13;
+  cabeza.material = acero(scene, `matMartilloAcero_${id}`, 0.42);
+
+  // Una una de las dos bocas se estrecha: es lo que distingue un martillo de
+  // un mazo cuando solo se ve el contorno.
+  const una = MeshBuilder.CreateBox(`martilloUna_${id}`, { width: 0.04, height: 0.03, depth: 0.05 }, scene);
+  una.position.set(-0.075, 0.004, 0.13);
+  una.rotation.z = 0.2;
+  una.material = acero(scene, `matMartilloUna_${id}`, 0.42);
+
+  return fusionar([cabo, cabeza, una], id);
+}
+
+function crearAlicate(scene: Scene, id: string): Mesh {
+  const mat = acero(scene, `matAlicate_${id}`, 0.6);
+
+  const matMango = new PBRMaterial(`matMangoAlicate_${id}`, scene);
+  matMango.albedoColor = new Color3(0.16, 0.32, 0.55);
+  matMango.roughness = 0.66;
+
+  const partes: Mesh[] = [];
+
+  [-1, 1].forEach((lado, i) => {
+    const rama = MeshBuilder.CreateBox(`alicateRama_${id}_${i}`, { width: 0.016, height: 0.012, depth: 0.2 }, scene);
+    rama.position.x = lado * 0.012;
+    rama.rotation.y = lado * 0.09;
+    rama.material = mat;
+    partes.push(rama);
+
+    const mango = MeshBuilder.CreateBox(`alicateMango_${id}_${i}`, { width: 0.02, height: 0.016, depth: 0.09 }, scene);
+    mango.position.set(lado * 0.022, 0, -0.085);
+    mango.rotation.y = lado * 0.09;
+    mango.material = matMango;
+    partes.push(mango);
+  });
+
+  const eje = MeshBuilder.CreateCylinder(`alicateEje_${id}`, { diameter: 0.02, height: 0.02, tessellation: 10 }, scene);
+  eje.rotation.x = Math.PI / 2;
+  eje.position.z = 0.02;
+  eje.material = mat;
+  partes.push(eje);
+
+  return fusionar(partes, id);
+}
+
+function crearCajaHerramientas(scene: Scene, id: string): Mesh {
+  const matCuerpo = new PBRMaterial(`matCajaHerr_${id}`, scene);
+  matCuerpo.albedoColor = new Color3(0.55, 0.16, 0.12);
+  matCuerpo.roughness = 0.55;
+  matCuerpo.metallic = 0.25;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.06);
+
+  const cuerpo = MeshBuilder.CreateBox(`cajaHerrCuerpo_${id}`, { width: 0.42, height: 0.2, depth: 0.22 }, scene);
+  cuerpo.position.y = 0.1;
+  cuerpo.material = matCuerpo;
+
+  const tapa = MeshBuilder.CreateBox(`cajaHerrTapa_${id}`, { width: 0.43, height: 0.035, depth: 0.23 }, scene);
+  tapa.position.y = 0.215;
+  tapa.material = acero(scene, `matCajaHerrTapa_${id}`, 0.3);
+
+  const asa = MeshBuilder.CreateBox(`cajaHerrAsa_${id}`, { width: 0.16, height: 0.014, depth: 0.02 }, scene);
+  asa.position.y = 0.265;
+  asa.material = acero(scene, `matCajaHerrAsa_${id}`, 0.5);
+
+  const partes = [cuerpo, tapa, asa];
+
+  [-1, 1].forEach((lado, i) => {
+    const soporte = MeshBuilder.CreateBox(`cajaHerrSop_${id}_${i}`, { width: 0.014, height: 0.05, depth: 0.02 }, scene);
+    soporte.position.set(lado * 0.075, 0.24, 0);
+    soporte.material = acero(scene, `matCajaHerrSop_${id}_${i}`, 0.5);
+    partes.push(soporte);
+  });
+
+  return fusionar(partes, id);
+}
+
+function crearBidon(scene: Scene, id: string): Mesh {
+  const matCuerpo = new PBRMaterial(`matBidon_${id}`, scene);
+  matCuerpo.albedoColor = new Color3(0.18, 0.34, 0.2);
+  matCuerpo.roughness = 0.5;
+  matCuerpo.metallic = 0.12;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.07);
+
+  const cuerpo = MeshBuilder.CreateCylinder(`bidonCuerpo_${id}`, { diameter: 0.24, height: 0.36, tessellation: 20 }, scene);
+  cuerpo.position.y = 0.18;
+  cuerpo.material = matCuerpo;
+
+  const cuello = MeshBuilder.CreateCylinder(`bidonCuello_${id}`, { diameter: 0.08, height: 0.05, tessellation: 14 }, scene);
+  cuello.position.y = 0.38;
+  cuello.material = matCuerpo;
+
+  const tapon = MeshBuilder.CreateCylinder(`bidonTapon_${id}`, { diameter: 0.095, height: 0.03, tessellation: 14 }, scene);
+  tapon.position.y = 0.415;
+  tapon.material = plastico(scene, `matBidonTapon_${id}`, new Color3(0.8, 0.72, 0.2));
+
+  // Etiqueta: sin ella un cilindro verde no dice que lleve aceite.
+  const etiqueta = MeshBuilder.CreateCylinder(`bidonEtiqueta_${id}`, { diameter: 0.245, height: 0.13, tessellation: 20 }, scene);
+  etiqueta.position.y = 0.17;
+  etiqueta.material = plastico(scene, `matBidonEtiqueta_${id}`, new Color3(0.88, 0.86, 0.8));
+
+  return fusionar([cuerpo, cuello, tapon, etiqueta], id);
+}

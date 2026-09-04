@@ -1,18 +1,114 @@
-import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, Vector3, Mesh, AbstractMesh } from "@babylonjs/core";
+import { TextBlock, Control } from "@babylonjs/gui";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
-import { objetosNivel2, slotsNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import { objetosNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
-import { crearShelfSlot } from "../entities/ShelfSlot";
+import { crearTableroSombras, type HuecoTablero } from "../entities/TableroSombras";
+import { crearEstanteDestino, type BaldaDestino, type NivelBalda } from "../entities/EstanteDestino";
+import { crearBancoDeTrabajo } from "../entities/Workbench";
+import { reproducir } from "../core/Sonido";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { ambientarNivel } from "../entities/AmbienteNivel";
-import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { crearFormaNivel2 } from "../entities/Level2Shapes";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
+import { TEXTO } from "../ui/EstiloUI";
+import type { PuntoEnganche } from "../core/InputController";
+
+// ===========================================================================
+// NIVEL 2 — SEITON (Ordenar)
+// ===========================================================================
+//
+// ─── EL PROBLEMA QUE ESTE NIVEL TENÍA ─────────────────────────────────────
+//
+// Era, con diferencia, el peor de los cinco, y no por diseño sino porque las
+// dos formas de colocar un objeto estaban rotas:
+//
+//   EL TABLERO. Se comprobaba la distancia entre el objeto y el hueco con
+//   Vector3.Distance(...) < 0.42. El hueco está a 1,7 m de altura y el objeto
+//   arrastrado se desliza por el piso, a 0: solo la diferencia de altura ya
+//   son 1,7 > 0,42, así que la condición NO PODÍA cumplirse nunca. Colgar una
+//   herramienta era literalmente imposible. Encima las siluetas ni se veían:
+//   la lámina del dibujo quedaba enterrada dentro del panel.
+//
+//   LA ESTANTERÍA. Se apuntaba con el cursor y se lanzaba un rayo, pero el
+//   predicado aceptaba cualquier malla pinchable: el garaje, los montantes del
+//   propio mueble y la utilería de fondo interceptaban el rayo antes que la
+//   bandeja. Y no había ninguna señal en pantalla de a qué se estaba
+//   apuntando, así que se soltaba a ciegas.
+//
+// ─── CÓMO SE RESUELVE SIN TOCAR LOS OTROS NIVELES ─────────────────────────
+//
+// La causa de fondo es que el arrastre corre sobre un plano horizontal: el
+// objeto conserva su altura y se desliza. Es lo correcto para las zonas
+// pintadas en el suelo de los Niveles 1 y 4, y cambiarlo por un plano vertical
+// arreglaría este nivel y rompería los otros cuatro — con la cámara orbital,
+// arrastrar en el plano de pantalla lanza los objetos por el aire en cuanto se
+// gira un poco la vista.
+//
+// Así que el arrastre no se toca. Lo que se agrega es un ENGANCHE opcional
+// (ver InputController.ts): mientras se arrastra, este nivel lanza un rayo que
+// SOLO puede chocar contra receptores —láminas invisibles delante de cada
+// sitio válido, y nada más está en la lista, así que nada puede taparlas—. Si
+// acierta uno, el objeto se imanta: sube solo hasta la silueta o la balda y se
+// queda sostenido ahí mientras el cursor siga apuntando. Se ve dónde va a
+// quedar ANTES de soltar, con el borde del sitio encendido y su nombre en
+// pantalla. Sin enganche, ningún otro nivel cambia una línea.
+//
+// ─── LOS CRITERIOS QUE ENSEÑA (L-E-F) ─────────────────────────────────────
+//
+// Video 3.2 (1:52): "un lugar para cada cosa... una etiqueta para cada cosa y
+// cada cosa con su etiqueta". Y en 1:38: el área de trabajo debe "hablar por
+// sí sola" — por eso el destino es un SITIO del entorno y no una casilla de un
+// menú flotante.
+//
+// Video 3.3 (1:13): se ordena "por tipo de objeto, frecuencia de uso, fácil
+// acceso y por peso del objeto... en estanterías los objetos de gran peso
+// suelen ser colocados en la parte inferior".
+//
+// De ahí los tres destinos:
+//   uso diario     → tablero de siluetas, sobre el propio banco de trabajo
+//   uso ocasional  → repisa media
+//   objetos pesados→ repisa inferior, obligatoriamente
+//
+// Y la etiqueta no la escribe el jugador: APARECE SOLA al acertar, impresa en
+// el sitio. Es la mitad de la regla que siempre se olvida.
+
+/** Aumento mientras hay que encontrar y reconocer los objetos por el galpón. */
+const ESCALA_OBJETO = 2.0;
+
+/** Tamaño una vez guardado. Más chico, para que la balda no se vea abarrotada. */
+const ESCALA_COLOCADO = 1.25;
+
+// Agarre: el arrastre agranda el objeto un 15 % mientras se lo sostiene.
+const FACTOR_AGARRE = 1.15;
+
+// --- Sitio de cada mueble ---------------------------------------------------
+//
+// Todo mira a -Z, que es de donde mira la cámara del juego. El puesto de
+// trabajo va al centro del fondo y la estantería a su derecha: las dos zonas
+// se ven a la vez sin girar, que es condición para poder comparar destinos.
+const Z_PUESTO = 3.0;
+const Y_TABLERO = 1.62;
+const Z_TABLERO = 3.58;
+const X_ESTANTE = 3.5;
+const Z_ESTANTE = 3.2;
+
+/** Apoya una malla sobre una superficie, sea cual sea su escala. */
+function apoyarSobre(malla: Mesh, alturaSuperficie: number): void {
+  malla.computeWorldMatrix(true);
+  const base = malla.getBoundingInfo().boundingBox.minimumWorld.y;
+  malla.position.y += alturaSuperficie - base;
+}
+
+/** Qué sitio está apuntando el cursor en este momento. */
+type SitioApuntado =
+  | { tipo: "silueta"; hueco: HuecoTablero }
+  | { tipo: "balda"; balda: BaldaDestino };
 
 export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
@@ -27,7 +123,15 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // el techo proyectara la sombra de la luz direccional dejaría todo el
   // interior a oscuras. La luz de adentro la resuelve iluminarInteriorGaraje.
   void cargarGaraje(scene).catch((error) => console.error("[nivel2] garaje:", error));
-  iluminarInteriorGaraje(scene, [{ z: -0.5, intensidad: 0.9 }, { z: 1.8, intensidad: 0.75 }]);
+
+  // Tres focos: sobre la zona donde están los objetos sueltos, sobre el puesto
+  // con el tablero y sobre la estantería. Los dos destinos tienen que leerse
+  // igual de bien o el jugador elige por visibilidad y no por criterio.
+  iluminarInteriorGaraje(scene, [
+    { z: 0.2, intensidad: 0.9 },
+    { z: 2.9, intensidad: 0.85 },
+    { z: 3.2, intensidad: 0.7 },
+  ]);
 
   // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
   // por nivel para acompanar lo que ensena cada S.
@@ -40,185 +144,377 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   suelo.position.y = -0.02;
   suelo.isVisible = false;
 
-  // Banco de trabajo compartido con el Nivel 1. Un poco más ancho acá porque
-  // arranca con 7 objetos repartidos en dos filas.
-  crearBancoDeTrabajo(scene, { nombre: "escritorioN2", ancho: 4.8, fondo: 1.5, z: -0.5 });
-
-  // Geometría de las estaciones, tomada de ShelfSlot: la tabla está centrada en
-  // z = 1.8 y el panel vertical se levanta detrás, en z = 2.35.
-  const Z_ESTACION = 1.8;
-  const ALTURA_REPISA = 0.945;
-
-  // Recinto de arrastre.
+  // EL BANCO VUELVE, y con un motivo.
   //
-  // El tope en z frena las herramientas justo delante del panel de las
-  // estaciones. Sin esto el arrastre es un plano infinito y la herramienta
-  // atraviesa el panel de lado a lado, como si el mueble no existiera. Los
-  // topes en x evitan que un objeto termine dentro de una pared del garaje,
-  // desde donde ya no se puede recuperar.
-  const limitesArrastre = { xMin: -4.3, xMax: 4.3, zMin: -1.7, zMax: Z_ESTACION + 0.42 };
+  // Se había quitado porque ofrecía una superficie donde dejarlo todo sin
+  // decidir. Pero lo de uso diario tiene que quedar EN EL PUNTO DE USO, y sin
+  // puesto de trabajo no hay punto de uso: el tablero colgaría de una pared
+  // cualquiera y "está cerca" dejaría de significar algo. El banco no es un
+  // destino válido — no recibe objetos —, es lo que le da sentido al tablero
+  // que tiene encima.
+  crearBancoDeTrabajo(scene, { nombre: "bancoN2", ancho: 3.2, fondo: 0.95, z: Z_PUESTO });
 
-  const objetos = objetosNivel2.map((datos) =>
-    crearObjetoInteractable(scene, datos, crearFormaNivel2, limitesArrastre)
-  );
+  const tablero = crearTableroSombras(scene, 0, Y_TABLERO, Z_TABLERO, 0, [
+    "llave",
+    "destornillador",
+    "martillo",
+    "alicate",
+  ]);
 
-  // Realce al pasar el cursor, solo sobre los objetos agarrables. Acá pesa
-  // más que en el Nivel 1: el jugador no decide QUÉ es cada objeto sino
-  // DÓNDE va, así que distinguir de un vistazo lo que se puede mover de lo
-  // que es mobiliario le ahorra probar pieza por pieza.
+  // Estantería propia del nivel: vacía, de dos baldas y rotulada en el mueble.
+  // La de ambientación viene cargada de bultos y con cuatro alturas — no hay
+  // dónde poner nada y no se distingue cuál es la media y cuál la inferior.
+  const estante = crearEstanteDestino(scene, X_ESTANTE, Z_ESTANTE, 0);
+
+  // Recinto de arrastre, por delante de los muebles.
+  //
+  // El objeto NO necesita llegar hasta la estantería: para eso está el imán.
+  // Los límites solo evitan que se meta dentro de un mueble o de una pared,
+  // desde donde ya no se podría recuperar.
+  const limitesArrastre = { xMin: -4.3, xMax: 4.3, zMin: -2.0, zMax: 2.3 };
+
+  // =========================================================================
+  // EL IMÁN
+  // =========================================================================
+
+  /** Receptores: la única lista que el rayo puede tocar. */
+  const receptores = new Map<AbstractMesh, SitioApuntado>();
+  tablero.huecos.forEach((hueco) => receptores.set(hueco.receptor, { tipo: "silueta", hueco }));
+  estante.baldas.forEach((balda) => receptores.set(balda.receptor, { tipo: "balda", balda }));
+
+  /** Cuántos objetos lleva ya cada balda. Decide el sitio del siguiente. */
+  const ocupacion: Record<NivelBalda, number> = { media: 0, inferior: 0 };
+
+  /** Altura a la que cada objeto queda APOYADO en el piso, ya escalado. */
+  const alzadaEnPiso = new Map<Mesh, number>();
+
+  /** Sitio enganchado ahora mismo. Se lee al soltar. */
+  let apuntado: SitioApuntado | null = null;
+
+  const aviso = new TextBlock("avisoSitioNivel2", "");
+  aviso.color = "#a9e0bd";
+  aviso.fontSize = TEXTO.destacado;
+  aviso.fontWeight = "700";
+  aviso.outlineWidth = 5;
+  aviso.outlineColor = "rgba(0,0,0,0.85)";
+  aviso.top = "-150px";
+  aviso.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+  aviso.isVisible = false;
+  gui.addControl(aviso);
+
+  const nombreDelSitio = (sitio: SitioApuntado): string =>
+    sitio.tipo === "silueta"
+      ? `Silueta de ${sitio.hueco.id} — suelta para colgar`
+      : sitio.balda.nivel === "media"
+        ? "Repisa media · uso ocasional — suelta para guardar"
+        : "Repisa inferior · objetos pesados — suelta para guardar";
+
+  const apagarAviso = (): void => {
+    apuntado = null;
+    aviso.isVisible = false;
+    tablero.resaltar(null);
+    estante.resaltar(null);
+  };
+
+  /**
+   * Se consulta en cada cuadro del arrastre.
+   *
+   * El predicado del rayo solo admite receptores, así que nada de la escena
+   * puede interponerse: ni el garaje, ni el mueble, ni el objeto que se lleva
+   * en la mano. Es la diferencia con el `scene.pick` de antes, que aceptaba
+   * cualquier malla y fallaba casi siempre.
+   */
+  const buscarEnganche = (mesh: Mesh) => (libre: Vector3): PuntoEnganche | null => {
+    // Altura de reposo corregida por el agrandado del agarre: sin esto el
+    // objeto se hunde en el piso mientras se lo arrastra.
+    const alPiso = (alzadaEnPiso.get(mesh) ?? 0) * FACTOR_AGARRE;
+    const enElPiso: PuntoEnganche = {
+      punto: new Vector3(libre.x, alPiso, libre.z),
+      enElAire: false,
+    };
+
+    const golpe = scene.pick(scene.pointerX, scene.pointerY, (m) => receptores.has(m));
+    const sitio = golpe?.hit && golpe.pickedMesh ? receptores.get(golpe.pickedMesh) ?? null : null;
+
+    // Un hueco ya ocupado deja de ser destino: dos herramientas no comparten
+    // silueta, y admitirlo desdibujaría "un lugar para cada cosa".
+    if (!sitio || (sitio.tipo === "silueta" && sitio.hueco.ocupado)) {
+      if (apuntado) apagarAviso();
+      return enElPiso;
+    }
+
+    apuntado = sitio;
+    aviso.text = nombreDelSitio(sitio);
+    aviso.isVisible = true;
+
+    if (sitio.tipo === "silueta") {
+      tablero.resaltar(sitio.hueco.id);
+      estante.resaltar(null);
+      return { punto: sitio.hueco.receptor.position, enElAire: true };
+    }
+
+    tablero.resaltar(null);
+    estante.resaltar(sitio.balda.nivel);
+    return {
+      punto: estante.puntoSostenido(sitio.balda.nivel, ocupacion[sitio.balda.nivel]),
+      enElAire: true,
+    };
+  };
+
+  // =========================================================================
+  // OBJETOS
+  // =========================================================================
+
+  const objetos = objetosNivel2.map((datos) => {
+    // La malla se crea dentro de crearObjetoInteractable, así que el enganche
+    // necesita saber a qué malla pertenece antes de que exista. Se resuelve
+    // con una casilla que se rellena justo después: el enganche no se consulta
+    // hasta que alguien arrastra, mucho después de esta línea.
+    const casilla: { mesh: Mesh | null } = { mesh: null };
+
+    const objeto = crearObjetoInteractable(
+      scene,
+      datos,
+      crearFormaNivel2,
+      limitesArrastre,
+      (libre) => (casilla.mesh ? buscarEnganche(casilla.mesh)(libre) : null)
+    );
+
+    casilla.mesh = objeto.mesh;
+
+    // Mismo criterio que en el Nivel 1: a tamaño real las herramientas se
+    // pierden en un galpón de 12 x 19 m, y acá además hay que reconocer CUÁL
+    // es cada una para encajarla en su silueta.
+    objeto.mesh.scaling.setAll(ESCALA_OBJETO);
+
+    const [px, , pz] = datos.posicionInicial;
+    objeto.mesh.position.set(px, 0, pz);
+    if (datos.rotacionY !== undefined) objeto.mesh.rotation.y = datos.rotacionY;
+    apoyarSobre(objeto.mesh, 0);
+
+    alzadaEnPiso.set(objeto.mesh, objeto.mesh.position.y);
+
+    return objeto;
+  });
+
   const realce = habilitarRealceAlPasar(scene, objetos.map((o) => o.mesh));
-  const slots = slotsNivel2.map((s) => crearShelfSlot(scene, gui, s.id, s.posicionX, s.descripcion));
 
-  // Nombre y resalte al pasar el cursor, igual que en el Nivel 1. Acá importa
-  // incluso más: el jugador no decide QUÉ es cada objeto sino DÓNDE va, y para
-  // eso necesita identificarlo sin dudar.
   habilitarEtiquetasAlPasar(
     scene,
     gui,
-    objetos.map((objeto) => ({ mesh: objeto.mesh, texto: objeto.datos.nombreVisible }))
+    objetos.map((o) => ({ mesh: o.mesh, texto: o.datos.nombreVisible }))
   );
 
-  // APERTURA DEL NIVEL
+  // =========================================================================
+  // PANTALLA
+  // =========================================================================
+
+  // Los tres criterios, permanentes.
   //
-  // Primero se plantea la situación y la decisión a resolver, después el
-  // concepto de la fase, y recién al cerrar todo eso empieza a correr el
-  // nivel. Por eso el cronómetro arranca en false y se reinicia dentro de
-  // arrancarNivel: si contara desde la carga, el tiempo de lectura entraría
-  // en el puntaje y leer el contexto saldría caro.
+  // No es un tutorial: es la regla que el jugador tiene que aplicar ocho veces
+  // seguidas, y tenerla delante convierte el nivel en un ejercicio de criterio
+  // en vez de uno de memoria. La etiqueta al pasar el cursor dice QUÉ es cada
+  // objeto; decidir DÓNDE va sigue siendo suyo.
+  const criterios = new TextBlock(
+    "criteriosNivel2",
+    "Uso diario → tablero de siluetas   ·   Uso ocasional → repisa media   ·   Objetos pesados → repisa inferior"
+  );
+  criterios.color = "white";
+  criterios.fontSize = TEXTO.cuerpo;
+  criterios.outlineWidth = 3;
+  criterios.outlineColor = "rgba(0,0,0,0.6)";
+  criterios.textWrapping = true;
+  criterios.resizeToFit = true;
+  criterios.width = "620px";
+  criterios.top = "70px";
+  criterios.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  gui.addControl(criterios);
+
+  const ayuda = new TextBlock(
+    "ayudaNivel2",
+    "Arrastra el objeto y APUNTA con el cursor al sitio: subirá solo hasta ahí."
+  );
+  ayuda.color = "#c9d4dd";
+  ayuda.fontSize = TEXTO.menor;
+  ayuda.outlineWidth = 3;
+  ayuda.outlineColor = "rgba(0,0,0,0.6)";
+  ayuda.resizeToFit = true;
+  ayuda.width = "560px";
+  ayuda.top = "104px";
+  ayuda.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  gui.addControl(ayuda);
+
   let inicioNivel = performance.now();
   let corriendoTiempo = false;
 
-  function arrancarNivel(): void {
-    // El cronómetro del ranking arranca junto con el del nivel: leer la
-    // apertura no cuenta como tiempo de juego.
-    GameManager.getInstance().iniciarCronometroNivel();
-    inicioNivel = performance.now();
-    corriendoTiempo = true;
-  }
-
-  mostrarAperturaNivel(
-    scene,
-    2,
-    briefingsNiveles[2],
-    microLeccionesNiveles[2],
-    arrancarNivel
-  );
+  hud.definirObjetivo("Dale un lugar a cada cosa: silueta, repisa media o repisa inferior.");
+  hud.definirTotalTarea(objetosNivel2.length);
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
-    const segundos = Math.floor((performance.now() - inicioNivel) / 1000);
-    hud.actualizarTiempo(segundos);
+    hud.actualizarTiempo(Math.floor((performance.now() - inicioNivel) / 1000));
   });
 
-  let objetosResueltos = 0;
+  const arrancarCronometro = (): void => {
+    if (corriendoTiempo) return;
+    corriendoTiempo = true;
+    inicioNivel = performance.now();
+    // El reloj del ranking arranca con el primer objeto que se toca, no al
+    // cargar el nivel: leer la apertura no cuenta como tiempo de juego.
+    gameManager.iniciarCronometroNivel();
+  };
 
-  // Progreso en el panel: la cuenta ya existía para calcular el puntaje, solo
-  // no se estaba mostrando mientras se jugaba.
-  hud.definirTotalTarea(objetos.length);
-  let distanciaTotalRecorrida = 0;
+  mostrarAperturaNivel(scene, 2, briefingsNiveles[2], microLeccionesNiveles[2], () => {});
 
-  // Cuántas herramientas ya se guardaron en cada estación.
-  //
-  // Hay más objetos que estaciones (siete en cuatro), así que a varias les
-  // toca más de uno. Sin llevar la cuenta, el segundo se encajaría exactamente
-  // encima del primero y parecería que desapareció.
-  const guardadosPorSlot = new Map<string, number>();
+  let colocados = 0;
 
-  /** Punto exacto de la repisa donde se acomoda la herramienta. */
-  const lugarEnEstacion = (posicionX: number, yaGuardados: number): Vector3 =>
-    new Vector3(posicionX, ALTURA_REPISA, Z_ESTACION + (yaGuardados === 0 ? -0.2 : 0.22));
+  const registrarAvance = (): void => {
+    colocados++;
+    hud.actualizarProgreso(colocados);
+
+    if (colocados < objetosNivel2.length) return;
+
+    corriendoTiempo = false;
+    criterios.isVisible = false;
+    ayuda.isVisible = false;
+    apagarAviso();
+
+    const segundosTotales = Math.round((performance.now() - inicioNivel) / 1000);
+    const bonusTiempo = Math.max(0, 120 - segundosTotales);
+    gameManager.sumarPuntos(bonusTiempo);
+    onCompletado();
+
+    hud.mostrarFeedback(true, "Cada cosa tiene su lugar y su etiqueta. El área ya habla sola.");
+
+    luegoDe(scene, 1200, () => {
+      preguntarCierreDeNivel(gui, hud, 2, (cierre) => {
+        luegoDe(scene, 700, () => {
+          hud.mostrarResultadoFinal(
+            "Nivel 2",
+            colocados * 10,
+            bonusTiempo,
+            segundosTotales,
+            onVolverMenu,
+            cierre
+          );
+        });
+      });
+    });
+  };
+
+  /** Devuelve el objeto a donde estaba y lo deja apoyado. */
+  const devolver = (mesh: Mesh, datos: (typeof objetosNivel2)[number]): void => {
+    moverMalla(scene, mesh, new Vector3(datos.posicionInicial[0], mesh.position.y, datos.posicionInicial[2]), 300);
+    luegoDe(scene, 320, () => apoyarSobre(mesh, 0));
+  };
+
+  const fallar = (mesh: Mesh, datos: (typeof objetosNivel2)[number], mensaje: string): void => {
+    reproducir("error");
+    hud.mostrarFeedback(false, mensaje, mesh.position.clone());
+    devolver(mesh, datos);
+  };
 
   objetos.forEach((objeto) => {
-    // Al agarrar otro objeto el jugador ya pasó a lo siguiente: se apaga el
-    // mensaje anterior para dejar la pantalla limpia y que el resultado de
-    // ESTA acción se lea sin competencia.
-    objeto.onAgarrar.add(() => hud.ocultarFeedback());
+    objeto.onAgarrar.add(() => arrancarCronometro());
 
-    objeto.onSoltar.add(({ mesh, movioSuficiente, distancia }) => {
-      if (!movioSuficiente) return;
+    objeto.onSoltar.add(({ mesh }) => {
+      const sitio = apuntado;
+      const datos = objeto.datos;
+      apagarAviso();
 
-      distanciaTotalRecorrida += distancia;
-
-      const slotMasCercano = slotsNivel2.reduce((mejor, actual) =>
-        Math.abs(mesh.position.x - actual.posicionX) < Math.abs(mesh.position.x - mejor.posicionX) ? actual : mejor
-      );
-
-      const esCorrecto = slotMasCercano.id === objeto.datos.slotCorrectoId;
-
-      if (esCorrecto) {
-        gameManager.sumarPuntos(10);
-        // Las partículas brotan del objeto recién soltado, no del centro de la
-        // pantalla: así premian ESA decisión y no el hecho de haber hecho algo.
-        hud.mostrarFeedback(true, objeto.datos.explicacion, mesh.position.clone());
-        // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
-        // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
-        // hija volvia a habilitar el arrastre de un objeto ya resuelto.
-        objeto.fijar();
-        // Deja de realzarse: ya no se puede agarrar, y seguir marcándolo
-        // como agarrable sería mentir.
-        realce.quitar(objeto.mesh);
-
-        // Encaje animado en la silueta, igual que en el Nivel 1: la herramienta
-        // se acomoda sola en su lugar en vez de quedar donde cayó. Es el gesto
-        // que enseña el nivel — un lugar para cada cosa, y cada cosa en su lugar.
-        const yaGuardados = guardadosPorSlot.get(slotMasCercano.id) ?? 0;
-        guardadosPorSlot.set(slotMasCercano.id, yaGuardados + 1);
-        moverMalla(scene, mesh, lugarEnEstacion(slotMasCercano.posicionX, yaGuardados), 300);
-
-        objetosResueltos++;
-        hud.actualizarProgreso(objetosResueltos);
-
-        if (objetosResueltos === objetos.length) {
-          corriendoTiempo = false;
-          const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
-          // Recalibrado: con 7 objetos (antes 4), completar rápido toma más tiempo real.
-          const bonusTiempo = Math.max(0, 100 - segundosTotales);
-          gameManager.sumarPuntos(bonusTiempo);
-          onCompletado();
-
-          // Nod a "eficiencia de ubicación" que pide la guía: la distancia
-          // total de ajuste es una medida lúdica de qué tan directo fuiste
-          // al mover cada objeto a su lugar.
-          hud.mostrarFeedback(
-            true,
-            `¡Estante organizado! Distancia total de ajuste: ${distanciaTotalRecorrida.toFixed(1)}m — mientras menor, más eficiente tu búsqueda.`
-          );
-
-          luegoDe(scene, 1000, () => {
-            // Pregunta de cierre: plantea un caso nuevo y pide aplicar el
-            // criterio que el nivel acaba de hacer practicar. El resultado se
-            // muestra recién después de responderla.
-            preguntarCierreDeNivel(gui, hud, 2, (cierre) => {
-              // El panel sale enseguida. La explicación de la pregunta viaja adentro
-              // de él, así que ya no hay que esperar a que se apague ningún cartel:
-              // esta pausa es solo para que el cierre no se sienta abrupto.
-              luegoDe(scene, 700, () => {
-                hud.mostrarResultadoFinal("Nivel 2", objetosResueltos * 10, bonusTiempo, segundosTotales, onVolverMenu, cierre);
-              });
-            });
-          });
-        }
-      } else {
-        hud.mostrarFeedback(false, objeto.datos.explicacion, mesh.position.clone());
-
-        // Fricción visual: el objeto "rebota" al no encajar — refuerza
-        // sin palabras que ese no es su lugar, tal como pide la guía
-        // ("ubicar mal genera fricción visual").
-        mesh.scaling.setAll(0.85);
-        setTimeout(() => mesh.scaling.setAll(1.1), 90);
-        luegoDe(scene, 180, () => {
-          mesh.scaling.setAll(1);
-          // Después del rebote vuelve a su sitio en el banco. Antes se quedaba
-          // apoyado sobre la estación equivocada, y a los pocos errores las
-          // repisas mostraban herramientas que en realidad no estaban guardadas.
-          moverMalla(scene, mesh, new Vector3(...objeto.datos.posicionInicial), 300);
-        });
+      // No se apuntó a ningún sitio: el objeto se queda donde cayó. No es un
+      // error —todavía no decidió nada— así que no se penaliza ni se devuelve.
+      if (!sitio) {
+        apoyarSobre(mesh, 0);
+        return;
       }
+
+      // --- Tablero de siluetas: uso diario, en el punto de uso ---
+      if (sitio.tipo === "silueta") {
+        if (datos.destino !== "tablero") {
+          fallar(
+            mesh,
+            datos,
+            datos.destino === "inferior"
+              ? "El tablero es para lo que se usa a diario y se toma de un movimiento. Esto pesa: va abajo."
+              : "El tablero es para lo que se usa todos los días. Esto se consulta de vez en cuando: repisa media."
+          );
+          return;
+        }
+
+        if (datos.silueta !== sitio.hueco.id) {
+          fallar(
+            mesh,
+            datos,
+            "Esa silueta es de otra herramienta. Cada una tiene la suya: por eso están dibujadas."
+          );
+          return;
+        }
+
+        sitio.hueco.ocupado = true;
+        objeto.fijar();
+        realce.quitar(mesh);
+
+        moverMalla(scene, mesh, sitio.hueco.centro, 240);
+        luegoDe(scene, 260, () => {
+          // Apoyada sobre la silueta y de cara al taller.
+          mesh.rotation.set(0, 0, 0);
+          mesh.scaling.setAll(ESCALA_COLOCADO);
+        });
+
+        // LA ETIQUETA SE ESCRIBE SOLA.
+        //
+        // Es la segunda mitad de la regla del curso —"una etiqueta para cada
+        // cosa"— y verla aparecer al acertar enseña que el lugar sin rótulo no
+        // basta: el sitio queda identificado para quien venga después.
+        tablero.rotular(sitio.hueco.id, datos.nombreVisible);
+
+        gameManager.sumarPuntos(10);
+        reproducir("acierto");
+        hud.mostrarFeedback(true, datos.explicacion, mesh.position.clone());
+        registrarAvance();
+        return;
+      }
+
+      // --- Estantería: frecuencia y, por encima de todo, peso ---
+      const nivel = sitio.balda.nivel;
+
+      if (datos.destino !== nivel) {
+        fallar(
+          mesh,
+          datos,
+          datos.destino === "inferior"
+            ? "Pesa demasiado para esa altura. Los objetos de gran peso van en la balda inferior."
+            : datos.destino === "tablero"
+              ? "Esta se usa a diario: su sitio es el tablero, sobre el banco, no la estantería."
+              : "La balda inferior es para el peso. Esto se consulta de vez en cuando: va a la media."
+        );
+        return;
+      }
+
+      const indice = ocupacion[nivel];
+      ocupacion[nivel]++;
+
+      objeto.fijar();
+      realce.quitar(mesh);
+
+      moverMalla(scene, mesh, estante.lugarEnBalda(nivel, indice), 240);
+      luegoDe(scene, 260, () => {
+        mesh.rotation.y = 0;
+        mesh.scaling.setAll(ESCALA_COLOCADO);
+        apoyarSobre(mesh, sitio.balda.superficieY);
+      });
+
+      // Misma regla que en el tablero: el sitio queda rotulado solo.
+      estante.rotular(nivel, indice, datos.nombreVisible);
+
+      gameManager.sumarPuntos(10);
+      reproducir("acierto");
+      hud.mostrarFeedback(true, datos.explicacion, mesh.position.clone());
+      registrarAvance();
     });
   });
 
-  return { objetos, slots };
+  // Se devuelven los huecos del tablero: main.ts los usa para las sombras.
+  return { objetos, slots: tablero.huecos };
 }
-
-// Micro-lección: explica qué es un "shadow board" antes de jugar — el
-// mismo tratamiento que le dimos a la tarjeta roja en el Nivel 1.
