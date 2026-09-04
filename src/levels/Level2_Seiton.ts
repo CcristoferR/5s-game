@@ -105,6 +105,39 @@ function apoyarSobre(malla: Mesh, alturaSuperficie: number): void {
   malla.position.y += alturaSuperficie - base;
 }
 
+/**
+ * Deja una herramienta colgada de cara al tablero, alineada con su silueta.
+ *
+ * ─── POR QUÉ NO ALCANZA CON rotation.set(0, 0, 0) ─────────────────────────
+ *
+ * Las siluetas están dibujadas verticales, pero las herramientas no comparten
+ * eje. Se modelaron en distintos momentos y cada una quedó con el suyo:
+ *
+ *   llave fija      eje largo en Z (0,26)   ·  tumbada
+ *   martillo        eje largo en Z (0,24)   ·  tumbada
+ *   alicate         eje largo en Z (0,20)   ·  tumbado
+ *   destornillador  eje largo en Y (0,16)   ·  de pie
+ *
+ * Poniendo la rotación en cero, el destornillador quedaba bien y las otras
+ * tres se clavaban perpendiculares al panel, apuntando a la cámara.
+ *
+ * Se corrige MIDIENDO en vez de con una tabla por herramienta: se compara el
+ * alto contra el fondo de la caja envolvente y, si la pieza es más larga en Z
+ * que en Y, se la gira un cuarto de vuelta para llevar su eje largo a la
+ * vertical. Así cualquier herramienta que se agregue después queda bien sin
+ * tocar esta función — y si alguien remodela una, sigue funcionando.
+ *
+ * extendSize es la media caja en coordenadas LOCALES, así que no la afecta el
+ * giro que el objeto traiga de haber estado tirado por el piso.
+ */
+function colgarEnSilueta(malla: Mesh): void {
+  const media = malla.getBoundingInfo().boundingBox.extendSize;
+
+  // Un cuarto de vuelta sobre X lleva el eje Z a la vertical y deja la cara
+  // plana de la herramienta contra el panel.
+  malla.rotation.set(media.z > media.y ? Math.PI / 2 : 0, 0, 0);
+}
+
 /** Qué sitio está apuntando el cursor en este momento. */
 type SitioApuntado =
   | { tipo: "silueta"; hueco: HuecoTablero }
@@ -457,8 +490,7 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
         moverMalla(scene, mesh, sitio.hueco.centro, 240);
         luegoDe(scene, 260, () => {
-          // Apoyada sobre la silueta y de cara al taller.
-          mesh.rotation.set(0, 0, 0);
+          colgarEnSilueta(mesh);
           mesh.scaling.setAll(ESCALA_COLOCADO);
         });
 

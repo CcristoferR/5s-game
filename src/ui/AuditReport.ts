@@ -1,4 +1,4 @@
-import { AdvancedDynamicTexture, Rectangle, StackPanel, ScrollViewer, TextBlock, Control } from "@babylonjs/gui";
+import { AdvancedDynamicTexture, Rectangle, StackPanel, ScrollViewer, Control } from "@babylonjs/gui";
 import type { PuntoControlNivel5 } from "../data/levelConfig";
 import {
   PALETA,
@@ -108,7 +108,7 @@ export function mostrarInformeAuditoria(
     const anchoTextoFila = ANCHO_CONTENIDO - 60;
     // El ancho del texto descuenta la insignia: sin esto el título pasaba por
     // debajo de ella y quedaba tapado en las descripciones largas.
-    const anchoTitulo = anchoTextoFila - 118;
+    const anchoTitulo = anchoTextoFila;
 
     const alto =
       altoDeTexto(fila.datos.descripcionControl, anchoTitulo, TEXTO.cuerpo) +
@@ -136,34 +136,16 @@ export function mostrarInformeAuditoria(
     franja.isHitTestVisible = false;
     marco.addControl(franja);
 
-    // Insignia del estado del punto, arriba a la derecha. Ámbar para
-    // desviación y verde apagado para cumple: colores distintos de los del
-    // acierto para que no se confundan las dos lecturas.
-    const colorEstado = hayDesviacion ? PALETA.aviso : PALETA.acierto;
-
-    const insignia = new Rectangle(`insigniaInforme_${fila.datos.id}`);
-    insignia.width = "116px";
-    insignia.height = "28px";
-    insignia.cornerRadius = 6;
-    insignia.thickness = 1;
-    insignia.color = colorEstado;
-    insignia.background = hayDesviacion ? "rgba(189,160,121,0.16)" : "rgba(127,180,149,0.14)";
-    insignia.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    insignia.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    insignia.left = "-16px";
-    insignia.top = "14px";
-    insignia.isHitTestVisible = false;
-    marco.addControl(insignia);
-
-    const textoInsignia = new TextBlock(
-      `textoInsignia_${fila.datos.id}`,
-      `${hayDesviacion ? "DESVIACIÓN" : "CUMPLE"} ${fila.datos.calificacion}/5`
-    );
-    textoInsignia.color = colorEstado;
-    textoInsignia.fontSize = TEXTO.rotulo - 1;
-    textoInsignia.fontWeight = "700";
-    textoInsignia.isHitTestVisible = false;
-    insignia.addControl(textoInsignia);
+    // SIN INSIGNIA DE ESTADO.
+    //
+    // Decía "DESVIACIÓN" o "CUMPLE" al lado de un renglón que ya dice
+    // "Detectaste la desviación" o "Bien: no había nada que reportar". Son el
+    // mismo dato contado dos veces y con palabras distintas, y eso siembra la
+    // duda de si se contradicen: un ámbar que dice DESVIACIÓN junto a un tilde
+    // verde parece un error aunque signifiquen lo mismo.
+    //
+    // El renglón del veredicto ya dice las dos cosas que hacen falta: qué
+    // había y si el auditor lo vio.
 
     const columna = new StackPanel(`columnaInforme_${fila.datos.id}`);
     columna.isVertical = true;
@@ -191,7 +173,20 @@ export function mostrarInformeAuditoria(
     columna.addControl(
       crearParrafo(
         `estadoFila_${fila.datos.id}`,
-        acerto ? "\u2713  Lo detectaste" : "\u2715  Se te pasó",
+        // CUATRO casos, no dos.
+        //
+        // "Lo detectaste" y "Se te pasó" venían de cuando lo único evaluable
+        // era encontrar desvíos. Ahora el jugador también dictamina sobre
+        // puntos que CUMPLEN, y ahí esos dos textos mienten: declarar
+        // correctamente que algo está bien no es "detectar" nada, y reportar
+        // una falta inexistente no es que "se te pasara" — es lo contrario.
+        hayDesviacion
+          ? acerto
+            ? "\u2713  Detectaste la desviación"
+            : "\u2715  Se te pasó esta desviación"
+          : acerto
+            ? "\u2713  Bien: no había nada que reportar"
+            : "\u2715  Reportaste una falta que no existía",
         anchoTextoFila,
         TEXTO.menor,
         color,

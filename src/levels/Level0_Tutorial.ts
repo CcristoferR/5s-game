@@ -36,6 +36,16 @@ import { moverMalla } from "../core/Animacion";
  */
 
 const POSICION_OBJETO: [number, number, number] = [0, 0.945, -0.5];
+
+/**
+ * Recinto por el que se puede arrastrar la taza.
+ *
+ * Mas ajustado que el del Nivel 1 a proposito: aca hay un solo objeto y una
+ * sola zona, y el tutorial es donde el jugador aprende a arrastrar. Si en su
+ * primer intento manda la taza al fondo del galpon y no la puede recuperar, se
+ * queda trabado justo en el paso que le esta ensenando la mecanica.
+ */
+const LIMITES_ARRASTRE = { xMin: -3.4, xMax: 3.4, zMin: -2.2, zMax: 3.6 };
 const X_ZONA = 0;
 // Mismas medidas que usa DropZone, para que "dentro" signifique dentro.
 const Z_ZONA = 2.4;
@@ -75,7 +85,8 @@ export function cargarTutorial(scene: Scene, hud: HUD, onVolverMenu: () => void,
   const objeto = crearObjetoInteractable(
     scene,
     { id: "taza_cafe", posicionInicial: POSICION_OBJETO },
-    crearFormaNivel1 as never
+    crearFormaNivel1 as never,
+    LIMITES_ARRASTRE
   );
 
   // El tutorial es donde mas hace falta: es la primera vez que alguien ve la

@@ -345,7 +345,9 @@ function construirNivel(numeroNivel: number): void {
     npc.mesh.getChildMeshes().forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m));
   } else if (numeroNivel === 5) {
     const { puntos } = cargarNivel5(sceneManager.scene, hud, volverAlMenu, onCompletado, () => reintentarNivel(5));
-    puntos.forEach((p) => p.meshesSombra.forEach((m) => sceneManager.shadowGenerator.addShadowCaster(m)));
+    // Los volúmenes de clic son transparentes: no proyectan sombra ni deben.
+    // La sombra la dan las piezas reales que monta cada hallazgo.
+    puntos.forEach((p) => sceneManager.shadowGenerator.addShadowCaster(p.mesh));
   }
 
   iniciarAmbiente();

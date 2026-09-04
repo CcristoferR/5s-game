@@ -40,6 +40,23 @@ export interface ResultadoAuditoriaNivel5 {
 // entregar el certificado. Cuando exista login/backend, esto es lo único
 // que hay que conectar para guardar el progreso real — el resto del juego
 // no cambia.
+/**
+ * Tarjeta roja tal como la llenó el jugador en el Nivel 1.
+ *
+ * Se guarda el texto del plazo EXACTAMENTE como se escribió, además de la
+ * fecha interpretada. Si alguien puso algo que no es una fecha, el Nivel 5
+ * tiene que poder mostrar lo que puso — parte de auditar es encontrar una
+ * tarjeta mal llenada.
+ */
+export interface TarjetaRojaEmitida {
+  objetoId: string;
+  nombreObjeto: string;
+  responsable: string;
+  plazoTexto: string;
+  /** Fecha interpretada. Null si el texto no era una fecha reconocible. */
+  plazo: Date | null;
+}
+
 export class GameManager {
   private static instance: GameManager;
 
@@ -53,10 +70,39 @@ export class GameManager {
   private nivelesCompletados = new Set<number>();
   private readonly totalNiveles = 5;
 
+  /**
+   * Tarjetas rojas emitidas en el Nivel 1.
+   *
+   * Se conservan para el Nivel 5, donde el jugador tiene que AUDITAR su propio
+   * trabajo: comprobar si el plazo que él mismo escribió ya venció y el objeto
+   * sigue ahí. Video 3.1 (3:29): la tarjeta necesita "un responsable que le
+   * haga seguimiento al cumplimiento y control". Ese seguimiento es el
+   * ejercicio del Nivel 5.
+   *
+   * Vive en memoria durante la sesión, igual que el estándar del Nivel 4: no
+   * es progreso que haya que guardar en el servidor, es el estado de una
+   * partida.
+   */
+  private tarjetasRojas: TarjetaRojaEmitida[] = [];
+
   private estandarNivel4: EstandarNivel4 = { checklist: [], senalizacion: [] };
   private resultadoAuditoriaNivel5: ResultadoAuditoriaNivel5 | null = null;
 
   private constructor() {}
+
+  /** Registra una tarjeta roja al colocarla en el Nivel 1. */
+  registrarTarjetaRoja(tarjeta: TarjetaRojaEmitida): void {
+    this.tarjetasRojas.push(tarjeta);
+  }
+
+  getTarjetasRojas(): TarjetaRojaEmitida[] {
+    return [...this.tarjetasRojas];
+  }
+
+  /** Se vacía al reiniciar el Nivel 1, para no acumular las de la partida anterior. */
+  limpiarTarjetasRojas(): void {
+    this.tarjetasRojas = [];
+  }
 
   static getInstance(): GameManager {
     if (!GameManager.instance) {

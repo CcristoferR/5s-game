@@ -35,6 +35,26 @@ export interface DatosTarjeta {
   plazo: string;
 }
 
+/**
+ * Interpreta el plazo escrito a mano.
+ *
+ * Acepta dd/mm/aaaa y dd-mm-aaaa, que es como lo sugiere el formulario. Si no
+ * se reconoce devuelve null, y eso NO es un error a ocultar: una tarjeta con
+ * un plazo ilegible es un hallazgo válido para la auditoría del Nivel 5.
+ */
+export function interpretarPlazo(texto: string): Date | null {
+  const m = texto.trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (!m) return null;
+
+  const dia = Number(m[1]);
+  const mes = Number(m[2]) - 1;
+  const anio = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+
+  const fecha = new Date(anio, mes, dia);
+  // Se comprueba que la fecha exista de verdad: 31/02 se colaría sin esto.
+  return fecha.getDate() === dia && fecha.getMonth() === mes ? fecha : null;
+}
+
 /** Plazo por defecto: un mes desde hoy, el máximo que recomienda el curso. */
 function plazoSugerido(): string {
   const fecha = new Date();

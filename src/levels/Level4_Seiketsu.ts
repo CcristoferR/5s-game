@@ -258,6 +258,8 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         // piso o a un interruptor es como no apuntar a nada.
         if (!sitio || sitio.tipo !== "puerto") {
           if (apuntado) apagarAviso();
+          // De vuelta de frente: la espiga tiene que verse para poder elegir.
+          mesh.rotation.y = 0;
           return enElPiso(libre, alzadaDe(mesh));
         }
 
@@ -280,6 +282,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
               : "No entra: la espiga no tiene la forma de ese puerto",
             "#e8c07a"
           );
+          mesh.rotation.y = 0;
           return enElPiso(libre, alzadaDe(mesh));
         }
 
@@ -288,6 +291,20 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
         pisos.resaltar(null);
         panel.resaltar(null);
         mostrarAviso("Encaja aquí — suelta para conectar", "#a9e0bd");
+
+        // Se da vuelta MIENTRAS se lo sostiene, no al soltarlo.
+        //
+        // El conector está modelado con la espiga hacia -Z, o sea hacia la
+        // cámara: es a propósito, porque la FORMA de la espiga es la única
+        // pista que tiene el jugador para saber en qué puerto va, y de espaldas
+        // no se vería. Pero la cara frontal del armario también mira a -Z, así
+        // que enchufarlo sin girarlo metía el rollo de cable dentro del tablero
+        // y dejaba la punta metálica asomando hacia afuera.
+        //
+        // Girarlo acá y no en el traslado hace que el gesto se lea: la pieza
+        // se da vuelta en el aire, delante del puerto, como cuando uno acomoda
+        // un enchufe antes de meterlo.
+        mesh.rotation.y = Math.PI;
         return { punto: puerto.sostenido, enElAire: true };
       }
     );

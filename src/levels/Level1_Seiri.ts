@@ -13,7 +13,7 @@ import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearFormaNivel1 } from "../entities/Level1Shapes";
 import { crearRotulo3D } from "../entities/Rotulo3D";
 import { crearPalletConCajas, crearTamboresAceite, crearPilaDeCajas } from "../entities/WorkshopProps";
-import { pedirDatosTarjeta, colocarTarjetaRoja, crearAreaDescarte } from "../entities/TarjetaRoja";
+import { pedirDatosTarjeta, colocarTarjetaRoja, crearAreaDescarte, interpretarPlazo } from "../entities/TarjetaRoja";
 import { reproducir } from "../core/Sonido";
 import { TEXTO } from "../ui/EstiloUI";
 import { GameManager } from "../core/GameManager";
@@ -27,6 +27,28 @@ import { HUD } from "../ui/HUD";
  * siempre a la vista mientras se recorre el fondo buscando.
  */
 const Z_ZONA = 2.4;
+
+/**
+ * Recinto por el que se puede arrastrar.
+ *
+ * Sin esto los objetos se salian del galpon, y no era un problema estetico
+ * sino un bloqueo: el arrastre corre sobre un plano horizontal y la camara
+ * llega casi a ras del piso (beta 1.52), asi que el rayo del cursor corta ese
+ * plano a decenas de metros. Un movimiento brusco hacia el horizonte mandaba
+ * la pieza fuera del recinto, la camara esta limitada a los muros y ya no
+ * habia forma de recuperarla ni de terminar el nivel.
+ *
+ * Los margenes salen de las zonas, no de un numero redondo: las demarcaciones
+ * llegan hasta x = 4.4 y hasta z = Z_ZONA + 1.6, y hay que poder soltar dentro
+ * de ellas con holgura. Por detras se corta antes de los muros del garaje
+ * (x = 5.8, z = 9.2) para que nada quede pegado contra una pared.
+ */
+const LIMITES_ARRASTRE = {
+  xMin: -4.9,
+  xMax: 4.9,
+  zMin: -2.4,
+  zMax: Z_ZONA + 2.0,
+};
 
 /**
  * Aumento de los objetos del nivel.
@@ -113,7 +135,7 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   //
   // El banco sigue en escena, pero como mueble: sostiene dos objetos, no diez.
   const objetos = objetosNivel1.map((datos) => {
-    const objeto = crearObjetoInteractable(scene, datos, crearFormaNivel1);
+    const objeto = crearObjetoInteractable(scene, datos, crearFormaNivel1, LIMITES_ARRASTRE);
 
     // Aumentados respecto de su tamaño real.
     //
@@ -261,6 +283,10 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   let resueltos = 0;
   let tarjetasEmitidas = 0;
+
+  // Se vacía el registro al empezar: si se rejuega el Nivel 1, las tarjetas de
+  // la vuelta anterior no deben aparecer en la auditoría.
+  gameManager.limpiarTarjetasRojas();
   const conteo = { necesario: 0, descartar: 0, tarjetaRoja: 0 };
 
   const registrarAvance = (): void => {
@@ -317,6 +343,17 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
           pesado.etiquetado = true;
           tarjetasEmitidas++;
+
+          // Se registra para el Nivel 5: ahí el jugador tendrá que auditar su
+          // propia tarjeta y comprobar si el plazo que escribió ya venció.
+          gameManager.registrarTarjetaRoja({
+            objetoId: pesado.datos.id,
+            nombreObjeto: pesado.datos.nombreVisible,
+            responsable: datos.responsable,
+            plazoTexto: datos.plazo,
+            plazo: interpretarPlazo(datos.plazo),
+          });
+
           conteo.tarjetaRoja++;
 
           const [px, pz] = pesado.datos.posicion;
@@ -441,6 +478,15 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
           }
 
           tarjetasEmitidas++;
+
+          gameManager.registrarTarjetaRoja({
+            objetoId: objeto.datos.id,
+            nombreObjeto: objeto.datos.nombreVisible,
+            responsable: datos.responsable,
+            plazoTexto: datos.plazo,
+            plazo: interpretarPlazo(datos.plazo),
+          });
+
           conteo.tarjetaRoja++;
           objeto.fijar();
           realce.quitar(mesh);
