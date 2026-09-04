@@ -209,7 +209,7 @@ export function colocarTarjetaRoja(
 
   const alambre = MeshBuilder.CreateCylinder(
     `alambreTR_${id}`,
-    { diameter: 0.009, height: 0.13, tessellation: 8 },
+    { diameter: 0.011, height: 0.17, tessellation: 8 },
     scene
   );
   alambre.position.y = 0.15;
@@ -269,7 +269,13 @@ export function colocarTarjetaRoja(
 
   const tarjeta = MeshBuilder.CreateBox(
     `chapaTR_${id}`,
-    { width: 0.19, height: 0.26, depth: 0.005 },
+    // Agrandada de 0,19 x 0,26 a 0,30 x 0,40.
+    //
+    // Una tarjeta roja tamaño A6 colgando de una caja al fondo del galpon no se
+    // ve, y el sentido entero de la tarjeta es que se vea de lejos: Video 3.1
+    // marca que sirve para identificar de un vistazo lo que esta pendiente de
+    // decision. Si hay que acercarse a buscarla, no cumple su funcion.
+    { width: 0.3, height: 0.4, depth: 0.006 },
     scene
   );
   tarjeta.position.set(0.045, 0.03, 0.02);

@@ -556,9 +556,22 @@ export function cargarNivel5(
     }));
 
     const totalPuntos = registro.hallazgos.length;
+    // EL ACIERTO SE MIDE SOBRE EL DICTAMEN. Esta línea estaba mal y hacía
+    // imposible aprobar.
+    //
+    // La versión anterior contaba como acierto "haber tocado un desvío" y
+    // "no haber tocado lo conforme" — el criterio de cuando el nivel era hacer
+    // clic en esferas. Con el panel de dictamen eso da resultados absurdos:
+    // inspeccionar un punto conforme y declararlo correctamente CUMPLE pasaba
+    // a contar como fallo, porque el jugador sí lo había tocado. Auditar bien
+    // los tres puntos podía dar 33 % y no aprobar de ninguna manera.
+    //
+    // Lo correcto es comparar lo que el jugador DECIDIÓ contra lo que había:
+    // reportar un desvío real y dejar pasar lo que cumple son los dos aciertos
+    // posibles.
     const aciertosFinales = registro.hallazgos.filter(
-      (h) => h.auditado && h.esDesvio
-    ).length + registro.hallazgos.filter((h) => !h.auditado && !h.esDesvio).length;
+      (h) => h.auditado && h.reportado === h.esDesvio
+    ).length;
 
     // Calificación 5S del ÁREA, no de cada punto.
     //

@@ -73,7 +73,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
     // Metida en el vano del portón, contra el marco. Bajada de escala 3,4 a
     // 2,4: a 3,4 no cabía en el cuadro del área de descarte al clasificarla, y
     // una vez etiquetada se encimaba con lo demás.
-    posicionInicial: [-0.5, 0, 5.75],
+    posicionInicial: [-0.15, 0, 4.05],
     rotacionY: 0.22,
     escala: 2.4,
     destino: "tarjetaRoja",
@@ -85,7 +85,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "chatarra_metal",
     nombreVisible: "Pieza de metal sin identificar",
-    posicionInicial: [-1.95, 0, 3.95],
+    posicionInicial: [-0.75, 0, 3.55],
     rotacionY: 1.1,
     destino: "descartar",
     metros: 0.14,
@@ -98,7 +98,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "diario_viejo",
     nombreVisible: "Diario de hace 6 meses",
-    posicionInicial: [1.15, 0, 4.4],
+    posicionInicial: [0.85, 0, 3.9],
     rotacionY: -0.25,
     destino: "descartar",
     metros: 0.1,
@@ -168,7 +168,7 @@ export const objetosNivel1: ObjetoNivel1[] = [
   {
     id: "cinta_metrica",
     nombreVisible: "Cinta métrica",
-    posicionInicial: [-4.9, 0, 0.15],
+    posicionInicial: [-4.35, 0, -0.55],
     rotacionY: 1.4,
     destino: "necesario",
     metros: 0,

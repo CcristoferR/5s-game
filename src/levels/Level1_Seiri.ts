@@ -194,14 +194,21 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     // Rótulo permanente. Los objetos sueltos avisan al pasar el cursor por
     // encima, pero estos son utilería del taller: sin un cartel no hay nada
     // que insinúe que se puede actuar sobre ellos.
-    crearRotulo3D(scene, `pesado_${datos.id}`, datos.nombreVisible, new Vector3(px, 1.35, pz), {
-      ancho: 1.5,
-      alto: 0.26,
+    // Cartel mas grande y mas alto.
+    //
+    // Medía 1,50 x 0,26 m con letras de 7,5 cm, y estos tres objetos están al
+    // fondo del galpón: desde donde arranca la cámara quedaba una rayita
+    // ilegible. El problema no era la resolución de la textura —el rótulo va a
+    // 1400 px por metro— sino el tamaño físico del cartel. Un rótulo de planta
+    // se dimensiona por la distancia desde la que hay que leerlo.
+    crearRotulo3D(scene, `pesado_${datos.id}`, datos.nombreVisible, new Vector3(px, 1.62, pz), {
+      ancho: 2.1,
+      alto: 0.42,
       lineasMax: 2,
       colorFondo: "#1a1f24",
-      colorBorde: "rgba(255,255,255,0.22)",
+      colorBorde: "rgba(255,255,255,0.3)",
       mirarCamara: true,
-      alturaTextoMin: 0.075,
+      alturaTextoMin: 0.135,
     });
 
     return { datos, zona, etiquetado: false };
