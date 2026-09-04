@@ -137,10 +137,10 @@ export function ambientarNivel(scene: Scene, numeroNivel: number): void {
       //
       // Nada al centro del fondo: la banda z 4.2 la ocupan las zonas de
       // señalización del propio nivel.
-      crearEstanteriaTaller(scene, 5.1, 1.6, -Math.PI / 2);
-      crearTableroHerramientas(scene, -5.85, 1.2, Math.PI / 2);
-      crearCarroDeLimpieza(scene, -5.0, 3.0, Math.PI / 2);
-      crearSenalPisoMojado(scene, -4.7, 4.6, 0.3);
+      crearEstanteriaTaller(scene, 5.1, 2.4, -Math.PI / 2);
+      crearTableroHerramientas(scene, -5.85, 5.2, Math.PI / 2);
+      crearCarroDeLimpieza(scene, 5.1, 5.4, Math.PI);
+      crearSenalPisoMojado(scene, -5.0, 6.2, 0.3);
       break;
 
     case 5:

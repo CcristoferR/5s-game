@@ -1,53 +1,134 @@
-import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
+import { Scene, MeshBuilder, Vector3, Mesh, AbstractMesh } from "@babylonjs/core";
 import {
   AdvancedDynamicTexture, TextBlock, Control, Rectangle, Button, ScrollViewer, StackPanel,
 } from "@babylonjs/gui";
-import { itemsNivel4, senalesNivel4, zonasSenalNivel4, type ZonaChecklist, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
+import {
+  conectoresNivel4,
+  puertosNivel4,
+  marcasNivel4,
+  zonasPisoNivel4,
+  circuitosNivel4,
+  coloresNivel4,
+  briefingsNiveles,
+  microLeccionesNiveles,
+  type MarcaNivel4,
+  type ColorNivel4,
+} from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
-import { crearFormaNivel4, crearFormaSenal } from "../entities/Level4Shapes";
-import { crearTableroChecklist, crearPapeleraDescartar } from "../entities/ChecklistZones";
-import { crearZonaSenal } from "../entities/SignageZone";
+import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
+import { crearConector, crearMarcaPiso, crearFichaColor } from "../entities/Level4Shapes";
+import {
+  crearArmarioConectores,
+  crearZonasPiso,
+  crearPanelInterruptores,
+} from "../entities/ControlVisual";
 import { crearNPCWorker } from "../entities/NPCWorker";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { ambientarNivel } from "../entities/AmbienteNivel";
 import { crearBancoDeTrabajo } from "../entities/Workbench";
-import { crearRotulo3D } from "../entities/Rotulo3D";
 import { GameManager, type ItemChecklistConstruido, type SenalizacionConstruida } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
+import { reproducir } from "../core/Sonido";
 import { TEXTO, PALETA, altoDeTexto } from "../ui/EstiloUI";
+import type { PuntoEnganche } from "../core/InputController";
 
-const posicionesZonas: Record<ZonaChecklist, number> = {
-  checklist: -3.6,
-  descartar: 3.6,
-};
+// ===========================================================================
+// NIVEL 4 — SEIKETSU (Estandarizar)
+// ===========================================================================
+//
+// ─── EL FALLO DE FONDO QUE TENÍA ──────────────────────────────────────────
+//
+// Se jugaba emparejando tarjetas de texto sobre una mesa: leer cinco frases y
+// decidir cuáles eran instrucciones claras. Eso no es estandarizar, es un test
+// de comprensión lectora con forma de juego. Y sobre todo, no deja nada en el
+// taller: al terminar, el área estaba exactamente igual que al empezar.
+//
+// Estandarizar es lo contrario. Video 4.2 (1:32): "en el caso de la
+// utilización del control visual emplearemos letreros, carteles, Andon,
+// señalización de caminos, señales y Kanban". Son cosas que se INSTALAN en el
+// entorno para que el orden se sostenga sin que nadie tenga que acordarse.
+//
+// ─── LO QUE HAY AHORA: TRES ESTACIONES, TRES GRADOS DE CONTROL ────────────
+//
+// El nivel no monta tres tareas distintas: monta el MISMO error tres veces,
+// protegido cada vez por un control más débil. Ese orden es la lección, y es
+// lo que el informe final pone en evidencia.
+//
+//   A. POKA-YOKE — el error es IMPOSIBLE.
+//      Video 4.2 (2:38): "a prueba de tontos... un ejemplo es el de
+//      rompecabezas donde una pieza solo encaja en un sitio específico". El
+//      conector triangular no entra en el puerto cuadrado: el imán ni siquiera
+//      engancha. No hay alarma porque no hace falta.
+//
+//   B. ANDON — el error es POSIBLE pero se avisa en el acto.
+//      La plantilla equivocada sí se puede llevar a la zona equivocada. El
+//      contorno parpadea en rojo, suena la chicharra y la pieza vuelve. Peor
+//      que A: el error ocurre, y solo se corrige porque hay alguien mirando.
+//
+//   C. CONVENCIÓN DE COLOR — el error es POSIBLE y NADIE lo avisa.
+//      Video 4.2 (5:29): "estos interruptores están señalizados según
+//      colores... los focos pertenecientes a dichos interruptores están
+//      señalizados con el mismo color". Se puede pegar la ficha azul en el
+//      interruptor del banco y no pasa absolutamente nada: la instalación
+//      sigue funcionando. Solo aparece cuando alguien audita — o sea, en el
+//      Nivel 5.
+//
+// ─── EL ERROR QUE SOBREVIVE A LOS TRES ────────────────────────────────────
+//
+// Hay cuatro plantillas para tres zonas. Dos sirven para el pasillo: una dice
+// "PASILLO · DESPEJADO 1,20 m" y la otra "ZONA ORDENADA". Las dos caen en el
+// sitio correcto, así que el Andon no dice nada — una luz detecta una posición
+// equivocada, no un texto vago. Es el único fallo del nivel que ningún control
+// automático atrapa, y viaja al Nivel 5 como un punto de control que nunca se
+// va a poder dar por cumplido.
 
-// Posiciones "click" para cada checklist correcto: se acomodan en una
-// fila ordenada junto al tablero (máximo 2 correctos según los datos).
-const POSICIONES_SNAP_CHECKLIST: Vector3[] = [
-  new Vector3(-3.6, 1.55, 1.79),
-  new Vector3(-3.6, 1.4, 1.79),
+/** Sitio de cada estación. Todo mira a -Z, que es de donde mira la cámara. */
+const ARMARIO = { x: -3.2, z: 3.4 };
+const PANEL_INTERRUPTORES = { x: 1.9, y: 1.35, z: 3.4 };
+
+/** Recinto de arrastre. El imán se encarga de llegar a los sitios altos. */
+const LIMITES = { xMin: -4.6, xMax: 4.6, zMin: -1.7, zMax: 2.9 };
+
+/** Dónde arranca cada plantilla y cada ficha, repartidas por delante del banco. */
+const PARTIDA_MARCAS: Array<[number, number]> = [
+  [-2.7, -1.2],
+  [-1.3, -1.4],
+  [0.2, -1.4],
+  [1.6, -1.2],
 ];
 
-// Posiciones "click" para cada descarte correcto: se acomodan dentro de
-// la papelera (máximo 3 correctos según los datos).
-const POSICIONES_SNAP_DESCARTAR: Vector3[] = [
-  new Vector3(3.5, 0.55, 1.75),
-  new Vector3(3.65, 0.45, 1.85),
-  new Vector3(3.55, 0.35, 1.8),
+const PARTIDA_FICHAS: Array<[number, number]> = [
+  [2.7, -1.3],
+  [3.5, -0.9],
+  [-3.4, -1.3],
+  [-4.1, -0.8],
 ];
 
-const Z_ZONA_SENAL = 4.2;
+/** Qué control protegía cada punto del estándar. Es la columna que enseña. */
+type TipoControl = "poka-yoke" | "andon" | "convencion";
 
 interface FilaInformeEstandar {
-  tipo: "checklist" | "senal";
+  control: TipoControl;
   texto: string;
   correcto: boolean;
   explicacion: string;
 }
+
+const ROTULO_CONTROL: Record<TipoControl, string> = {
+  "poka-yoke": "Poka-Yoke · el error era imposible",
+  andon: "Andon · el error se avisó al instante",
+  convencion: "Convención de color · nada avisó",
+};
+
+/** Qué sitio está apuntando el cursor ahora mismo. */
+type SitioApuntado =
+  | { tipo: "puerto"; indice: number; encaja: boolean }
+  | { tipo: "zona"; indice: number }
+  | { tipo: "interruptor"; indice: number };
 
 export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, onCompletado: () => void) {
   const gameManager = GameManager.getInstance();
@@ -58,11 +139,12 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // todo el interior a oscuras; la luz de adentro la pone iluminarInteriorGaraje.
   void cargarGaraje(scene).catch((error) => console.error("[nivel4] garaje:", error));
 
-  // Dos focos: uno sobre el banco donde están las fichas y las señales, y otro
-  // sobre el tablero del checklist y la papelera del fondo.
+  // Dos focos: uno sobre el banco donde arrancan las piezas y otro sobre la
+  // fila de estaciones del fondo. Los focos de color de los circuitos los pone
+  // crearPanelInterruptores, y son deliberadamente tenues para no competir.
   iluminarInteriorGaraje(scene, [
-    { z: -0.6, intensidad: 0.9 },
-    { z: 1.6, intensidad: 0.8 },
+    { z: -0.6, intensidad: 0.85 },
+    { z: 2.6, intensidad: 0.8 },
   ]);
 
   // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
@@ -76,78 +158,279 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   suelo.position.y = -0.02;
   suelo.isVisible = false;
 
-  // Banco de trabajo compartido con los niveles 1, 2 y 3.
+  // Banco de trabajo compartido con los niveles 1, 2, 3 y 5. Es el mismo
+  // puesto a lo largo de las cinco fases: acá hace de mesa de trabajo desde la
+  // que se reparten las piezas, y de zona del primer circuito de luz.
+  crearBancoDeTrabajo(scene, { nombre: "escritorioN4", ancho: 3.4, fondo: 1.2, z: -0.5 });
+
+  // === LAS TRES ESTACIONES ===============================================
+
+  const armario = crearArmarioConectores(scene, ARMARIO.x, ARMARIO.z, 0, puertosNivel4);
+  const pisos = crearZonasPiso(scene, zonasPisoNivel4);
+  const panel = crearPanelInterruptores(
+    scene,
+    PANEL_INTERRUPTORES.x,
+    PANEL_INTERRUPTORES.y,
+    PANEL_INTERRUPTORES.z,
+    0,
+    circuitosNivel4,
+    coloresNivel4
+  );
+
+  // === EL IMÁN ===========================================================
   //
-  // Antes este nivel armaba su propia mesa: una única caja a 0,85 m, sin patas
-  // ni estructura. Sobre el piso de concreto del garaje se veía flotando en el
-  // aire, y encima rompía la continuidad con el resto del juego — es el mismo
-  // puesto de trabajo a lo largo de las cinco fases, así que tiene que ser el
-  // mismo mueble.
-  crearBancoDeTrabajo(scene, { nombre: "escritorioN4", ancho: 4.6, fondo: 1.4, z: -0.5 });
+  // Un rayo por cuadro cuyo predicado SOLO admite receptores: nada de la
+  // escena puede interponerse, ni el garaje ni el propio mueble ni la pieza
+  // que se lleva en la mano. Es el mismo mecanismo del Nivel 2.
+  //
+  // La diferencia está en quién engancha a quién, y ahí es donde vive la
+  // lección del nivel: el puerto solo engancha su forma, la zona engancha
+  // cualquier plantilla, y el interruptor engancha cualquier color.
 
-  // --- Fase 1: tarjetas del checklist ---
-  const items = itemsNivel4.map((datos, i) =>
-    crearObjetoInteractable(scene, datos, (s, d) => crearFormaNivel4(s, d, i + 1))
+  const receptores = new Map<AbstractMesh, SitioApuntado>();
+  armario.puertos.forEach((puerto, indice) =>
+    receptores.set(puerto.receptor, { tipo: "puerto", indice, encaja: false })
+  );
+  pisos.zonas.forEach((zona, indice) => receptores.set(zona.receptor, { tipo: "zona", indice }));
+  panel.interruptores.forEach((interruptor, indice) =>
+    receptores.set(interruptor.receptor, { tipo: "interruptor", indice })
   );
 
-  const tableroChecklist = crearTableroChecklist(scene, posicionesZonas.checklist);
-  const papeleraDescartar = crearPapeleraDescartar(scene, posicionesZonas.descartar);
+  let apuntado: SitioApuntado | null = null;
 
-  // Rótulos pintados sobre carteles dentro de la escena. Antes eran texto 2D
-  // anclado a las mallas: al orbitar la cámara se juntaban en el centro de la
-  // pantalla y se leían a través de las paredes del garaje.
-  crearRotulo3D(
-    scene,
-    "zonaChecklist",
-    "CHECKLIST — instrucciones claras",
-    new Vector3(posicionesZonas.checklist, 1.92, 1.8),
-    { ancho: 2.0, alto: 0.36, lineasMax: 2, colorFondo: "#1c3a29", colorBorde: "rgba(120,220,160,0.5)" }
-  );
+  const aviso = new TextBlock("avisoSitioNivel4", "");
+  aviso.fontSize = TEXTO.destacado;
+  aviso.fontWeight = "700";
+  aviso.outlineWidth = 5;
+  aviso.outlineColor = "rgba(0,0,0,0.85)";
+  aviso.top = "-150px";
+  aviso.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+  aviso.isVisible = false;
+  gui.addControl(aviso);
 
-  crearRotulo3D(
-    scene,
-    "zonaDescartar",
-    "DESCARTAR — ambiguas o irrelevantes",
-    new Vector3(posicionesZonas.descartar, 1.12, 1.8),
-    { ancho: 2.0, alto: 0.36, lineasMax: 2, colorFondo: "#3a1f1c", colorBorde: "rgba(230,140,120,0.5)" }
-  );
+  const apagarAviso = (): void => {
+    apuntado = null;
+    aviso.isVisible = false;
+    armario.resaltar(null);
+    pisos.resaltar(null);
+    panel.resaltar(null);
+  };
 
-  // --- Fase 2: señalética con códigos de color — ahora bien separada
-  // en su propia zona del cuarto (z=3.0 spawn / z=4.2 zonas), lejos del
-  // checklist, para que no se vean encimadas. ---
-  const senales = senalesNivel4.map((datos) => crearObjetoInteractable(scene, datos, crearFormaSenal));
+  const mostrarAviso = (texto: string, color: string): void => {
+    aviso.text = texto;
+    aviso.color = color;
+    aviso.isVisible = true;
+  };
 
-  // Realce al pasar el cursor, igual que en los Niveles 1 y 2. Las tarjetas y
-  // las senales se apoyan sobre mobiliario que tambien responde al puntero:
-  // sin el contorno hay que probar cual de todo lo que se ve se puede tomar.
-  // Total de la tarea: las tarjetas del checklist más las señales. Es la misma
-  // cuenta que ya llevaba el contador de pantalla.
-  hud.definirTotalTarea(items.length + senales.length);
+  /** El sitio bajo el cursor, sin filtrar por tipo de pieza. */
+  const sitioBajoCursor = (): SitioApuntado | null => {
+    const golpe = scene.pick(scene.pointerX, scene.pointerY, (m) => receptores.has(m));
+    if (!golpe?.hit || !golpe.pickedMesh) return null;
+    return receptores.get(golpe.pickedMesh) ?? null;
+  };
 
-  const realce = habilitarRealceAlPasar(scene, [
-    ...items.map((o) => o.mesh),
-    ...senales.map((o) => o.mesh),
-  ]);
-  zonasSenalNivel4.forEach((z) => crearZonaSenal(scene, gui, z.id, z.posicionX, Z_ZONA_SENAL, z.descripcion));
-
-  // Nombre del color sobre cada ficha, como cartelito colgado de la propia
-  // ficha: acompaña al objeto aunque el jugador lo arrastre.
-  senales.forEach((senal) => {
-    const rotulo = crearRotulo3D(
-      scene,
-      `ficha_${senal.datos.id}`,
-      senal.datos.nombreVisible,
-      new Vector3(0, 0.26, 0),
-      // El cartelito de la ficha era de 0,6 x 0,16 m: la letra quedaba en 10 cm
-      // y había que pegarse a la pantalla para leer de qué color era cada una.
-      { ancho: 1.05, alto: 0.24, colorFondo: "#1d2227", colorBorde: "rgba(255,255,255,0.3)", mirarCamara: true }
-    );
-    rotulo.parent = senal.mesh;
+  const enElPiso = (libre: Vector3, alzada: number): PuntoEnganche => ({
+    punto: new Vector3(libre.x, alzada, libre.z),
+    enElAire: false,
   });
+
+  // === PIEZAS: CONECTORES (poka-yoke) ====================================
+
+  const alzadas = new Map<Mesh, number>();
+  const FACTOR_AGARRE = 1.15;
+  const alzadaDe = (mesh: Mesh): number => (alzadas.get(mesh) ?? 0) * FACTOR_AGARRE;
+
+  const conectores = conectoresNivel4.map((datos) => {
+    const casilla: { mesh: Mesh | null } = { mesh: null };
+
+    const objeto = crearObjetoInteractable(
+      scene,
+      datos,
+      (s, d) => crearConector(s, d),
+      LIMITES,
+      (libre): PuntoEnganche | null => {
+        const mesh = casilla.mesh;
+        if (!mesh) return null;
+
+        const sitio = sitioBajoCursor();
+
+        // Solo los puertos existen para un conector. Apuntar a una zona de
+        // piso o a un interruptor es como no apuntar a nada.
+        if (!sitio || sitio.tipo !== "puerto") {
+          if (apuntado) apagarAviso();
+          return enElPiso(libre, alzadaDe(mesh));
+        }
+
+        const puerto = armario.puertos[sitio.indice];
+
+        // ─── POKA-YOKE ────────────────────────────────────────────────────
+        //
+        // Aquí no hay validación al soltar: hay una forma que no entra. El
+        // imán no engancha, el conector se queda en la mano y el aviso explica
+        // por qué. Es la diferencia con el Andon de la estación siguiente —
+        // allá el error ocurre y se señala; acá no llega a ocurrir.
+        if (puerto.forma !== datos.forma || puerto.ocupado) {
+          apuntado = { tipo: "puerto", indice: sitio.indice, encaja: false };
+          armario.resaltar(null);
+          pisos.resaltar(null);
+          panel.resaltar(null);
+          mostrarAviso(
+            puerto.ocupado
+              ? "Ese puerto ya está ocupado"
+              : "No entra: la espiga no tiene la forma de ese puerto",
+            "#e8c07a"
+          );
+          return enElPiso(libre, alzadaDe(mesh));
+        }
+
+        apuntado = { tipo: "puerto", indice: sitio.indice, encaja: true };
+        armario.resaltar(puerto.id);
+        pisos.resaltar(null);
+        panel.resaltar(null);
+        mostrarAviso("Encaja aquí — suelta para conectar", "#a9e0bd");
+        return { punto: puerto.sostenido, enElAire: true };
+      }
+    );
+
+    casilla.mesh = objeto.mesh;
+    objeto.mesh.position.set(datos.posicionInicial[0], 0, datos.posicionInicial[2]);
+    apoyarSobre(objeto.mesh, 0);
+    alzadas.set(objeto.mesh, objeto.mesh.position.y);
+    return objeto;
+  });
+
+  // === PIEZAS: PLANTILLAS DE PINTURA (Andon) =============================
+
+  type DatosMarca = MarcaNivel4 & { posicionInicial: [number, number, number] };
+
+  const marcas = marcasNivel4.map((datos, i) => {
+    const [px, pz] = PARTIDA_MARCAS[i] ?? [0, -1.2];
+    const conPosicion: DatosMarca = { ...datos, posicionInicial: [px, 0, pz] };
+    const casilla: { mesh: Mesh | null } = { mesh: null };
+
+    const objeto = crearObjetoInteractable(
+      scene,
+      conPosicion,
+      (s, d) => crearMarcaPiso(s, d),
+      LIMITES,
+      (libre): PuntoEnganche | null => {
+        const mesh = casilla.mesh;
+        if (!mesh) return null;
+
+        const sitio = sitioBajoCursor();
+
+        if (!sitio || sitio.tipo !== "zona") {
+          if (apuntado) apagarAviso();
+          return enElPiso(libre, alzadaDe(mesh));
+        }
+
+        const zona = pisos.zonas[sitio.indice];
+
+        if (zona.pintada) {
+          if (apuntado) apagarAviso();
+          return enElPiso(libre, alzadaDe(mesh));
+        }
+
+        // ─── ANDON ────────────────────────────────────────────────────────
+        //
+        // La zona engancha CUALQUIER plantilla, también la que no le
+        // corresponde. Es a propósito: el error tiene que poder cometerse para
+        // que el Andon tenga algo que señalar. El aviso en pantalla dice a qué
+        // zona se va a soltar, no si está bien — eso lo dirá la luz roja.
+        apuntado = { tipo: "zona", indice: sitio.indice };
+        armario.resaltar(null);
+        pisos.resaltar(zona.id);
+        panel.resaltar(null);
+        mostrarAviso(
+          `Marcar aquí: ${zonasPisoNivel4[sitio.indice].etiqueta}`,
+          "#a9e0bd"
+        );
+        return { punto: zona.sostenido, enElAire: true };
+      }
+    );
+
+    casilla.mesh = objeto.mesh;
+    objeto.mesh.position.set(px, 0, pz);
+    apoyarSobre(objeto.mesh, 0);
+    alzadas.set(objeto.mesh, objeto.mesh.position.y);
+    return objeto;
+  });
+
+  // === PIEZAS: FICHAS DE COLOR (convención) ==============================
+
+  type DatosFicha = ColorNivel4 & { posicionInicial: [number, number, number] };
+
+  const fichas = coloresNivel4.map((datos, i) => {
+    const [px, pz] = PARTIDA_FICHAS[i] ?? [0, -1.3];
+    const conPosicion: DatosFicha = { ...datos, posicionInicial: [px, 0, pz] };
+    const casilla: { mesh: Mesh | null } = { mesh: null };
+
+    const objeto = crearObjetoInteractable(
+      scene,
+      conPosicion,
+      (s, d) => crearFichaColor(s, d),
+      LIMITES,
+      (libre): PuntoEnganche | null => {
+        const mesh = casilla.mesh;
+        if (!mesh) return null;
+
+        const sitio = sitioBajoCursor();
+
+        if (!sitio || sitio.tipo !== "interruptor") {
+          if (apuntado) apagarAviso();
+          return enElPiso(libre, alzadaDe(mesh));
+        }
+
+        const interruptor = panel.interruptores[sitio.indice];
+
+        if (interruptor.ocupado) {
+          if (apuntado) apagarAviso();
+          return enElPiso(libre, alzadaDe(mesh));
+        }
+
+        // ─── CONVENCIÓN ───────────────────────────────────────────────────
+        //
+        // Cualquier ficha engancha en cualquier interruptor, y el aviso dice
+        // el circuito pero NO si el color es el que va. No es un descuido: es
+        // el punto de la estación. El único modo de acertar es haber ido a
+        // mirar de qué color es el foco de ese circuito.
+        apuntado = { tipo: "interruptor", indice: sitio.indice };
+        armario.resaltar(null);
+        pisos.resaltar(null);
+        panel.resaltar(interruptor.id);
+        mostrarAviso(
+          `Señalizar: ${circuitosNivel4[sitio.indice].descripcion}`,
+          "#a9e0bd"
+        );
+        return { punto: interruptor.sostenido, enElAire: true };
+      }
+    );
+
+    casilla.mesh = objeto.mesh;
+    objeto.mesh.position.set(px, 0, pz);
+    apoyarSobre(objeto.mesh, 0);
+    alzadas.set(objeto.mesh, objeto.mesh.position.y);
+    return objeto;
+  });
+
+  const arrastrables = [...conectores, ...marcas, ...fichas];
+  const realce = habilitarRealceAlPasar(scene, arrastrables.map((o) => o.mesh));
+
+  habilitarEtiquetasAlPasar(
+    scene,
+    gui,
+    [
+      ...conectores.map((o) => ({ mesh: o.mesh, texto: o.datos.nombreVisible })),
+      ...marcas.map((o) => ({ mesh: o.mesh, texto: o.datos.nombreVisible })),
+      ...fichas.map((o) => ({ mesh: o.mesh, texto: `Etiqueta ${o.datos.nombreVisible}` })),
+    ]
+  );
+
+  // === PANTALLA ==========================================================
 
   const instruccion = new TextBlock(
     "instruccionNivel4",
-    "Coloca las 5 tarjetas (checklist/descartar) al frente, y las 3 señales de color en el fondo. El resultado se revela al probar el estándar."
+    "Instala los controles visuales en el taller: conecta los tres cables, marca las tres zonas del piso y señaliza los tres interruptores."
   );
   instruccion.color = "white";
   instruccion.fontSize = TEXTO.cuerpo;
@@ -157,38 +440,38 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
   // queda centrado verticalmente, ignorando su propio 'top'.
   instruccion.resizeToFit = true;
-  instruccion.width = "540px";
+  instruccion.width = "620px";
   instruccion.top = "70px";
   instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(instruccion);
 
-  const progreso = new TextBlock("progresoNivel4", `Colocado: 0/${items.length + senales.length}`);
+  const ayuda = new TextBlock(
+    "ayudaNivel4",
+    "Cada foco del techo lleva el color de su circuito: míralo antes de elegir la etiqueta del interruptor."
+  );
+  ayuda.color = "#c9d4dd";
+  ayuda.fontSize = TEXTO.menor;
+  ayuda.outlineWidth = 3;
+  ayuda.outlineColor = "rgba(0,0,0,0.6)";
+  ayuda.textWrapping = true;
+  ayuda.resizeToFit = true;
+  ayuda.width = "600px";
+  ayuda.top = "118px";
+  ayuda.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  gui.addControl(ayuda);
+
+  const TOTAL_TAREAS = puertosNivel4.length + zonasPisoNivel4.length + circuitosNivel4.length;
+  hud.definirObjetivo("Deja el estándar instalado en el taller, no escrito en un papel.");
+  hud.definirTotalTarea(TOTAL_TAREAS);
+
+  const progreso = new TextBlock("progresoNivel4", `Controles instalados: 0/${TOTAL_TAREAS}`);
   progreso.color = "white";
   progreso.fontSize = TEXTO.cuerpo;
   progreso.outlineWidth = 3;
   progreso.outlineColor = "rgba(0,0,0,0.6)";
-  progreso.top = "110px";
+  progreso.top = "160px";
   progreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   gui.addControl(progreso);
-
-  const panelLectura = new Rectangle("panelLectura");
-  panelLectura.width = "480px";
-  panelLectura.height = "110px";
-  panelLectura.cornerRadius = 12;
-  panelLectura.thickness = 0;
-  panelLectura.background = "rgba(20, 20, 25, 0.9)";
-  panelLectura.top = "150px";
-  panelLectura.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  panelLectura.isVisible = false;
-  gui.addControl(panelLectura);
-
-  const textoLectura = new TextBlock("textoLectura", "");
-  textoLectura.color = "white";
-  textoLectura.fontSize = TEXTO.destacado;
-  textoLectura.textWrapping = true;
-  textoLectura.paddingLeft = "16px";
-  textoLectura.paddingRight = "16px";
-  panelLectura.addControl(textoLectura);
 
   const botonProbar = Button.CreateSimpleButton("btnProbarEstandar", "Probar estándar");
   botonProbar.width = "240px";
@@ -209,7 +492,7 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   etiquetaNpc.fontSize = TEXTO.cuerpo;
   etiquetaNpc.outlineWidth = 3;
   etiquetaNpc.outlineColor = "rgba(0,0,0,0.7)";
-  etiquetaNpc.width = "220px";
+  etiquetaNpc.width = "260px";
   etiquetaNpc.height = "26px";
   etiquetaNpc.isVisible = false;
   gui.addControl(etiquetaNpc);
@@ -236,107 +519,166 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     corriendoTiempo = true;
   }
 
-  mostrarAperturaNivel(
-    scene,
-    4,
-    briefingsNiveles[4],
-    microLeccionesNiveles[4],
-    arrancarNivel
-  );
+  mostrarAperturaNivel(scene, 4, briefingsNiveles[4], microLeccionesNiveles[4], arrancarNivel);
 
   scene.onBeforeRenderObservable.add(() => {
     if (!corriendoTiempo) return;
-    const segundos = Math.floor((performance.now() - inicioNivel) / 1000);
-    hud.actualizarTiempo(segundos);
+    hud.actualizarTiempo(Math.floor((performance.now() - inicioNivel) / 1000));
   });
 
-  const colocacionItems = new Map<string, ZonaChecklist>();
-  const colocacionSenales = new Map<string, string>();
-  let contadorChecklist = 0;
-  let contadorDescartar = 0;
+  // === REGISTRO DE LO INSTALADO ==========================================
 
-  function verificarListoParaProbar(): void {
-    const total = items.length + senales.length;
-    const colocados = colocacionItems.size + colocacionSenales.size;
-    progreso.text = `Colocado: ${colocados}/${total}`;
-    hud.actualizarProgreso(colocados);
+  /** zonaId -> id de la plantilla que quedó pintada ahí. */
+  const marcaPorZona = new Map<string, string>();
+  /** circuitoId -> id del color pegado en su interruptor. */
+  const colorPorCircuito = new Map<string, string>();
+  let conectadas = 0;
 
-    if (colocados === total) {
+  function instalados(): number {
+    return conectadas + marcaPorZona.size + colorPorCircuito.size;
+  }
+
+  function refrescarProgreso(): void {
+    const hechos = instalados();
+    progreso.text = `Controles instalados: ${hechos}/${TOTAL_TAREAS}`;
+    hud.actualizarProgreso(hechos);
+
+    if (hechos === TOTAL_TAREAS) {
       botonProbar.isVisible = true;
-      instruccion.text = "Todo colocado. Presiona 'Probar estándar' cuando estés listo — ahí se revela el resultado.";
+      instruccion.text =
+        "Todo instalado. Presiona 'Probar estándar': entra un operario del turno siguiente y trabaja guiándose solo por lo que dejaste puesto.";
+      ayuda.isVisible = false;
     }
   }
 
-  items.forEach((item) => {
-    item.onAgarrar.add(() => {
-      hud.ocultarFeedback();
-      textoLectura.text = item.datos.textoVisible;
-      panelLectura.isVisible = true;
-    });
+  // --- Conectores ---------------------------------------------------------
 
-    item.onSoltar.add(({ mesh, movioSuficiente }) => {
-      panelLectura.isVisible = false;
-      if (!movioSuficiente || colocacionItems.has(item.datos.id)) return;
+  conectores.forEach((objeto, i) => {
+    objeto.onAgarrar.add(() => hud.ocultarFeedback());
 
-      const zonaMasCercana = (Object.entries(posicionesZonas) as [ZonaChecklist, number][])
-        .reduce((mejor, actual) =>
-          Math.abs(mesh.position.x - actual[1]) < Math.abs(mesh.position.x - mejor[1]) ? actual : mejor
-        )[0];
+    objeto.onSoltar.add(({ mesh }) => {
+      const sitio = apuntado;
+      apagarAviso();
 
-      colocacionItems.set(item.datos.id, zonaMasCercana);
-      // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
-      // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
-      // hija volvia a habilitar el arrastre de un objeto ya colocado.
-      item.fijar();
-      // Ya clasificada: deja de ofrecerse como agarrable.
-      realce.quitar(item.mesh);
-
-      // "Click" real: la tarjeta salta a un lugar ordenado junto a su
-      // zona, en vez de quedarse donde se soltó al azar.
-      // El acomodo va animado, igual que en los niveles 1 y 2. Antes saltaba de
-      // golpe con copyFrom: el objeto desaparecía de la mano y reaparecía en su
-      // sitio, sin que se viera el recorrido. Con la animación se entiende que
-      // el juego lo acomodó, que es la lectura correcta.
-      if (zonaMasCercana === "checklist") {
-        const pos = POSICIONES_SNAP_CHECKLIST[contadorChecklist] ?? POSICIONES_SNAP_CHECKLIST[POSICIONES_SNAP_CHECKLIST.length - 1];
-        moverMalla(scene, mesh, pos.clone(), 260);
-        contadorChecklist++;
-      } else {
-        const pos = POSICIONES_SNAP_DESCARTAR[contadorDescartar] ?? POSICIONES_SNAP_DESCARTAR[POSICIONES_SNAP_DESCARTAR.length - 1];
-        moverMalla(scene, mesh, pos.clone(), 260);
-        contadorDescartar++;
+      // Solo se enchufa si el imán estaba enganchado, y el imán solo engancha
+      // la forma correcta: no hay rama de error posible.
+      if (!sitio || sitio.tipo !== "puerto" || !sitio.encaja) {
+        apoyarSobre(mesh, 0);
+        return;
       }
 
-      hud.mostrarFeedback(true, "Instrucción ubicada — se evaluará al probar el estándar.", mesh.position.clone());
-      verificarListoParaProbar();
+      const puerto = armario.puertos[sitio.indice];
+      puerto.ocupado = true;
+      conectadas++;
+
+      objeto.fijar();
+      realce.quitar(mesh);
+      moverMalla(scene, mesh, puerto.anclaje, 220);
+
+      gameManager.sumarPuntos(10);
+      reproducir("acierto");
+      hud.mostrarFeedback(true, conectoresNivel4[i].explicacion, mesh.position.clone());
+      refrescarProgreso();
     });
   });
 
-  senales.forEach((senal) => {
-    senal.onAgarrar.add(() => hud.ocultarFeedback());
+  // --- Plantillas ---------------------------------------------------------
 
-    senal.onSoltar.add(({ mesh, movioSuficiente }) => {
-      if (!movioSuficiente || colocacionSenales.has(senal.datos.id)) return;
+  marcas.forEach((objeto) => {
+    objeto.onAgarrar.add(() => hud.ocultarFeedback());
 
-      const zonaMasCercana = zonasSenalNivel4.reduce((mejor, actual) =>
-        Math.abs(mesh.position.x - actual.posicionX) < Math.abs(mesh.position.x - mejor.posicionX) ? actual : mejor
+    objeto.onSoltar.add(({ mesh }) => {
+      const sitio = apuntado;
+      const datos = objeto.datos;
+      apagarAviso();
+
+      if (!sitio || sitio.tipo !== "zona") {
+        apoyarSobre(mesh, 0);
+        return;
+      }
+
+      const zona = pisos.zonas[sitio.indice];
+
+      if (datos.zonaCorrecta !== zona.id) {
+        // ANDON. La chicharra son tres golpes del efecto de error, uno por
+        // destello: no hay un archivo de zumbador y encadenar el que ya existe
+        // suena a alarma sin sumar ningún asset.
+        pisos.avisarError(zona.id, () => reproducir("error"));
+        hud.mostrarFeedback(
+          false,
+          `Esa plantilla no es de esta zona — el Andon lo señaló en el acto. El error llegó a ocurrir: por eso hizo falta una luz. ${datos.nombreVisible} va en otro sitio.`,
+          mesh.position.clone()
+        );
+        moverMalla(scene, mesh, new Vector3(datos.posicionInicial[0], mesh.position.y, datos.posicionInicial[2]), 300);
+        luegoDe(scene, 320, () => apoyarSobre(mesh, 0));
+        return;
+      }
+
+      marcaPorZona.set(zona.id, datos.id);
+      objeto.fijar();
+      realce.quitar(mesh);
+
+      moverMalla(scene, mesh, zona.anclaje, 260);
+      luegoDe(scene, 300, () => {
+        // La plantilla se retira y queda la pintura: es una plantilla, no un
+        // cartel que se deja apoyado. No se destruye la malla —el generador de
+        // sombras la tiene en su lista desde que se armó el nivel— sino que se
+        // oculta, que consigue lo mismo sin tocar esa lista.
+        mesh.isVisible = false;
+        pisos.pintar(zona.id, datos.textoPintado);
+      });
+
+      gameManager.sumarPuntos(15);
+      reproducir("acierto");
+      hud.mostrarFeedback(true, datos.explicacion, mesh.position.clone());
+      refrescarProgreso();
+    });
+  });
+
+  // --- Fichas de color ----------------------------------------------------
+
+  fichas.forEach((objeto) => {
+    objeto.onAgarrar.add(() => hud.ocultarFeedback());
+
+    objeto.onSoltar.add(({ mesh }) => {
+      const sitio = apuntado;
+      const datos = objeto.datos;
+      apagarAviso();
+
+      if (!sitio || sitio.tipo !== "interruptor") {
+        apoyarSobre(mesh, 0);
+        return;
+      }
+
+      const interruptor = panel.interruptores[sitio.indice];
+      interruptor.ocupado = true;
+      colorPorCircuito.set(interruptor.id, datos.id);
+
+      objeto.fijar();
+      realce.quitar(mesh);
+
+      moverMalla(scene, mesh, interruptor.anclaje, 220);
+      luegoDe(scene, 260, () => {
+        mesh.isVisible = false;
+        panel.rotular(interruptor.id, datos);
+      });
+
+      // NI ACIERTO NI ERROR. Suena el "panel", que es un acuse neutro, y el
+      // texto no dice si está bien. Es lo que separa esta estación de las
+      // otras dos: acá el sistema no sabe si lo hiciste bien, y por eso
+      // tampoco puede avisarte.
+      gameManager.sumarPuntos(10);
+      reproducir("panel");
+      hud.mostrarFeedback(
+        true,
+        "Interruptor señalizado. Nada comprueba que el color sea el del foco de ese circuito: eso solo se ve auditando.",
+        mesh.position.clone()
       );
-
-      colocacionSenales.set(senal.datos.id, zonaMasCercana.id);
-      // fijar() en vez de isPickable: desmonta el arrastre y apaga tambien las
-      // piezas hijas. Con isPickable solo en la raiz, hacer clic en una pieza
-      // hija volvia a habilitar el arrastre de un objeto ya colocado.
-      senal.fijar();
-      realce.quitar(senal.mesh);
-
-      // "Click" real: la ficha encaja exactamente en el centro del
-      // círculo punteado, como una pieza de shadow board de verdad.
-      moverMalla(scene, mesh, new Vector3(zonaMasCercana.posicionX, 0.025, Z_ZONA_SENAL), 260);
-
-      hud.mostrarFeedback(true, "Señal ubicada — se evaluará al probar el estándar.", mesh.position.clone());
-      verificarListoParaProbar();
+      refrescarProgreso();
     });
   });
+
+  // === PRUEBA DEL ESTÁNDAR ===============================================
 
   botonProbar.onPointerUpObservable.add(() => {
     botonProbar.isVisible = false;
@@ -346,85 +688,127 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   });
 
   function ejecutarPrueba(): void {
-    const filasChecklist: FilaInformeEstandar[] = itemsNivel4.map((datos) => {
-      const zonaElegida = colocacionItems.get(datos.id)!;
-      return {
-        tipo: "checklist",
-        texto: datos.textoVisible,
-        correcto: zonaElegida === datos.zonaCorrecta,
-        explicacion: datos.explicacion,
-      };
+    const filas: FilaInformeEstandar[] = [];
+
+    // A — Poka-Yoke. Siempre correcto, y ese es el dato: cuando el control es
+    // por geometría no hay resultado que evaluar.
+    filas.push({
+      control: "poka-yoke",
+      texto: "Los tres equipos conectados en su puerto codificado por forma",
+      correcto: true,
+      explicacion:
+        "No hubo forma de equivocarse: cada espiga solo entraba en su puerto. Es el control más fuerte porque no depende de que nadie mire.",
     });
 
-    const filasSenales: FilaInformeEstandar[] = zonasSenalNivel4.map((zona) => {
-      const senalColocadaId = [...colocacionSenales.entries()].find(([, zonaId]) => zonaId === zona.id)?.[0];
-      const senalColocada = senalesNivel4.find((s) => s.id === senalColocadaId);
-      const correcto = senalColocadaId === zona.colorCorrectoId;
-      const colorEsperado = senalesNivel4.find((s) => s.id === zona.colorCorrectoId)?.nombreVisible ?? "";
-      return {
-        tipo: "senal",
-        texto: zona.descripcion,
+    // B — Andon. Lo que quedó pintado, con la salvedad del texto vago.
+    zonasPisoNivel4.forEach((zona) => {
+      const marcaId = marcaPorZona.get(zona.id);
+      const datos = marcasNivel4.find((m) => m.id === marcaId);
+      if (!datos) return;
+
+      filas.push({
+        control: "andon",
+        texto: datos.textoPintado,
+        correcto: datos.esEspecifica,
+        explicacion: datos.explicacion,
+      });
+    });
+
+    // C — Convención de color. Acá sí hay aciertos y errores, y nada los avisó
+    // en su momento.
+    circuitosNivel4.forEach((circuito) => {
+      const elegidoId = colorPorCircuito.get(circuito.id) ?? "";
+      const elegido = coloresNivel4.find((c) => c.id === elegidoId);
+      const esperado = coloresNivel4.find((c) => c.id === circuito.colorCorrectoId);
+      const correcto = elegidoId === circuito.colorCorrectoId;
+
+      filas.push({
+        control: "convencion",
+        texto: `${circuito.descripcion} → etiqueta ${elegido?.nombreVisible ?? "sin asignar"}`,
         correcto,
         explicacion: correcto
-          ? `Correcto — ${senalColocada?.nombreVisible ?? "la señal"} es el color adecuado para esta zona.`
-          : `Incorrecto — esta zona requería el color ${colorEsperado}.`,
-      };
+          ? `El interruptor lleva el mismo color que su foco. Cualquiera puede cortar el circuito correcto sin probar los tres.`
+          : `El foco de este circuito es ${esperado?.nombreVisible ?? "de otro color"}. Nada lo impidió y nada lo avisó: la instalación funciona igual, y el fallo solo sale en una auditoría.`,
+      });
     });
 
     // Se guarda el estándar que el jugador construyó (aciertos Y errores
     // incluidos) para que el Nivel 5 audite exactamente esto — sin esto,
     // el Nivel 5 no tiene forma de saber "el checklist que él mismo
     // ayudó a construir en el Nivel 4".
-    const checklistConstruido: ItemChecklistConstruido[] = itemsNivel4
-      .filter((datos) => colocacionItems.get(datos.id) === "checklist")
-      .map((datos) => ({
-        id: datos.id,
-        texto: datos.textoVisible,
-        esValido: datos.zonaCorrecta === "checklist",
-      }));
+    //
+    // El checklist son ahora los controles que quedaron INSTALADOS, no
+    // tarjetas que el jugador clasificó. Cada punto pintado en el piso se
+    // vuelve un punto de control auditable, con el texto que él mismo eligió
+    // dejar escrito — que es literalmente "el checklist que ayudó a construir".
+    const checklist: ItemChecklistConstruido[] = [
+      {
+        id: "chk_conexiones",
+        texto: "Cada equipo conectado en su puerto codificado por forma",
+        esValido: true,
+      },
+      ...zonasPisoNivel4.flatMap((zona) => {
+        const datos = marcasNivel4.find((m) => m.id === marcaPorZona.get(zona.id));
+        if (!datos) return [];
+        return [
+          {
+            id: `chk_${zona.id}`,
+            texto: datos.textoPintado,
+            // Un texto sin medida no se puede dar por cumplido. Es el único
+            // fallo que ningún control del nivel atrapó, y llega vivo al 5.
+            esValido: datos.esEspecifica,
+          },
+        ];
+      }),
+    ];
 
-    const senalizacionConstruida: SenalizacionConstruida[] = zonasSenalNivel4.map((zona) => {
-      const senalId = [...colocacionSenales.entries()].find(([, zonaId]) => zonaId === zona.id)?.[0] ?? "";
+    const senalizacion: SenalizacionConstruida[] = circuitosNivel4.map((circuito) => {
+      const elegidoId = colorPorCircuito.get(circuito.id) ?? "";
       return {
-        zonaId: zona.id,
-        zonaDescripcion: zona.descripcion,
-        colorElegidoId: senalId,
-        esCorrecta: senalId === zona.colorCorrectoId,
+        zonaId: circuito.id,
+        zonaDescripcion: circuito.descripcion,
+        colorElegidoId: elegidoId,
+        esCorrecta: elegidoId === circuito.colorCorrectoId,
       };
     });
 
-    gameManager.guardarEstandarNivel4({ checklist: checklistConstruido, senalizacion: senalizacionConstruida });
+    gameManager.guardarEstandarNivel4({ checklist, senalizacion });
 
-    const todasLasFilas = [...filasChecklist, ...filasSenales];
-    const totalCorrectos = todasLasFilas.filter((f) => f.correcto).length;
-    const tasaExito = totalCorrectos / todasLasFilas.length;
+    const totalCorrectos = filas.filter((f) => f.correcto).length;
+    const tasaExito = totalCorrectos / filas.length;
     const npcExito = tasaExito >= 0.75;
 
     corriendoTiempo = false;
 
-    npc.caminarHacia(new Vector3(posicionesZonas.checklist, 0.6, 1.8), 2, () => {
+    // El operario entra por el pasillo y se planta donde está el panel de
+    // interruptores: es el sitio que decide si el estándar se entiende sin
+    // preguntarle a nadie.
+    npc.caminarHacia(new Vector3(PANEL_INTERRUPTORES.x, 0.6, 1.9), 2.4, () => {
       npc.reaccionar(npcExito);
       etiquetaNpc.isVisible = true;
-      etiquetaNpc.text = npcExito ? "Estándar claro: pude seguirlo sin preguntar nada." : "Estándar ambiguo: no supe qué hacer en varios pasos.";
+      etiquetaNpc.text = npcExito
+        ? "El área se explica sola: no tuve que preguntar nada."
+        : "Tuve que probar interruptores a ciegas y adivinar dónde pisar.";
       etiquetaNpc.color = npcExito ? "#8be29a" : "#ff9a9a";
 
-      luegoDe(scene, 1000, () => {
+      luegoDe(scene, 1400, () => {
         etiquetaNpc.isVisible = false;
 
-        mostrarInformeEstandar(gui, todasLasFilas, totalCorrectos, () => {
-          const puntosChecklist = filasChecklist.filter((f) => f.correcto).length * 10;
-          const puntosSenales = filasSenales.filter((f) => f.correcto).length * 15;
-          const bonusNpc = npcExito ? 20 : 0;
-          const puntosBase = puntosChecklist + puntosSenales + bonusNpc;
+        mostrarInformeEstandar(gui, filas, totalCorrectos, () => {
+          const puntosBase = filas.filter((f) => f.correcto).length * 12 + (npcExito ? 20 : 0);
           gameManager.sumarPuntos(puntosBase);
 
           const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
-          const bonusTiempo = Math.max(0, 110 - segundosTotales);
+          // Subido de 110 a 170 s: ahora hay que recorrer el taller para leer
+          // el color de tres focos repartidos por el galpón. Penalizar ese
+          // recorrido sería castigar justo la inspección que la S pide.
+          const bonusTiempo = Math.max(0, 170 - segundosTotales);
           gameManager.sumarPuntos(bonusTiempo);
           onCompletado();
 
-          // Pregunta de cierre: el nivel acaba de mostrar cómo falla un estándar
-          // ambiguo con el operario, así que acá se pide reconocer cuál sirve.
+          // Pregunta de cierre: el nivel acaba de mostrar tres controles de
+          // distinta fuerza sobre el mismo error, así que acá se pide
+          // reconocer cuál sostiene el estándar sin depender de nadie.
           preguntarCierreDeNivel(gui, hud, 4, (cierre) => {
             // El panel sale enseguida. La explicación de la pregunta viaja adentro
             // de él, así que ya no hay que esperar a que se apague ningún cartel:
@@ -438,8 +822,23 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     });
   }
 
-  return { items, zonas: [tableroChecklist, papeleraDescartar], senales, npc };
+  // main.ts reparte sombras con esta forma exacta. Las zonas de piso no
+  // proyectan sombra —son pintura sobre el suelo— así que van vacías.
+  return {
+    items: [...conectores, ...marcas],
+    zonas: [] as Mesh[],
+    senales: fichas,
+    npc,
+  };
 }
+
+/** Apoya una malla sobre una superficie, sea cual sea su escala. */
+function apoyarSobre(malla: Mesh, alturaSuperficie: number): void {
+  malla.computeWorldMatrix(true);
+  const base = malla.getBoundingInfo().boundingBox.minimumWorld.y;
+  malla.position.y += alturaSuperficie - base;
+}
+
 function mostrarInformeEstandar(
   gui: AdvancedDynamicTexture,
   filas: FilaInformeEstandar[],
@@ -447,8 +846,8 @@ function mostrarInformeEstandar(
   onContinuar: () => void
 ): void {
   const fondo = new Rectangle("fondoInformeEstandar");
-  fondo.width = "600px";
-  fondo.height = "560px";
+  fondo.width = "620px";
+  fondo.height = "580px";
   fondo.cornerRadius = 14;
   fondo.thickness = 1;
   fondo.color = PALETA.borde;
@@ -460,7 +859,7 @@ function mostrarInformeEstandar(
   // Encabezado en dos alturas: el rótulo dice QUÉ se está midiendo y la cifra
   // es el dato. Antes iba todo en una sola frase larga, así que el porcentaje
   // —lo único que se busca al abrir esto— quedaba enterrado en el medio.
-  const rotuloInforme = new TextBlock("rotuloInformeEstandar", "TASA DE ÉXITO DEL OPERARIO");
+  const rotuloInforme = new TextBlock("rotuloInformeEstandar", "ESTÁNDAR QUE QUEDÓ INSTALADO");
   rotuloInforme.color = PALETA.rotulo;
   rotuloInforme.fontSize = TEXTO.rotulo;
   rotuloInforme.fontWeight = "700";
@@ -480,7 +879,7 @@ function mostrarInformeEstandar(
 
   const detalle = new TextBlock(
     "detalleInformeEstandar",
-    `${totalCorrectos} de ${filas.length} elementos bien ubicados`
+    `${totalCorrectos} de ${filas.length} puntos del estándar se sostienen solos`
   );
   detalle.color = PALETA.cuerpo;
   detalle.fontSize = TEXTO.menor;
@@ -490,8 +889,8 @@ function mostrarInformeEstandar(
   fondo.addControl(detalle);
 
   const scroll = new ScrollViewer("scrollInformeEstandar");
-  scroll.width = "560px";
-  scroll.height = "336px";
+  scroll.width = "580px";
+  scroll.height = "352px";
   scroll.barColor = PALETA.tenue;
   scroll.barBackground = PALETA.tarjetaSuave;
   scroll.thickness = 0;
@@ -501,14 +900,16 @@ function mostrarInformeEstandar(
 
   const lista = new StackPanel("listaInformeEstandar");
   lista.isVertical = true;
-  lista.width = "540px";
+  lista.width = "560px";
   scroll.addControl(lista);
+
+  const ANCHO_TEXTO = 500;
 
   filas.forEach((fila, i) => {
     const color = fila.correcto ? PALETA.acierto : PALETA.error;
 
     const fondoFila = new Rectangle(`filaInformeEstandar_${i}`);
-    fondoFila.width = "530px";
+    fondoFila.width = "548px";
     fondoFila.thickness = 0;
     fondoFila.cornerRadius = 10;
     // Fondo TEÑIDO segun el resultado, no neutro.
@@ -538,7 +939,7 @@ function mostrarInformeEstandar(
     // por un borde comun; centrada obliga a leerla entera.
     const columna = new StackPanel(`columnaInformeEstandar_${i}`);
     columna.isVertical = true;
-    columna.width = "486px";
+    columna.width = `${ANCHO_TEXTO}px`;
     columna.paddingTop = "14px";
     columna.paddingBottom = "14px";
     columna.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -546,22 +947,18 @@ function mostrarInformeEstandar(
     columna.isHitTestVisible = false;
     fondoFila.addControl(columna);
 
-    // Encabezado: simbolo, tipo y veredicto. El simbolo primero porque es lo
-    // unico que hay que leer para contar aciertos, y no depende del color —
-    // quien no distinga verde de rojo lo sigue viendo.
-    const tipo = fila.tipo === "checklist" ? "Instrucción" : "Señal";
-    const veredicto = fila.correcto ? "Bien ubicada" : "Mal ubicada";
+    // Encabezado: simbolo y QUÉ CONTROL protegía este punto. Esa segunda parte
+    // es la que convierte la lista en la lección del nivel — de un vistazo se
+    // ve que todo lo que falló venía del control más débil.
+    const encabezadoTexto = `${fila.correcto ? "\u2713" : "\u2715"}  ${ROTULO_CONTROL[fila.control]}`;
 
-    const encabezado = new TextBlock(
-      `encabezadoInformeEstandar_${i}`,
-      `${fila.correcto ? "\u2713" : "\u2715"}  ${tipo} · ${veredicto}`
-    );
+    const encabezado = new TextBlock(`encabezadoInformeEstandar_${i}`, encabezadoTexto);
     encabezado.color = color;
     encabezado.fontSize = TEXTO.rotulo;
     encabezado.fontWeight = "700";
     encabezado.textWrapping = true;
     encabezado.resizeToFit = true;
-    encabezado.width = "486px";
+    encabezado.width = `${ANCHO_TEXTO}px`;
     encabezado.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     encabezado.isHitTestVisible = false;
     columna.addControl(encabezado);
@@ -573,14 +970,14 @@ function mostrarInformeEstandar(
     separacionA.background = "transparent";
     columna.addControl(separacionA);
 
-    // El item, que es el dato principal: mas grande y en blanco.
+    // El punto del estándar, que es el dato principal: mas grande y en blanco.
     const texto = new TextBlock(`textoInformeEstandar_${i}`, fila.texto);
     texto.color = PALETA.titulo;
     texto.fontSize = TEXTO.menor;
     texto.fontWeight = "600";
     texto.textWrapping = true;
     texto.resizeToFit = true;
-    texto.width = "486px";
+    texto.width = `${ANCHO_TEXTO}px`;
     texto.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     texto.isHitTestVisible = false;
     columna.addControl(texto);
@@ -592,33 +989,28 @@ function mostrarInformeEstandar(
     separacionB.background = "transparent";
     columna.addControl(separacionB);
 
-    // El porque, en gris: acompana pero no compite con el item.
+    // El porque, en gris: acompana pero no compite con el punto.
     const explicacion = new TextBlock(`explicacionInformeEstandar_${i}`, fila.explicacion);
     explicacion.color = PALETA.cuerpo;
     explicacion.fontSize = TEXTO.rotulo;
     explicacion.textWrapping = true;
     explicacion.resizeToFit = true;
-    explicacion.width = "486px";
+    explicacion.width = `${ANCHO_TEXTO}px`;
     explicacion.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     explicacion.isHitTestVisible = false;
     columna.addControl(explicacion);
 
     // Alto de la fila SEGUN su contenido.
     //
-    // Estaba fijo en 72 px con tres bloques de texto que se ajustan: cualquier
-    // explicacion de dos renglones desbordaba y se recortaba por arriba, que
-    // es por lo que se veian encabezados cortados a la mitad.
-    // Alto estimado, NO medido.
-    //
-    // heightInPixels devuelve cero en este momento: la interfaz mide los
-    // bloques al dibujar, no al crearlos, así que preguntarle acá dejaría
-    // todas las filas aplastadas. altoDeTexto hace la cuenta redondeando
-    // hacia arriba, que es el lado seguro — sobra aire en vez de faltar
-    // renglón.
+    // Alto estimado, NO medido. heightInPixels devuelve cero en este momento:
+    // la interfaz mide los bloques al dibujar, no al crearlos, así que
+    // preguntarle acá dejaría todas las filas aplastadas. altoDeTexto hace la
+    // cuenta redondeando hacia arriba, que es el lado seguro — sobra aire en
+    // vez de faltar renglón.
     fondoFila.height =
-      altoDeTexto(`${fila.correcto ? "\u2713" : "\u2715"}  ${tipo} · ${veredicto}`, 486, TEXTO.rotulo) +
-      altoDeTexto(fila.texto, 486, TEXTO.menor) +
-      altoDeTexto(fila.explicacion, 486, TEXTO.rotulo) +
+      altoDeTexto(encabezadoTexto, ANCHO_TEXTO, TEXTO.rotulo) +
+      altoDeTexto(fila.texto, ANCHO_TEXTO, TEXTO.menor) +
+      altoDeTexto(fila.explicacion, ANCHO_TEXTO, TEXTO.rotulo) +
       12 +
       38 +
       "px";

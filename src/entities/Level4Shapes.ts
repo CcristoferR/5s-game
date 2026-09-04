@@ -1,326 +1,258 @@
-import { Scene, MeshBuilder, PBRMaterial, DynamicTexture, Color3, Mesh } from "@babylonjs/core";
-import { fusionar } from "./ObjetosComunes";
-import type { ItemChecklistNivel4, SenalNivel4 } from "../data/levelConfig";
+import { Scene, MeshBuilder, PBRMaterial, Color3, Mesh } from "@babylonjs/core";
+import { materialPintado } from "./ObjetosComunes";
+import { texturaGrano, texturaMetalCepillado } from "./TexturasSuperficie";
+import type { ConectorNivel4, MarcaNivel4, ColorNivel4 } from "../data/levelConfig";
 
 // ---------------------------------------------------------------------------
-// Objetos del Nivel 4 (Seiketsu — Estandarizar)
+// Las piezas que el jugador manipula en el Nivel 4
 // ---------------------------------------------------------------------------
 //
-// Acá el jugador compara instrucciones para decidir cuáles sirven como estándar
-// y cuáles son demasiado vagas. Para comparar necesita LEERLAS, así que la
-// tarjeta lleva su texto impreso.
+// Ya no son tarjetas con texto. Antes el nivel se jugaba emparejando fichas
+// sobre una mesa, y eso no es estandarizar: es un test de lectura con forma de
+// juego. Ahora cada pieza es una herramienta de control visual real —un
+// conector codificado, una plantilla de pintura de piso, una etiqueta de
+// color— y se instala en el sitio del taller al que pertenece.
 //
-// Antes solo mostraba un número y había que levantarla para ver qué decía. Eso
-// convertía el nivel en un juego de memoria —agarrar, leer, soltar, recordar—
-// en vez de una comparación, que es lo que se busca enseñar.
+// Todas se fusionan en una sola malla. Es obligatorio para cualquier objeto
+// arrastrable: el sistema de arrastre solo reconoce la malla raíz, y con las
+// piezas como hijas el objeto se ve pero al hacerle clic no pasa nada.
 
-/** Reparte un texto en renglones que entren en el ancho dado. */
-function repartirEnRenglones(
-  ctx: CanvasRenderingContext2D,
-  texto: string,
-  anchoMaximo: number,
-  maximoRenglones: number
-): string[] {
-  const palabras = texto.split(/\s+/);
-  const renglones: string[] = [];
-  let actual = "";
-
-  for (const palabra of palabras) {
-    const prueba = actual ? `${actual} ${palabra}` : palabra;
-    if (ctx.measureText(prueba).width <= anchoMaximo || !actual) {
-      actual = prueba;
-    } else {
-      renglones.push(actual);
-      actual = palabra;
-      if (renglones.length === maximoRenglones - 1) break;
-    }
-  }
-
-  if (actual && renglones.length < maximoRenglones) renglones.push(actual);
-  return renglones;
+/** Convierte "#rrggbb" en Color3. */
+function desdeHex(hex: string): Color3 {
+  return Color3.FromHexString(hex.startsWith("#") ? hex : `#${hex}`);
 }
 
-export function crearFormaNivel4(scene: Scene, datos: ItemChecklistNivel4, numero: number): Mesh {
-  // Textura apaisada: la tarjeta es más ancha que profunda, y una textura
-  // cuadrada estiraría las letras al aplicarse.
-  // Resolución alta: la tarjeta mide 0,5 m de ancho, así que a 1280 px quedan
-  // unos 2.560 píxeles por metro. Con los 512 anteriores la letra se
-  // deshacía en cuanto la cámara no estaba encima, y había que hacer zoom
-  // máximo para leerla.
-  const ANCHO = 1280;
-  const ALTO = 900;
+// ---------------------------------------------------------------------------
+// Conector con forma propia (poka-yoke)
+// ---------------------------------------------------------------------------
 
-  const textura = new DynamicTexture(`textura_${datos.id}`, { width: ANCHO, height: ALTO }, scene, true);
-  const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
+/**
+ * Cable con el conector moldeado según su puerto.
+ *
+ * Video 4.2 (2:38): "un ejemplo es el de rompecabezas donde una pieza solo
+ * encaja en un sitio específico". La forma NO es decorativa: es la única
+ * información que el jugador tiene para saber dónde va, y es también lo que el
+ * nivel comprueba. Por eso cada una es inconfundible de un vistazo, incluso
+ * desde el otro extremo del taller.
+ */
+export function crearConector(scene: Scene, datos: ConectorNivel4): Mesh {
+  const partes: Mesh[] = [];
 
-  // Papel con un tono cálido y una trama muy leve: el blanco puro se ve
-  // digital, no impreso.
-  ctx.fillStyle = "#f0ece0";
-  ctx.fillRect(0, 0, ANCHO, ALTO);
-  for (let i = 0; i < 9000; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.5)" : "rgba(140,130,110,0.06)";
-    ctx.fillRect(Math.random() * ANCHO, Math.random() * ALTO, 3, 3);
+  const matCuerpo = new PBRMaterial(`matConectorCuerpo_${datos.id}`, scene);
+  matCuerpo.albedoColor = new Color3(0.14, 0.15, 0.17);
+  matCuerpo.roughness = 0.65;
+  matCuerpo.metallic = 0.15;
+  matCuerpo.microSurfaceTexture = texturaGrano(scene, 0.1);
+
+  const matMetal = new PBRMaterial(`matConectorMetal_${datos.id}`, scene);
+  matMetal.albedoColor = new Color3(0.55, 0.57, 0.6);
+  matMetal.roughness = 0.3;
+  matMetal.metallic = 0.85;
+  matMetal.albedoTexture = texturaMetalCepillado(scene);
+
+  // Mango: lo que se agarra.
+  const mango = MeshBuilder.CreateBox(
+    `conectorMango_${datos.id}`,
+    { width: 0.16, height: 0.16, depth: 0.2 },
+    scene
+  );
+  mango.position.z = 0.14;
+  mango.material = matCuerpo;
+  partes.push(mango);
+
+  // Espiga: la pieza con forma. Es lo que entra en el puerto.
+  let espiga: Mesh;
+  if (datos.forma === "cuadrado") {
+    espiga = MeshBuilder.CreateBox(
+      `conectorEspiga_${datos.id}`,
+      { width: 0.14, height: 0.14, depth: 0.1 },
+      scene
+    );
+  } else if (datos.forma === "circulo") {
+    espiga = MeshBuilder.CreateCylinder(
+      `conectorEspiga_${datos.id}`,
+      { diameter: 0.15, height: 0.1, tessellation: 22 },
+      scene
+    );
+    espiga.rotation.x = Math.PI / 2;
+  } else {
+    espiga = MeshBuilder.CreateCylinder(
+      `conectorEspiga_${datos.id}`,
+      { diameter: 0.19, height: 0.1, tessellation: 3 },
+      scene
+    );
+    espiga.rotation.x = Math.PI / 2;
+  }
+  espiga.position.z = -0.01;
+  espiga.material = matMetal;
+  partes.push(espiga);
+
+  // Cable enrollado detrás. Sin él la pieza se lee como un tapón suelto y no
+  // como el extremo de una instalación.
+  for (let i = 0; i < 4; i++) {
+    const tramo = MeshBuilder.CreateTorus(
+      `conectorCable_${datos.id}_${i}`,
+      { diameter: 0.15, thickness: 0.028, tessellation: 14 },
+      scene
+    );
+    tramo.rotation.x = Math.PI / 2;
+    tramo.position.set(0, -0.005 + i * 0.012, 0.3 + i * 0.055);
+    tramo.material = matCuerpo;
+    partes.push(tramo);
   }
 
-  ctx.strokeStyle = "#c9c2ac";
-  ctx.lineWidth = 12;
+  const conector = Mesh.MergeMeshes(partes, true, true, undefined, false, true)!;
+  conector.name = datos.id;
+  conector.receiveShadows = true;
+  return conector;
+}
 
-  ctx.strokeRect(24, 24, ANCHO - 48, ALTO - 48);
+// ---------------------------------------------------------------------------
+// Plantilla de pintura de piso (señalización de caminos)
+// ---------------------------------------------------------------------------
 
-  // Franja superior con el número: hace de encabezado y deja el número
-  // disponible para referirse a la tarjeta, sin robarle lugar al texto.
-  ctx.fillStyle = "#3c4a5a";
-  // Encabezado más bajo que antes en proporción: el espacio ganado va al
+/**
+ * Plantilla de marcado, del tipo que se apoya en el piso para pintar encima.
+ *
+ * Lleva escrito lo que va a quedar pintado. Es deliberado: la diferencia entre
+ * "PASILLO · DESPEJADO 1,20 m" y "ZONA ORDENADA" tiene que poder leerse ANTES
+ * de colocarla, porque elegir entre las dos es la única decisión del nivel que
+ * ningún control automático puede corregir después.
+ */
+export function crearMarcaPiso(scene: Scene, datos: MarcaNivel4): Mesh {
+  const partes: Mesh[] = [];
 
-  // texto, que es lo que hay que poder leer.
+  const matBastidor = new PBRMaterial(`matMarcaBastidor_${datos.id}`, scene);
+  matBastidor.albedoColor = new Color3(0.32, 0.34, 0.37);
+  matBastidor.roughness = 0.55;
+  matBastidor.metallic = 0.5;
 
-  ctx.fillRect(24, 24, ANCHO - 48, 116);
+  const ANCHO = 0.78;
+  const FONDO = 0.34;
 
-  ctx.fillStyle = "#f2f3f1";
-  ctx.font = "bold 64px system-ui, sans-serif";
-
-  ctx.textAlign = "left";
-
-  ctx.textBaseline = "middle";
-
-  ctx.fillText(`INSTRUCCIÓN ${numero}`, 56, 84);
-
-  // El texto de la instrucción, que es lo que el jugador tiene que evaluar.
-  ctx.fillStyle = "#22252a";
-  // 108 px sobre 1280 equivale a 43 px sobre los 512 de antes: la letra no
-  // solo se ve más nítida, es un 27 % más grande en el mundo. Es lo que hace
-  // que se lea sin acercarse.
-  ctx.font = "600 108px system-ui, sans-serif";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-
-  const renglones = repartirEnRenglones(ctx, datos.textoVisible, ANCHO - 130, 5);
-
-  renglones.forEach((linea, i) => {
-
-    ctx.fillText(linea, 62, 188 + i * 132);
-
+  // Bastidor: cuatro listones que enmarcan la lámina.
+  const listones: Array<[number, number, number, number]> = [
+    [0, -FONDO / 2, ANCHO, 0.035],
+    [0, FONDO / 2, ANCHO, 0.035],
+    [-ANCHO / 2, 0, 0.035, FONDO],
+    [ANCHO / 2, 0, 0.035, FONDO],
+  ];
+  listones.forEach(([lx, lz, ancho, fondo], i) => {
+    const liston = MeshBuilder.CreateBox(
+      `marcaListon_${datos.id}_${i}`,
+      { width: ancho, height: 0.045, depth: fondo },
+      scene
+    );
+    liston.position.set(lx, 0.022, lz);
+    liston.material = matBastidor;
+    partes.push(liston);
   });
 
-  textura.update();
+  const matLamina = materialPintado(scene, `matMarcaLamina_${datos.id}`, 768, 320, (ctx, w, h) => {
+    ctx.fillStyle = datos.esEspecifica ? "#e9c65a" : "#b9b39a";
+    ctx.fillRect(0, 0, w, h);
 
-  const mat = new PBRMaterial(`mat_${datos.id}`, scene);
-  mat.albedoTexture = textura;
-  mat.roughness = 0.9;
-  mat.metallic = 0;
-  // Filtrado anisotrópico al máximo: sin esto el texto se emborrona en cuanto
-  // la tarjeta se ve en ángulo, que es como se la ve casi siempre con una
-  // cámara que orbita por encima de la mesa.
-  textura.anisotropicFilteringLevel = 16;
+    // Rayado de seguridad en los bordes.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(30,30,30,0.5)";
+    ctx.lineWidth = 12;
+    for (let i = -h; i < w + h; i += 46) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + h, h);
+      ctx.stroke();
+    }
+    ctx.restore();
 
-  // La ficha tiene grosor de cartulina montada, no de hoja: 2 cm sobre 50 de
-  // ancho es una lámina, y a la distancia de la cámara desaparecía de canto.
-  // Con 3,5 cm y un soporte debajo se lee como un objeto que se puede tomar.
-  const tarjeta = MeshBuilder.CreateBox(datos.id, { width: 0.5, height: 0.035, depth: 0.35 }, scene);
-  tarjeta.material = mat;
+    ctx.fillStyle = "#171a1c";
+    ctx.fillRect(26, 84, w - 52, h - 168);
 
-  // Marco: el borde de la ficha en un tono distinto al papel. Sin él los
-  // cantos quedan del color del papel y la tarjeta se confunde con la mesa
-  // cuando se la ve desde un costado.
-  const matMarco = new PBRMaterial(`matMarco_${datos.id}`, scene);
-  matMarco.albedoColor = new Color3(0.22, 0.26, 0.32);
-  matMarco.roughness = 0.75;
-  matMarco.metallic = 0.05;
+    ctx.fillStyle = datos.esEspecifica ? "#f2d47a" : "#d8d3c0";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    let tamano = 62;
+    ctx.font = `bold ${tamano}px system-ui, sans-serif`;
+    while (ctx.measureText(datos.textoPintado).width > w - 88 && tamano > 20) {
+      tamano -= 3;
+      ctx.font = `bold ${tamano}px system-ui, sans-serif`;
+    }
+    ctx.fillText(datos.textoPintado, w / 2, h / 2);
+  });
 
-  const marco = MeshBuilder.CreateBox(`marco_${datos.id}`, { width: 0.53, height: 0.02, depth: 0.38 }, scene);
-  marco.position.y = -0.019;
-  marco.material = matMarco;
+  const lamina = MeshBuilder.CreateBox(
+    `marcaLamina_${datos.id}`,
+    { width: ANCHO - 0.06, height: 0.02, depth: FONDO - 0.06 },
+    scene
+  );
+  lamina.position.y = 0.03;
+  lamina.material = matLamina;
+  partes.push(lamina);
 
-  // Clip metálico en el borde superior, como el de una ficha de taller
-  // colgada del tablero. Es el rasgo que la vuelve reconocible de lejos: sin
-  // él las cuatro tarjetas son rectángulos idénticos.
-  const matClip = new PBRMaterial(`matClip_${datos.id}`, scene);
-  matClip.albedoColor = new Color3(0.66, 0.68, 0.72);
-  matClip.roughness = 0.3;
-  matClip.metallic = 0.9;
-
-  const clip = MeshBuilder.CreateBox(`clip_${datos.id}`, { width: 0.1, height: 0.012, depth: 0.07 }, scene);
-  clip.position.set(0, 0.022, -0.155);
-  clip.material = matClip;
-
-  const clipLomo = MeshBuilder.CreateBox(`clipLomo_${datos.id}`, { width: 0.1, height: 0.05, depth: 0.012 }, scene);
-  clipLomo.position.set(0, 0.004, -0.188);
-  clipLomo.material = matClip;
-
-  // Todo en UNA malla: el arrastre solo detecta la malla raíz, así que las
-  // piezas sueltas como hijas no se podrían agarrar. Es la misma regla que
-  // siguen los objetos de los Niveles 1 y 2.
-  return fusionar([tarjeta, marco, clip, clipLomo], datos.id);
+  const marca = Mesh.MergeMeshes(partes, true, true, undefined, false, true)!;
+  marca.name = datos.id;
+  marca.receiveShadows = true;
+  return marca;
 }
 
-/**
- * Ficha de señalización de seguridad.
- *
- * Lleva las franjas diagonales que se usan en la señalética industrial. Sin
- * ellas la ficha es un cuadrado de color, y el jugador tiene que deducir por
- * contexto que se trata de una señal — con las franjas se reconoce de
- * inmediato, que es justo lo que una señal de seguridad debe lograr.
- */
-/**
- * Dibuja el pictograma de la senal.
- *
- * Es lo que vuelve el nivel jugable para alguien que nunca vio el juego. Con
- * placas de color liso hay que ADIVINAR cual va en cada zona, o leer los tres
- * rotulos y recordarlos. Con el simbolo encima, la asociacion es inmediata y
- * ademas es la de verdad: en senaletica industrial el verde marca una
- * condicion segura, el triangulo amarillo advierte de un riesgo y el circulo
- * rojo tachado prohibe.
- */
-function dibujarPictograma(ctx: CanvasRenderingContext2D, id: string, lado: number): void {
-  const c = lado / 2;
+// ---------------------------------------------------------------------------
+// Ficha de color para el interruptor
+// ---------------------------------------------------------------------------
 
-  ctx.save();
-  ctx.translate(c, c);
+/**
+ * Etiqueta de color que se pega en la placa de un interruptor.
+ *
+ * Video 4.2 (5:29): los interruptores se señalizan por color y sus focos
+ * llevan el mismo. Nada impide pegar la ficha equivocada — y eso es
+ * exactamente lo que este nivel quiere que el jugador descubra.
+ */
+export function crearFichaColor(scene: Scene, datos: ColorNivel4): Mesh {
+  const partes: Mesh[] = [];
+  const color = desdeHex(datos.hex);
 
-  if (id === "senal_verde") {
-    // Peaton: cabeza, torso y piernas en zancada. La zancada es lo que lo
-    // distingue de una figura parada — se lee como "paso", no como "persona".
+  const matCuerpo = new PBRMaterial(`matFichaCuerpo_${datos.id}`, scene);
+  matCuerpo.albedoColor = color;
+  matCuerpo.emissiveColor = color.scale(0.16);
+  matCuerpo.roughness = 0.6;
+  matCuerpo.metallic = 0.1;
+
+  const cuerpo = MeshBuilder.CreateBox(
+    `fichaCuerpo_${datos.id}`,
+    { width: 0.3, height: 0.34, depth: 0.026 },
+    scene
+  );
+  cuerpo.material = matCuerpo;
+  partes.push(cuerpo);
+
+  const matCara = materialPintado(scene, `matFichaCara_${datos.id}`, 256, 288, (ctx, w, h) => {
+    ctx.fillStyle = datos.hex;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 8;
+    ctx.strokeRect(12, 12, w - 24, h - 24);
+
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fillRect(0, h - 74, w, 74);
     ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(-6, -74, 26, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.font = "bold 40px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(datos.nombreVisible.toUpperCase(), w / 2, h - 26);
+  });
 
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 30;
+  const cara = MeshBuilder.CreateBox(
+    `fichaCara_${datos.id}`,
+    { width: 0.29, height: 0.33, depth: 0.012 },
+    scene
+  );
+  cara.position.z = -0.016;
+  cara.material = matCara;
+  partes.push(cara);
 
-    ctx.beginPath();
-    ctx.moveTo(-4, -44);
-    ctx.lineTo(4, 22);
-    ctx.stroke();
-
-    // Piernas
-    ctx.beginPath();
-    ctx.moveTo(4, 18);
-    ctx.lineTo(-34, 86);
-    ctx.moveTo(4, 18);
-    ctx.lineTo(40, 80);
-    ctx.stroke();
-
-    // Brazos
-    ctx.lineWidth = 22;
-    ctx.beginPath();
-    ctx.moveTo(-2, -30);
-    ctx.lineTo(-44, 10);
-    ctx.moveTo(-2, -30);
-    ctx.lineTo(36, -4);
-    ctx.stroke();
-  } else if (id === "senal_amarillo") {
-    // Triangulo de advertencia con el rayo dentro.
-    ctx.fillStyle = "#141414";
-    ctx.beginPath();
-    ctx.moveTo(0, -104);
-    ctx.lineTo(104, 82);
-    ctx.lineTo(-104, 82);
-    ctx.closePath();
-    ctx.fill();
-
-    // Interior amarillo: deja el triangulo como un borde grueso, que es como
-    // se ve la senal real.
-    ctx.fillStyle = "#e8b400";
-    ctx.beginPath();
-    ctx.moveTo(0, -66);
-    ctx.lineTo(72, 60);
-    ctx.lineTo(-72, 60);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = "#141414";
-    ctx.beginPath();
-    ctx.moveTo(18, -44);
-    ctx.lineTo(-26, 10);
-    ctx.lineTo(-2, 10);
-    ctx.lineTo(-16, 52);
-    ctx.lineTo(30, -8);
-    ctx.lineTo(4, -8);
-    ctx.closePath();
-    ctx.fill();
-  } else {
-    // Prohibicion: circulo con la barra diagonal.
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 26;
-    ctx.beginPath();
-    ctx.arc(0, 0, 78, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.lineCap = "butt";
-    ctx.beginPath();
-    ctx.moveTo(-55, 55);
-    ctx.lineTo(55, -55);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-export function crearFormaSenal(scene: Scene, datos: SenalNivel4): Mesh {
-  // 512 en vez de 256: el pictograma tiene curvas y diagonales, y a la
-  // resolucion anterior los bordes quedaban dentados.
-  const LADO = 512;
-  const textura = new DynamicTexture(`texturaSenal_${datos.id}`, { width: LADO, height: LADO }, scene, true);
-  const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
-
-  const [r, g, b] = datos.colorHex;
-  const base = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
-
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, LADO, LADO);
-
-  // Franjas diagonales oscuras en el borde, como la cinta de peligro.
-  ctx.save();
-  ctx.translate(LADO / 2, LADO / 2);
-  ctx.rotate(-Math.PI / 4);
-  ctx.translate(-LADO, -LADO);
-  ctx.fillStyle = "rgba(24,24,26,0.82)";
-  for (let x = 0; x < LADO * 2; x += 112) {
-    ctx.fillRect(x, 0, 56, LADO * 2);
-  }
-  ctx.restore();
-
-  // Recuadro interior liso: deja ver el color puro, que es el dato que el
-  // jugador tiene que asociar con la zona, y da fondo limpio al pictograma.
-  ctx.fillStyle = base;
-  ctx.fillRect(92, 92, LADO - 184, LADO - 184);
-
-  ctx.strokeStyle = "rgba(20,20,22,0.85)";
-  ctx.lineWidth = 16;
-  ctx.strokeRect(92, 92, LADO - 184, LADO - 184);
-
-  dibujarPictograma(ctx, datos.id, LADO);
-
-  // Desgaste: unas marcas claras rompen la perfeccion de la impresion.
-  for (let i = 0; i < 120; i++) {
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    ctx.fillRect(Math.random() * LADO, Math.random() * LADO, 6 + Math.random() * 12, 3);
-  }
-
-  textura.update();
-  textura.anisotropicFilteringLevel = 16;
-
-  const mat = new PBRMaterial(`matSenal_${datos.id}`, scene);
-  mat.albedoTexture = textura;
-  mat.roughness = 0.5;
-  mat.metallic = 0.05;
-
-  const placa = MeshBuilder.CreateBox(datos.id, { width: 0.42, height: 0.03, depth: 0.42 }, scene);
-  placa.material = mat;
-
-  // Base metalica apenas mayor que la placa: le da canto y sombra propia. Sin
-  // ella la senal es una calcomania sobre el piso y no se distingue de las
-  // marcas pintadas de las zonas.
-  const matBase = new PBRMaterial(`matBaseSenal_${datos.id}`, scene);
-  matBase.albedoColor = new Color3(0.3, 0.32, 0.35);
-  matBase.roughness = 0.45;
-  matBase.metallic = 0.7;
-
-  const soporte = MeshBuilder.CreateBox(`baseSenal_${datos.id}`, { width: 0.46, height: 0.022, depth: 0.46 }, scene);
-  soporte.position.y = -0.02;
-  soporte.material = matBase;
-
-  return fusionar([placa, soporte], datos.id);
+  const ficha = Mesh.MergeMeshes(partes, true, true, undefined, false, true)!;
+  ficha.name = datos.id;
+  ficha.receiveShadows = true;
+  return ficha;
 }

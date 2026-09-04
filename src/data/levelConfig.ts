@@ -501,67 +501,210 @@ export const incidentesNivel3: IncidenteNivel3[] = [
   },
 ];
 
-// Datos del Nivel 4 (Seiketsu / Estandarizar).
-export type ZonaChecklist = "checklist" | "descartar";
+// ===========================================================================
+// Datos del Nivel 4 (Seiketsu / Estandarizar)
+// ===========================================================================
+//
+// Video 4.2 (1:32): "en el caso de la utilizacion del control visual
+// emplearemos letreros, carteles, Andon, senalizacion de caminos, senales y
+// Kanban". El nivel monta tres estaciones, y cada una demuestra un GRADO DE
+// CONTROL distinto sobre el mismo error. Ese orden es la leccion:
+//
+//   A. POKA-YOKE — el error es IMPOSIBLE.
+//      Video 4.2 (2:38): "a prueba de tontos... permite evitar errores debido
+//      a la facilidad grafica y de espacio. Un ejemplo es el de rompecabezas
+//      donde una pieza solo encaja en un sitio especifico". El conector no
+//      entra en el puerto equivocado. No hay aviso porque no hace falta.
+//
+//   B. ANDON — el error es POSIBLE pero se avisa al instante.
+//      La zona parpadea en rojo y suena la chicharra. Peor que A: el error
+//      ocurre, y solo se corrige porque alguien lo ve.
+//
+//   C. CONVENCION DE COLOR — el error es POSIBLE y NADIE lo avisa.
+//      Video 4.2 (5:29): "estos interruptores estan senalizados segun
+//      colores... los focos pertenecientes a dichos interruptores estan
+//      senalizados con el mismo color". Nada impide pintar un interruptor del
+//      color equivocado: la instalacion sigue funcionando y el fallo solo
+//      aparece cuando alguien audita. Es el control mas debil de los tres, y
+//      por eso es el unico que viaja al Nivel 5 como senalizacion auditable.
 
-export interface ItemChecklistNivel4 {
+// --- Estacion A: Poka-Yoke ---------------------------------------------------
+
+export type FormaConector = "triangulo" | "cuadrado" | "circulo";
+
+export interface PuertoNivel4 {
   id: string;
-  textoVisible: string;
+  forma: FormaConector;
+  etiqueta: string;
+  /** Desplazamiento lateral dentro del armario, en metros. */
+  desplazamiento: number;
+}
+
+export interface ConectorNivel4 {
+  id: string;
+  nombreVisible: string;
+  forma: FormaConector;
+  /** Posicion de partida, sobre el banco. */
   posicionInicial: [number, number, number];
-  zonaCorrecta: ZonaChecklist;
   explicacion: string;
 }
 
-// Las cinco tarjetas se reparten en dos filas DENTRO del tablero.
-//
-// El banco mide 4,6 x 1,4 m centrado en z = -0,5, así que su superficie va de
-// z = -1,20 a z = 0,20. Tres de estas tarjetas estaban en z = 0,2 y 0,3: justo
-// sobre el canto o directamente en el aire, más allá del borde delantero.
-export const itemsNivel4: ItemChecklistNivel4[] = [
-  { id: "limpiar_vago", textoVisible: "Limpiar el escritorio cada cierto tiempo", posicionInicial: [-1.35, 0.945, -0.85], zonaCorrecta: "descartar", explicacion: "Demasiado vago — 'cada cierto tiempo' no es medible, cada persona lo interpretaría distinto." },
-  { id: "limpiar_claro", textoVisible: "Limpiar con paño húmedo al finalizar el turno", posicionInicial: [0, 0.945, -0.85], zonaCorrecta: "checklist", explicacion: "Claro y medible — cualquiera puede seguir esta instrucción sin ambigüedad." },
-  { id: "archivar_vago", textoVisible: "Guardar los documentos en algún lugar ordenado", posicionInicial: [1.35, 0.945, -0.85], zonaCorrecta: "descartar", explicacion: "No dice dónde ni cómo — deja la decisión al criterio de cada persona, eso no es un estándar." },
-  { id: "archivar_claro", textoVisible: "Archivar en carpeta por proyecto, ordenado por fecha", posicionInicial: [-0.68, 0.945, -0.3], zonaCorrecta: "checklist", explicacion: "Instrucción específica y replicable por cualquier persona nueva en el puesto." },
-  { id: "correo_personal", textoVisible: "Revisar el correo personal", posicionInicial: [0.68, 0.945, -0.3], zonaCorrecta: "descartar", explicacion: "No corresponde a un procedimiento de estandarización del puesto de trabajo." },
+export const puertosNivel4: PuertoNivel4[] = [
+  { id: "puerto_potencia", forma: "cuadrado", etiqueta: "POTENCIA", desplazamiento: -0.42 },
+  { id: "puerto_senal", forma: "triangulo", etiqueta: "SE\u00d1AL", desplazamiento: 0 },
+  { id: "puerto_tierra", forma: "circulo", etiqueta: "TIERRA", desplazamiento: 0.42 },
 ];
 
-// Señalética / códigos de color del Nivel 4 — nueva mecánica que pide la
-// guía ("coloca señalética, códigos de color"), separada del checklist.
-export interface SenalNivel4 {
+export const conectoresNivel4: ConectorNivel4[] = [
+  {
+    id: "cable_potencia",
+    nombreVisible: "Cable de potencia",
+    forma: "cuadrado",
+    posicionInicial: [-1.4, 0, 0.6],
+    explicacion:
+      "Entra solo en POTENCIA porque su forma no encaja en ningun otro puerto. No hizo falta ningun cartel ni ninguna alarma: el error era imposible.",
+  },
+  {
+    id: "cable_senal",
+    nombreVisible: "Cable de se\u00f1al",
+    forma: "triangulo",
+    posicionInicial: [-0.2, 0, 1.0],
+    explicacion:
+      "Poka-yoke por geometria: la pieza solo encaja en un sitio. Es el control mas fuerte que existe, porque no depende de que nadie preste atencion.",
+  },
+  {
+    id: "cable_tierra",
+    nombreVisible: "Cable de tierra",
+    forma: "circulo",
+    posicionInicial: [0.9, 0, 0.5],
+    explicacion:
+      "Con el equipo conectado a tierra en su propio puerto, nadie puede invertirlo por descuido en el turno de noche. El estandar se sostiene solo.",
+  },
+];
+
+// --- Estacion B: Andon -------------------------------------------------------
+
+export interface ZonaPisoNivel4 {
+  id: string;
+  etiqueta: string;
+  centro: [number, number];
+  ancho: number;
+  fondo: number;
+}
+
+export interface MarcaNivel4 {
   id: string;
   nombreVisible: string;
-  colorHex: [number, number, number];
-  posicionInicial: [number, number, number];
+  /** Lo que queda pintado en el piso al colocarla. */
+  textoPintado: string;
+  zonaCorrecta: string;
+  /**
+   * Un estandar sin medida no es un estandar.
+   *
+   * La marca generica cae DENTRO de la zona correcta, asi que el Andon no la
+   * rechaza: una luz detecta un sitio equivocado, no un texto vago. Es el
+   * unico error de este nivel que sobrevive a los tres controles y llega vivo
+   * a la auditoria del Nivel 5.
+   */
+  esEspecifica: boolean;
+  explicacion: string;
 }
 
-export interface ZonaSenalNivel4 {
+export const zonasPisoNivel4: ZonaPisoNivel4[] = [
+  { id: "zona_pasillo", etiqueta: "PASILLO", centro: [0, 2.1], ancho: 5.0, fondo: 1.05 },
+  { id: "zona_extintor", etiqueta: "EXTINTOR", centro: [-3.9, 0.6], ancho: 0.95, fondo: 0.95 },
+  { id: "zona_pallets", etiqueta: "PALLETS", centro: [3.6, 0.6], ancho: 1.5, fondo: 1.5 },
+];
+
+export const marcasNivel4: MarcaNivel4[] = [
+  {
+    id: "marca_pasillo",
+    nombreVisible: "Plantilla: pasillo con medida",
+    textoPintado: "PASILLO \u00b7 DESPEJADO 1,20 m",
+    zonaCorrecta: "zona_pasillo",
+    esEspecifica: true,
+    explicacion:
+      "Con la medida escrita en el piso, cualquiera sabe si el pasillo cumple sin preguntarle a nadie. Eso es un estandar.",
+  },
+  {
+    id: "marca_generica",
+    nombreVisible: "Plantilla: zona ordenada",
+    textoPintado: "ZONA ORDENADA",
+    zonaCorrecta: "zona_pasillo",
+    esEspecifica: false,
+    explicacion:
+      "El sitio es el correcto, por eso el Andon no dijo nada: una luz detecta una posicion equivocada, no un texto vago. Pero \u00abordenada\u00bb no se puede medir, asi que este punto nunca se va a poder dar por cumplido en una auditoria.",
+  },
+  {
+    id: "marca_extintor",
+    nombreVisible: "Plantilla: extintor",
+    textoPintado: "EXTINTOR \u00b7 NO OBSTRUIR",
+    zonaCorrecta: "zona_extintor",
+    esEspecifica: true,
+    explicacion:
+      "El area del extintor demarcada en el piso es senalizacion de caminos pura: se ve ocupada de lejos, sin tener que llegar hasta ahi.",
+  },
+  {
+    id: "marca_pallets",
+    nombreVisible: "Plantilla: pallets",
+    textoPintado: "ZONA DE PALLETS",
+    zonaCorrecta: "zona_pallets",
+    esEspecifica: true,
+    explicacion:
+      "Delimitar donde van los pallets evita que el material invada el paso. El limite pintado hace de recordatorio permanente.",
+  },
+];
+
+// --- Estacion C: convencion de color -----------------------------------------
+
+export interface ColorNivel4 {
   id: string;
-  posicionX: number;
+  nombreVisible: string;
+  hex: string;
+}
+
+export interface CircuitoNivel4 {
+  id: string;
+  /** Lo que dice la placa del interruptor. */
   descripcion: string;
   colorCorrectoId: string;
+  /** Donde cuelga el foco de este circuito. */
+  lampara: [number, number];
+  /** Desplazamiento lateral dentro del panel. */
+  desplazamiento: number;
 }
 
-export const senalesNivel4: SenalNivel4[] = [
-  { id: "senal_verde", nombreVisible: "Verde", colorHex: [0.15, 0.55, 0.2], posicionInicial: [2, 0.02, 3.0] },
-  { id: "senal_amarillo", nombreVisible: "Amarillo", colorHex: [0.85, 0.7, 0.05], posicionInicial: [-2, 0.02, 3.0] },
-  { id: "senal_rojo", nombreVisible: "Rojo", colorHex: [0.75, 0.1, 0.1], posicionInicial: [0, 0.02, 3.0] },
+export const coloresNivel4: ColorNivel4[] = [
+  { id: "color_rojo", nombreVisible: "Rojo", hex: "#c0392b" },
+  { id: "color_azul", nombreVisible: "Azul", hex: "#2c6fb5" },
+  { id: "color_verde", nombreVisible: "Verde", hex: "#2e8b52" },
+  { id: "color_amarillo", nombreVisible: "Amarillo", hex: "#d4a017" },
 ];
 
-export const zonasSenalNivel4: ZonaSenalNivel4[] = [
-  { id: "zona_transito", posicionX: -2, descripcion: "Zona de tránsito peatonal — paso seguro", colorCorrectoId: "senal_verde" },
-  { id: "zona_riesgo_electrico", posicionX: 0, descripcion: "Zona de riesgo eléctrico — precaución", colorCorrectoId: "senal_amarillo" },
-  { id: "zona_acceso_restringido", posicionX: 2, descripcion: "Zona de acceso restringido — prohibido el paso", colorCorrectoId: "senal_rojo" },
+export const circuitosNivel4: CircuitoNivel4[] = [
+  {
+    id: "circuito_banco",
+    descripcion: "Circuito del banco de trabajo",
+    colorCorrectoId: "color_rojo",
+    lampara: [0, -0.5],
+    desplazamiento: -0.44,
+  },
+  {
+    id: "circuito_pallets",
+    descripcion: "Circuito de la zona de pallets",
+    colorCorrectoId: "color_azul",
+    lampara: [3.6, 0.6],
+    desplazamiento: 0,
+  },
+  {
+    id: "circuito_extintor",
+    descripcion: "Circuito del extintor",
+    colorCorrectoId: "color_verde",
+    lampara: [-3.9, 0.6],
+    desplazamiento: 0.44,
+  },
 ];
 
-// Datos del Nivel 5 (Shitsuke / Disciplina) — modo auditoría.
-//
-// A diferencia de los otros niveles, los puntos de control YA NO son una
-// lista fija: se generan en tiempo real a partir del estándar que el
-// propio jugador construyó en el Nivel 4 (ver core/AuditGenerator.ts y
-// core/GameManager.ts), y las desviaciones se sortean en cada intento.
-// Acá solo queda el tipo de dato y un set de respaldo, por si el jugador
-// llegara a este nivel sin datos guardados del Nivel 4 en esta sesión
-// (no debería pasar en el flujo normal, pero evita que el nivel se rompa).
 export type TipoEvidencia = "tarjetaVencida" | "manchaVisible" | "objetoFueraDeLugar" | "sinProblema";
 
 export interface PuntoControlNivel5 {
