@@ -329,7 +329,7 @@ export const objetosNivel2: ObjetoNivel2[] = [
   {
     id: "destornillador",
     nombreVisible: "Destornillador",
-    posicionInicial: [2.5, 0, 1.8],
+    posicionInicial: [1.75, 0, -0.15],
     rotacionY: -0.3,
     destino: "tablero",
     silueta: "destornillador",
@@ -396,7 +396,7 @@ export const objetosNivel2: ObjetoNivel2[] = [
   {
     id: "bidon_aceite",
     nombreVisible: "Bidón de aceite",
-    posicionInicial: [3.4, 0, -0.6],
+    posicionInicial: [-1.15, 0, -0.55],
     destino: "inferior",
     criterio: "Peso · va abajo",
     explicacion:

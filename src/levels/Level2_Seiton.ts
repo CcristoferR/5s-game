@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, Vector3, Mesh, AbstractMesh } from "@babylonjs/core";
-import { TextBlock, Control, StackPanel, Rectangle } from "@babylonjs/gui";
+import { TextBlock, Control } from "@babylonjs/gui";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { objetosNivel2, briefingsNiveles, microLeccionesNiveles } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
@@ -12,6 +12,7 @@ import { crearBancoDeTrabajo } from "../entities/Workbench";
 import { reproducir } from "../core/Sonido";
 import { cargarGaraje, iluminarInteriorGaraje } from "../entities/Garaje";
 import { ambientarNivel } from "../entities/AmbienteNivel";
+import { crearCintaDelimitacion, crearPizarraInstrucciones } from "../entities/CeldaTrabajo";
 import { crearFormaNivel2 } from "../entities/Level2Shapes";
 import { moverMalla, luegoDe } from "../core/Animacion";
 import { GameManager } from "../core/GameManager";
@@ -95,8 +96,29 @@ const FACTOR_AGARRE = 1.15;
 const Z_PUESTO = 3.0;
 const Y_TABLERO = 1.62;
 const Z_TABLERO = 3.58;
-const X_ESTANTE = 3.5;
-const Z_ESTANTE = 3.2;
+
+// DISPOSICIÓN EN L.
+//
+// El estante estaba en (3,5 · 3,2), pegado al fondo y alineado con la pared:
+// desde la cámara se veía pequeño, lejano y sin relación con el puesto. Ahora
+// se adelanta y se gira un cuarto de vuelta, así que su frente mira al banco y
+// los dos muebles cierran una esquina.
+//
+// Eso hace dos cosas: llena el vacío del centro del galpón y convierte tres
+// objetos sueltos en una celda de trabajo — que es como se distribuye un
+// puesto real, con lo que se usa al alcance del brazo y no a diez pasos.
+const X_ESTANTE = 3.15;
+const Z_ESTANTE = 1.55;
+// EL FRENTE MIRA AL PUESTO, NO A LA PARED.
+//
+// Con -90° el frente apuntaba a +X, o sea contra el muro derecho: el receptor
+// al que hay que apuntar quedaba DENTRO de la pared y era inalcanzable. Por
+// eso dejó de poderse colocar nada en las baldas, sin ningún error visible —
+// el rayo simplemente no encontraba nada.
+//
+// Con +90° el frente mira a -X, hacia el banco, que además es lo que cierra
+// la L: se trabaja de cara al mueble, no de espaldas.
+const GIRO_ESTANTE = Math.PI / 2;
 
 /** Apoya una malla sobre una superficie, sea cual sea su escala. */
 function apoyarSobre(malla: Mesh, alturaSuperficie: number): void {
@@ -185,6 +207,16 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // cualquiera y "está cerca" dejaría de significar algo. El banco no es un
   // destino válido — no recibe objetos —, es lo que le da sentido al tablero
   // que tiene encima.
+  // Cinta en el piso, antes que los muebles: así queda por debajo de ellos y
+  // las patas se apoyan sobre la línea en vez de flotar encima.
+  //
+  // Video 3.3, paso 4: definido el sitio de cada cosa, "se procede a delimitar,
+  // pintar líneas en el suelo y colocar las etiquetas". Acá cumple además una
+  // función visual — sin líneas los muebles se leen como puestos al azar en
+  // medio del mapa.
+  crearCintaDelimitacion(scene, 0, Z_PUESTO - 0.15, 4.6, 2.4);
+  crearCintaDelimitacion(scene, X_ESTANTE - 0.15, Z_ESTANTE, 1.7, 4.4, { discontinua: true });
+
   crearBancoDeTrabajo(scene, { nombre: "bancoN2", ancho: 3.2, fondo: 0.95, z: Z_PUESTO });
 
   const tablero = crearTableroSombras(scene, 0, Y_TABLERO, Z_TABLERO, 0, [
@@ -197,7 +229,14 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Estantería propia del nivel: vacía, de dos baldas y rotulada en el mueble.
   // La de ambientación viene cargada de bultos y con cuatro alturas — no hay
   // dónde poner nada y no se distingue cuál es la media y cuál la inferior.
-  const estante = crearEstanteDestino(scene, X_ESTANTE, Z_ESTANTE, 0);
+  const estante = crearEstanteDestino(scene, X_ESTANTE, Z_ESTANTE, GIRO_ESTANTE);
+
+  // Hacia dónde mira el frente del estante. Es por donde entran las piezas al
+  // guardarlas, y por tanto desde dónde tienen que aproximarse.
+  const frenteEstante = {
+    x: -Math.sin(GIRO_ESTANTE),
+    z: -Math.cos(GIRO_ESTANTE),
+  };
 
   // Recinto de arrastre, por delante de los muebles.
   //
@@ -348,52 +387,29 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // seguidas, y tenerla delante convierte el nivel en un ejercicio de criterio
   // en vez de uno de memoria. La etiqueta al pasar el cursor dice QUÉ es cada
   // objeto; decidir DÓNDE va sigue siendo suyo.
-  // Los dos textos van en una COLUMNA, no en alturas fijas.
+  // LAS INSTRUCCIONES VIVEN EN LA PARED, NO EN EL AIRE.
   //
-  // Antes cada uno tenía su "top" en píxeles. El primero se ajusta a dos
-  // renglones según el ancho de la ventana, así que crecía hacia abajo y se
-  // montaba sobre el segundo — que estaba clavado a 104 px y no se enteraba.
-  // Apilados, el segundo siempre queda debajo del primero, mida lo que mida.
-  const consignas = new StackPanel("consignasNivel2");
-  consignas.isVertical = true;
-  consignas.width = "900px";
-  consignas.top = "62px";
-  consignas.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  consignas.isHitTestVisible = false;
-  gui.addControl(consignas);
+  // Antes eran dos líneas de texto blanco flotando sobre el techo. Se leían
+  // como un subtítulo del juego y no como algo del taller, y contradecían la
+  // propia lección del nivel: Seiton pide que el área hable por sí sola, con
+  // la información EN el sitio. Un galpón real tiene la instrucción escrita en
+  // una pizarra colgada de la pared.
+  //
+  // Como pieza física además ancla el fondo, que estaba vacío.
+  // Pegada al muro del fondo y a la altura de la vista.
+  //
+  // Estaba adelantada medio metro y se veía suspendida, sin nada que la
+  // sostuviera. Ahora va contra el ladrillo, con sus soportes apoyando en él.
+  // Sobre su caballete, apoyada en el suelo contra la pared del fondo. Ya no
+  // depende de acertar la profundidad exacta del muro.
+  crearPizarraInstrucciones(scene, -2.9, 1.28, 3.95, 0, [
+    { texto: "DISTRIBUCIÓN DEL PUESTO", titulo: true },
+    { texto: "Uso diario  →  tablero de siluetas" },
+    { texto: "Uso ocasional  →  repisa media" },
+    { texto: "Objetos pesados  →  repisa inferior" },
+    { texto: "Arrastra y apunta al sitio: sube solo." },
+  ]);
 
-  const criterios = new TextBlock(
-    "criteriosNivel2",
-    "Uso diario → tablero de siluetas   ·   Uso ocasional → repisa media   ·   Objetos pesados → repisa inferior"
-  );
-  criterios.color = "white";
-  criterios.fontSize = TEXTO.cuerpo;
-  criterios.outlineWidth = 3;
-  criterios.outlineColor = "rgba(0,0,0,0.6)";
-  criterios.textWrapping = true;
-  criterios.resizeToFit = true;
-  criterios.width = "880px";
-  consignas.addControl(criterios);
-
-  const separacion = new Rectangle("aireConsignas");
-  separacion.width = "1px";
-  separacion.height = "12px";
-  separacion.thickness = 0;
-  separacion.background = "transparent";
-  consignas.addControl(separacion);
-
-  const ayuda = new TextBlock(
-    "ayudaNivel2",
-    "Arrastra el objeto y APUNTA con el cursor al sitio: subirá solo hasta ahí."
-  );
-  ayuda.color = "#c9d4dd";
-  ayuda.fontSize = TEXTO.menor;
-  ayuda.outlineWidth = 3;
-  ayuda.outlineColor = "rgba(0,0,0,0.6)";
-  ayuda.textWrapping = true;
-  ayuda.resizeToFit = true;
-  ayuda.width = "760px";
-  consignas.addControl(ayuda);
 
   let inicioNivel = performance.now();
   let corriendoTiempo = false;
@@ -426,8 +442,9 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
     if (colocados < objetosNivel2.length) return;
 
     corriendoTiempo = false;
-    criterios.isVisible = false;
-    ayuda.isVisible = false;
+    // La pizarra se queda: es parte del taller, no un cartel del juego. Al
+    // terminar sigue colgada con el estándar escrito, que es exactamente lo
+    // que Seiton deja instalado.
     apagarAviso();
 
     const segundosTotales = Math.round((performance.now() - inicioNivel) / 1000);
@@ -548,12 +565,45 @@ export function cargarNivel2(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       objeto.fijar();
       realce.quitar(mesh);
 
-      moverMalla(scene, mesh, estante.lugarEnBalda(nivel, indice), 240);
-      luegoDe(scene, 260, () => {
-        mesh.rotation.y = 0;
-        mesh.scaling.setAll(ESCALA_COLOCADO);
-        apoyarSobre(mesh, sitio.balda.superficieY);
-      });
+      // LA ALTURA SE CALCULA ANTES DE ANIMAR.
+      //
+      // Antes se movía a la balda y después se corregía la altura, y esa
+      // corrección se veía: el bidón llegaba, se quedaba un instante flotando
+      // y bajaba de golpe. Dos apoyos encadenados tapaban el síntoma pero el
+      // salto seguía ahí.
+      //
+      // Ahora se aplica primero la escala final, se mide la pieza ya escalada
+      // y se anima directamente al punto donde queda apoyada. Llega a su sitio
+      // y se acabó — sin corrección posterior, no hay nada que saltar.
+      mesh.rotation.y = 0;
+      mesh.scaling.setAll(ESCALA_COLOCADO);
+      mesh.computeWorldMatrix(true);
+
+      const caja = mesh.getBoundingInfo().boundingBox;
+      const mitadAlto = mesh.position.y - caja.minimumWorld.y;
+
+      const sitioFinal = estante.lugarEnBalda(nivel, indice);
+      sitioFinal.y = sitio.balda.superficieY + mitadAlto;
+
+      // SE GUARDA EN DOS TIEMPOS: PRIMERO SUBE, DESPUÉS ENTRA.
+      //
+      // Antes viajaba en línea recta desde el suelo hasta su hueco, y esa
+      // recta cruza por dentro del estante: durante el vuelo la pieza
+      // atravesaba la bandeja y los montantes. Es de esas cosas que duran
+      // medio segundo pero se ven, y delatan que nada tiene volumen real.
+      //
+      // Ni agrandar la repisa ni encoger la pieza lo arreglan, porque el
+      // problema no es el tamaño: es la trayectoria. Guardando algo de verdad
+      // uno lo levanta primero y lo mete después, y eso es lo que se hace acá.
+      const puntoElevado = sitioFinal.clone();
+      // Se SUMA el vector del frente: así el punto de aproximación queda
+      // delante del mueble, del lado por el que se guarda. Restándolo caía
+      // detrás, contra la pared, y la pieza seguía cruzando la estructura.
+      puntoElevado.x += frenteEstante.x * 0.8;
+      puntoElevado.z += frenteEstante.z * 0.8;
+
+      moverMalla(scene, mesh, puntoElevado, 220);
+      luegoDe(scene, 240, () => moverMalla(scene, mesh, sitioFinal, 200));
 
       // Misma regla que en el tablero: el sitio queda rotulado solo.
       estante.rotular(nivel, indice, datos.nombreVisible);
