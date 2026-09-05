@@ -6,6 +6,7 @@ import {
   Mesh,
   Vector3,
   PointLight,
+  GlowLayer,
   ActionManager,
   ExecuteCodeAction,
 } from "@babylonjs/core";
@@ -654,6 +655,73 @@ export function crearPanelInterruptores(
   panel.receiveShadows = true;
   panel.isPickable = false;
 
+  // PLACA DE INSTRUCCIONES, ATORNILLADA AL TABLERO.
+  //
+  // Sustituye a la frase que flotaba en medio de la pantalla. La instrucción
+  // de un tablero eléctrico va en el tablero: es donde se lee cuando hace
+  // falta, y es coherente con lo que este nivel enseña — la información se
+  // instala en el sitio, no se cuelga en el aire.
+  const matInstruccion = materialPintado(
+    scene,
+    "matInstruccionTablero",
+    1536,
+    384,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#e8e4d6";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = "#3a4148";
+      ctx.lineWidth = w * 0.012;
+      ctx.strokeRect(w * 0.02, h * 0.06, w * 0.96, h * 0.88);
+
+      ctx.fillStyle = "#1d2a33";
+      ctx.font = `bold ${Math.round(h * 0.19)}px system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("PRUEBA DE CIRCUITOS", w / 2, h * 0.3);
+
+      ctx.font = `${Math.round(h * 0.145)}px system-ui, sans-serif`;
+      ctx.fillStyle = "#3d4a52";
+      ctx.fillText("Acciona una llave: se apagan las demás", w / 2, h * 0.56);
+      ctx.fillText("y solo queda su foco encendido.", w / 2, h * 0.76);
+    }
+  );
+
+  const placa = MeshBuilder.CreateBox(
+    "placaInstruccionTablero",
+    { width: ANCHO * 0.82, height: ANCHO * 0.82 * 0.25, depth: 0.012 },
+    scene
+  );
+  placa.position.set(
+    x - Math.sin(giroY) * (FONDO / 2 + 0.008),
+    y - ALTO / 2 - ANCHO * 0.82 * 0.16,
+    z - Math.cos(giroY) * (FONDO / 2 + 0.008)
+  );
+  placa.rotation.y = giroY;
+  placa.material = matInstruccion;
+  placa.isPickable = false;
+
+  // Cuatro tornillos en las esquinas. Sin ellos la placa se lee como una
+  // calcomanía; con ellos, como una chapa montada.
+  [-1, 1].forEach((lx) => {
+    [-1, 1].forEach((ly) => {
+      const tornillo = MeshBuilder.CreateCylinder(
+        `tornilloPlaca_${lx}_${ly}`,
+        { diameter: 0.016, height: 0.008, tessellation: 8 },
+        scene
+      );
+      tornillo.position.set(
+        x + Math.cos(giroY) * lx * (ANCHO * 0.35) - Math.sin(giroY) * (FONDO / 2 + 0.014),
+        y - ALTO / 2 - ANCHO * 0.82 * 0.16 + ly * (ANCHO * 0.82 * 0.08),
+        z - Math.sin(giroY) * lx * (ANCHO * 0.35) - Math.cos(giroY) * (FONDO / 2 + 0.014)
+      );
+      tornillo.rotation.x = Math.PI / 2;
+      tornillo.rotation.y = giroY;
+      tornillo.material = matPanel;
+      tornillo.isPickable = false;
+    });
+  });
+
   // Poste hasta el piso: el panel está en medio del taller, no en una pared.
   const alturaPoste = y - ALTO / 2;
   const poste = MeshBuilder.CreateBox(
@@ -824,6 +892,11 @@ export function crearPanelInterruptores(
       foco.material.emissiveColor = foco.color.scale(nivel);
       foco.pantalla.emissiveColor = foco.color.scale(encendido ? 0.75 : 0.04);
       foco.luz.intensity = encendido ? 1.4 : 0.05;
+
+      // El que corresponde DESTELLA. Con solo subir la emisión el cambio se
+      // notaba poco: el foco pasaba de brillar a brillar más. Un destello es
+      // una respuesta, y es lo que confirma que esa llave manda sobre ese foco.
+      if (encendido) foco.destellar();
     });
 
     window.setTimeout(() => {
@@ -852,11 +925,39 @@ function desdeHex(hex: string): Color3 {
   return Color3.FromHexString(hex.startsWith("#") ? hex : `#${hex}`);
 }
 
+/**
+ * Capa de halo compartida por todos los focos de la escena.
+ *
+ * Se guarda POR ESCENA y no en una variable suelta del módulo: al cambiar de
+ * nivel la escena se destruye, y una capa colgada de la anterior dejaría de
+ * funcionar sin dar ningún error.
+ */
+const halosPorEscena = new WeakMap<Scene, GlowLayer>();
+
+function obtenerHalo(scene: Scene): GlowLayer {
+  const existente = halosPorEscena.get(scene);
+  if (existente) return existente;
+
+  const capa = new GlowLayer("haloFocos", scene, {
+    // Resolución baja a propósito: el halo es un resplandor difuso, no una
+    // imagen. A más resolución se ve el borde nítido del brillo, que es
+    // justamente lo que no debe verse.
+    mainTextureFixedSize: 512,
+    blurKernelSize: 48,
+  });
+  capa.intensity = 0.7;
+
+  halosPorEscena.set(scene, capa);
+  return capa;
+}
+
 /** Un foco montado, con lo necesario para encenderlo y apagarlo. */
 interface FocoMontado {
   material: PBRMaterial;
   pantalla: PBRMaterial;
   luz: PointLight;
+  /** Hace destellar el foco. Lo llama el interruptor de su circuito. */
+  destellar: () => void;
   color: Color3;
 }
 
@@ -869,6 +970,16 @@ interface FocoMontado {
  */
 function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: string): FocoMontado {
   const ALTURA = 2.85;
+
+  /**
+   * Altura del techo del galpón.
+   *
+   * Escrita acá porque el garaje es un modelo cargado y no expone su geometría:
+   * medirla desde el código no es posible. 6,2 m es la cota a la que arranca la
+   * cubierta en el modelo actual — si algún día cambia, este es el único número
+   * que hay que tocar.
+   */
+  const ALTURA_TECHO = 6.2;
   const color = desdeHex(hex);
 
   const matCable = new PBRMaterial(`matCableFoco_${id}`, scene);
@@ -877,10 +988,17 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
 
   const cable = MeshBuilder.CreateCylinder(
     `cableFoco_${id}`,
-    { diameter: 0.02, height: 1.0, tessellation: 6 },
+    // El cable llega HASTA EL TECHO, no un metro hacia arriba.
+    //
+    // Medía 1 m y terminaba en el aire a 3,85 de altura, con el techo del
+    // galpón mucho más arriba: por eso las lámparas seguían pareciendo
+    // flotantes por mucho casquillo y roseta que se les pusiera. Un cable que
+    // no llega a ninguna parte no sostiene nada, y al acercarse se veía el
+    // corte limpio.
+    { diameter: 0.02, height: ALTURA_TECHO - ALTURA + 0.16, tessellation: 6 },
     scene
   );
-  cable.position.set(x, ALTURA + 0.5, z);
+  cable.position.set(x, (ALTURA + ALTURA_TECHO) / 2 + 0.08, z);
   cable.material = matCable;
   cable.isPickable = false;
 
@@ -929,7 +1047,7 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
     { diameter: 0.16, height: 0.05, tessellation: 14 },
     scene
   );
-  roseta.position.set(x, ALTURA + 1.0, z);
+  roseta.position.set(x, ALTURA_TECHO, z);
   roseta.material = matHerraje;
   roseta.isPickable = false;
 
@@ -947,6 +1065,19 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
   bombilla.material = matBombilla;
   bombilla.isPickable = false;
 
+  // HALO. Es lo que separa "una esfera pintada de rojo" de "una lámpara
+  // encendida".
+  //
+  // El material ya emitía color, pero la emisión sola no sale del contorno de
+  // la malla: se ve una bola de color plano. El GlowLayer desborda ese brillo
+  // hacia afuera y tiñe el aire alrededor, que es lo que el ojo lee como luz.
+  //
+  // Se comparte una sola capa para toda la escena. Crear una por foco
+  // multiplicaría el coste sin cambiar nada: el GlowLayer recorre las mallas
+  // que se le añaden, no la escena entera.
+  const halo = obtenerHalo(scene);
+  halo.addIncludedOnlyMesh(bombilla);
+
   // Luz real, de alcance corto y tenue: tiñe el suelo de debajo lo justo para
   // que se vea a qué zona pertenece cada foco, sin alterar la iluminación del
   // galpón ni competir con los focos del garaje.
@@ -959,5 +1090,38 @@ function crearFocoColgado(scene: Scene, id: string, x: number, z: number, hex: s
   luz.intensity = 0.95;
   luz.range = 4.6;
 
-  return { material: matBombilla, pantalla: matPantalla, luz, color };
+  /**
+   * Destello al accionar el interruptor.
+   *
+   * Sube el halo y la luz de golpe y los devuelve a su valor en medio segundo.
+   * Es la respuesta física que faltaba: apretar una llave y que el foco
+   * reaccione es lo que confirma que ESE interruptor manda sobre ESE foco —
+   * que es toda la lección del control visual por color.
+   */
+  const destellar = (): void => {
+    const intensidadBase = luz.intensity;
+    const emisionBase = matBombilla.emissiveColor.clone();
+
+    luz.intensity = intensidadBase * 2.4;
+    matBombilla.emissiveColor = color.scale(3.2);
+
+    const inicio = performance.now();
+    const observador = scene.onBeforeRenderObservable.add(() => {
+      const t = (performance.now() - inicio) / 500;
+
+      if (t >= 1) {
+        luz.intensity = intensidadBase;
+        matBombilla.emissiveColor = emisionBase;
+        scene.onBeforeRenderObservable.remove(observador);
+        return;
+      }
+
+      // Vuelta suave: un corte seco se vería como un parpadeo de error.
+      const caida = 1 - t * t;
+      luz.intensity = intensidadBase * (1 + 1.4 * caida);
+      matBombilla.emissiveColor = color.scale(1.6 + 1.6 * caida);
+    });
+  };
+
+  return { material: matBombilla, pantalla: matPantalla, luz, color, destellar };
 }

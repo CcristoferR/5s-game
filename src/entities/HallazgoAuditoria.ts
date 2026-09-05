@@ -164,46 +164,85 @@ export function crearEtiquetaDespegada(scene: Scene, x: number, y: number, z: nu
 
 /** Bolsa de residuos aparecida después de la limpieza. */
 export function crearBasuraNueva(scene: Scene, x: number, z: number): Mesh {
+  // BOLSA, NO ESFERA.
+  //
+  // La versión anterior era una esfera negra achatada y a distancia se leía
+  // como una bola de demolición o un objeto de relleno olvidado — cualquier
+  // cosa menos basura. Una esfera es justo la forma que menos se parece a una
+  // bolsa: lo que identifica a una bolsa llena es que se estrecha arriba, que
+  // el nudo va torcido y que lo de dentro la deforma. No que sea redonda.
   const mat = new PBRMaterial("matBasuraNueva", scene);
-  mat.albedoColor = new Color3(0.06, 0.06, 0.07);
-  mat.roughness = 0.62;
-  mat.metallic = 0.05;
-  mat.microSurfaceTexture = texturaGrano(scene, 0.1);
+  mat.albedoColor = new Color3(0.09, 0.1, 0.11);
+  mat.roughness = 0.44;
+  mat.metallic = 0.02;
+  mat.microSurfaceTexture = texturaGrano(scene, 0.14);
 
-  const bolsa = MeshBuilder.CreateSphere("basuraNueva", { diameter: 0.62, segments: 10 }, scene);
-  bolsa.position.set(x, 0.27, z);
-  // Achatada y deformada: una esfera perfecta se lee como pelota, no como
-  // bolsa llena.
-  bolsa.scaling.set(1.05, 0.82, 0.92);
-  bolsa.material = mat;
+  const cuerpo = MeshBuilder.CreateCylinder(
+    "basuraNueva",
+    { diameterTop: 0.26, diameterBottom: 0.56, height: 0.5, tessellation: 12 },
+    scene
+  );
+  cuerpo.position.set(x, 0.25, z);
+  cuerpo.material = mat;
 
-  const nudo = MeshBuilder.CreateCylinder("basuraNudo", { diameter: 0.09, height: 0.13, tessellation: 8 }, scene);
-  nudo.position.set(x + 0.04, 0.55, z);
-  nudo.rotation.z = 0.34;
-  nudo.material = mat;
-  nudo.isPickable = false;
+  // Bultos irregulares: lo que hay dentro deforma el plástico. Sin ellos el
+  // cilindro se lee como un cubo, no como una bolsa.
+  const bultos: Array<[number, number, number, number]> = [
+    [0.17, 0.22, 0.05, 0.22],
+    [-0.14, 0.32, -0.1, 0.18],
+    [0.04, 0.15, -0.18, 0.2],
+  ];
+  bultos.forEach(([dx, dy, dz, tam], i) => {
+    const bulto = MeshBuilder.CreateSphere(`basuraBulto_${i}`, { diameter: tam, segments: 8 }, scene);
+    bulto.position.set(x + dx, dy, z + dz);
+    bulto.scaling.set(1, 0.8, 1.1);
+    bulto.material = mat;
+    bulto.isPickable = false;
+  });
 
-  // Restos alrededor: una bolsa sola se lee como un objeto puesto ahí; con
-  // desperdicio desparramado se lee como suciedad acumulada, que es lo que la
-  // auditoría tiene que detectar.
+  // Cuello y orejas del nudo, torcidos.
+  const cuello = MeshBuilder.CreateCylinder(
+    "basuraCuello",
+    { diameterTop: 0.1, diameterBottom: 0.2, height: 0.16, tessellation: 10 },
+    scene
+  );
+  cuello.position.set(x + 0.02, 0.56, z);
+  cuello.rotation.z = 0.22;
+  cuello.material = mat;
+  cuello.isPickable = false;
+
+  [-1, 1].forEach((lado) => {
+    const oreja = MeshBuilder.CreateBox(
+      `basuraOreja_${lado}`,
+      { width: 0.13, height: 0.03, depth: 0.08 },
+      scene
+    );
+    oreja.position.set(x + 0.02 + lado * 0.07, 0.63, z);
+    oreja.rotation.z = 0.22 + lado * 0.5;
+    oreja.material = mat;
+    oreja.isPickable = false;
+  });
+
+  // Restos alrededor: una bolsa sola se lee como algo dejado ahí; con
+  // desperdicio desparramado se lee como suciedad acumulada.
   const matResto = new PBRMaterial("matRestoBasura", scene);
   matResto.albedoColor = new Color3(0.62, 0.58, 0.5);
   matResto.roughness = 0.9;
 
   const restos: Array<[number, number, number]> = [
-    [0.42, 0.18, 0.7],
-    [-0.34, 0.3, 1.9],
-    [0.16, -0.42, 0.4],
+    [0.45, 0.2, 0.7],
+    [-0.38, 0.32, 1.9],
+    [0.18, -0.44, 0.4],
   ];
   restos.forEach(([dx, dz, giro], i) => {
-    const resto = MeshBuilder.CreateBox(`restoBasura_${i}`, { width: 0.13, height: 0.02, depth: 0.09 }, scene);
+    const resto = MeshBuilder.CreateBox(`restoBasura_${i}`, { width: 0.14, height: 0.02, depth: 0.1 }, scene);
     resto.position.set(x + dx, 0.012, z + dz);
     resto.rotation.y = giro;
     resto.material = matResto;
     resto.isPickable = false;
   });
 
-  return bolsa;
+  return cuerpo;
 }
 
 

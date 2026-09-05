@@ -227,12 +227,37 @@ export function crearCarroDeLimpieza(scene: Scene, x: number, z: number, giroY: 
   palo.material = matMetal;
   palo.parent = raiz;
 
-  const cabezal = MeshBuilder.CreateBox(`cabezalMopa_${x}_${z}`, { width: 0.3, height: 0.1, depth: 0.13 }, scene);
-  cabezal.position.set(0.47, 0.12, -0.36);
-  cabezal.rotation.z = -0.28;
+  // EL CABEZAL CUELGA DEL PALO, no de la raíz.
+  //
+  // Antes eran dos piezas sueltas con rotaciones DISTINTAS: el palo giraba en
+  // Z y en X, el cabezal solo en Z. Nunca coincidían, así que el palo parecía
+  // cortarse en el aire y la cabeza quedaba flotando aparte — eso es lo que se
+  // veía mal en los cinco niveles.
+  //
+  // Colgándolo del palo hereda su orientación entera y basta con situarlo en
+  // el extremo inferior. Si mañana se cambia la inclinación del palo, la
+  // cabeza lo sigue sola.
+  const cabezal = MeshBuilder.CreateBox(`cabezalMopa_${x}_${z}`, { width: 0.32, height: 0.09, depth: 0.16 }, scene);
+  cabezal.parent = palo;
+  // El palo mide 1,5: su punta inferior está a -0,75 del centro.
+  cabezal.position.set(0, -0.75, 0);
   cabezal.material = material(scene, `matCabezalMopa_${x}_${z}`, new Color3(0.72, 0.7, 0.62), 0.95);
-  cabezal.parent = raiz;
   cabezal.receiveShadows = true;
+
+  // Flecos. Un bloque liso no se lee como mopa; las tiras sí, y además tapan
+  // la unión entre el palo y la cabeza.
+  const matFleco = material(scene, `matFlecoMopa_${x}_${z}`, new Color3(0.78, 0.76, 0.68), 0.98);
+  for (let i = 0; i < 7; i++) {
+    const fleco = MeshBuilder.CreateBox(
+      `flecoMopa_${x}_${z}_${i}`,
+      { width: 0.035, height: 0.11 + Math.random() * 0.06, depth: 0.13 },
+      scene
+    );
+    fleco.parent = palo;
+    fleco.position.set(-0.13 + i * 0.043, -0.82, (Math.random() - 0.5) * 0.03);
+    fleco.rotation.z = (Math.random() - 0.5) * 0.22;
+    fleco.material = matFleco;
+  }
 
   // Flecos de la mopa.
   for (let i = 0; i < 7; i++) {

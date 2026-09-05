@@ -186,7 +186,7 @@ export function cargarNivel1(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // que el día del incendio nadie lo alcanza. Se monta antes que la pila para
   // que quede tapado, y al retirarla aparecen el cartel y la marca del piso
   // que explican solos por qué había que despejar.
-  crearExtintor(scene, 5.55, 0.2, -Math.PI / 2);
+  crearExtintor(scene, 4.7, 0.2, -Math.PI / 2);
 
   // Basurero, separado del área de descarte.
   const basurero = crearBasureroIndustrial(scene, -4.55, -0.55);

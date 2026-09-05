@@ -1,5 +1,5 @@
 import { Scene, MeshBuilder, Vector3 } from "@babylonjs/core";
-import { TextBlock, Control } from "@babylonjs/gui";
+import { Control } from "@babylonjs/gui";
 import {
   crearRegistroHallazgos,
   hacerAuditable,
@@ -8,10 +8,9 @@ import {
   pedirDictamen,
 } from "../entities/HallazgoAuditoria";
 import { crearTabletAuditoria } from "../ui/TabletAuditoria";
-import { crearBotonPrincipal } from "../ui/EstiloUI";
+import { crearBotonSecundario, PALETA } from "../ui/EstiloUI";
 import { crearPalletConCajas } from "../entities/WorkshopProps";
 import { colocarTarjetaRoja } from "../entities/TarjetaRoja";
-import { crearRotulo3D } from "../entities/Rotulo3D";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
 import { chispasDeAcierto } from "../entities/Particulas";
@@ -33,7 +32,6 @@ import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { HUD } from "../ui/HUD";
 import { luegoDe } from "../core/Animacion";
 import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
-import { TEXTO } from "../ui/EstiloUI";
 
 // ~9 segundos por punto de control, con un piso de 35s. La cantidad de
 // puntos varía según cuántos ítems dejó el jugador en el checklist del
@@ -76,10 +74,18 @@ export function cargarNivel5(
   // Tres focos repartidos a lo largo del recorrido de auditoría: los puntos
   // de control se distribuyen por todo el garaje y ninguno puede quedar en
   // penumbra, o el jugador pierde tiempo buscando en vez de inspeccionando.
+  // LUZ MÁS ALTA QUE EN NINGÚN OTRO NIVEL.
+  //
+  // Auditar es mirar, y este nivel pide detectar una etiqueta despegada o una
+  // fecha vencida en una tarjeta. Con la iluminación de los otros niveles —
+  // pensada para ambientar un taller en penumbra— esos detalles quedaban en
+  // sombra y la dificultad venía de no ver, no de no darse cuenta. Eso no es
+  // agudeza visual, es mala luz.
   iluminarInteriorGaraje(scene, [
-    { z: -1.2, intensidad: 0.9 },
-    { z: 0.8, intensidad: 0.85 },
-    { z: 2.6, intensidad: 0.8 },
+    { z: -1.4, intensidad: 1.15 },
+    { z: 0.6, intensidad: 1.1 },
+    { z: 2.6, intensidad: 1.1 },
+    { z: 4.4, intensidad: 1.0 },
   ]);
 
   // Utileria de fondo. Ver AmbienteNivel.ts: la cantidad y el tipo cambian
@@ -104,32 +110,19 @@ export function cargarNivel5(
   // pide la guía: "desviaciones introducidas aleatoriamente" sobre "el
   // checklist que él mismo ayudó a construir en el Nivel 4".
 
-  const instruccion = new TextBlock(
-    "instruccionNivel5",
-    // La instrucción vieja seguía hablando de esferas y de marcar y desmarcar,
-    // que era la mecánica anterior. Decía lo contrario de lo que hay que hacer.
-    `Recorre el área y examina cada punto de la planilla. Al inspeccionar algo, TÚ decides si cumple el estándar o si registras una no conformidad. Necesitas ${Math.round(
-      UMBRAL_APROBACION * 100
-    )}% de aciertos para aprobar.`
-  );
-  instruccion.color = "white";
-  instruccion.fontSize = TEXTO.cuerpo;
-  instruccion.outlineWidth = 3;
-  instruccion.outlineColor = "rgba(0,0,0,0.6)";
-  instruccion.textWrapping = true;
-  // Sin esto el bloque ocupa el alto completo de la pantalla y el texto
-  // queda centrado verticalmente, ignorando su propio 'top'.
-  instruccion.resizeToFit = true;
-  instruccion.width = "560px";
-  instruccion.top = "70px";
-  instruccion.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(instruccion);
+  // La consigna va en el panel de la izquierda, con el resto de los datos.
+  //
+  // Ocupaba tres renglones en el centro de la pantalla, justo sobre la zona
+  // que hay que recorrer. En un nivel que consiste en mirar, tapar la vista
+  // con texto es el peor sitio posible.
+  hud.definirObjetivo("Inspecciona cada punto de la planilla y dictamina.");
+  hud.definirEstado(`Se aprueba con ${Math.round(UMBRAL_APROBACION * 100)}% de aciertos`, PALETA.dato);
+
 
   // Se retira sola a los doce segundos: es una consigna de arranque, no un
   // cartel permanente. Ocupaba el centro de la vista durante toda la auditoría,
   // justo sobre la zona que hay que recorrer.
   luegoDe(scene, 12000, () => {
-    instruccion.isVisible = false;
   });
 
   // ===================================================================
@@ -304,15 +297,16 @@ export function cargarNivel5(
           responsable: tarjeta.responsable,
           plazo: tarjeta.plazoTexto,
         });
-        crearRotulo3D(scene, `bultoEtiquetado_${tarjeta.objetoId}`, tarjeta.nombreObjeto, new Vector3(bx, 1.5, bz), {
-          ancho: 1.7,
-          alto: 0.26,
-          lineasMax: 2,
-          colorFondo: "#1a1f24",
-          colorBorde: "rgba(255,255,255,0.22)",
-          mirarCamara: true,
-          alturaTextoMin: 0.075,
-        });
+        // SIN CARTEL PERMANENTE.
+        //
+        // Cada bulto etiquetado colgaba su nombre en el aire, y con varias
+        // tarjetas del Nivel 1 eran seis carteles negros flotando a la vez: el
+        // taller parecía un menú, no un sitio de trabajo.
+        //
+        // Y va contra el propio ejercicio. Video 4.3: el auditor va al lugar
+        // real a OBSERVAR. Si cada objeto anuncia lo que es, no hay nada que
+        // observar — se leen los carteles y listo. El nombre aparece al pasar
+        // el cursor, que es el equivalente a acercarse a mirarlo.
       },
     });
   });
@@ -508,7 +502,26 @@ export function cargarNivel5(
   let corriendoTiempo = true;
   const inicioAuditoria = performance.now();
 
-  const botonFinalizar = crearBotonPrincipal("btnFinalizarAuditoria", "Cerrar la auditoria", 260);
+  // MISMO LENGUAJE QUE LOS PANELES.
+  //
+  // Era un botón blanco sólido entre dos paneles oscuros: se veía como una
+  // pieza de otro programa. El botón secundario del sistema de diseño usa
+  // fondo oscuro, borde tenue y texto claro — la misma familia que la planilla
+  // y el marcador. Con la tilde correcta, además.
+  const botonFinalizar = crearBotonSecundario("btnFinalizarAuditoria", "Cerrar la auditoría", 280);
+  botonFinalizar.height = "52px";
+  botonFinalizar.background = "rgba(16, 19, 23, 0.92)";
+
+  // Al pasar el cursor se tiñe de verde: es una acción de cierre, y el verde
+  // es el color con el que este sistema marca lo conforme.
+  botonFinalizar.onPointerEnterObservable.add(() => {
+    botonFinalizar.color = PALETA.acierto;
+    if (botonFinalizar.textBlock) botonFinalizar.textBlock.color = PALETA.acierto;
+  });
+  botonFinalizar.onPointerOutObservable.add(() => {
+    botonFinalizar.color = PALETA.borde;
+    if (botonFinalizar.textBlock) botonFinalizar.textBlock.color = PALETA.titulo;
+  });
   botonFinalizar.top = "-40px";
   botonFinalizar.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
   botonFinalizar.onPointerUpObservable.add(() => {
@@ -531,7 +544,6 @@ export function cargarNivel5(
     finalizado = true;
     corriendoTiempo = false;
     botonFinalizar.isVisible = false;
-    instruccion.isVisible = false;
     tablet.ocultar();
 
     // El informe se arma sobre los objetos REALES, no sobre esferas.

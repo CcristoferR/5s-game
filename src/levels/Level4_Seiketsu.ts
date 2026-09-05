@@ -15,6 +15,7 @@ import {
   type ColorNivel4,
 } from "../data/levelConfig";
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
+import { crearExtintor } from "../entities/WorkshopProps";
 import { crearObjetoInteractable } from "../entities/InteractableObject";
 import { habilitarRealceAlPasar } from "../entities/RealceAlPasar";
 import { habilitarEtiquetasAlPasar } from "../ui/EtiquetaObjeto";
@@ -186,6 +187,23 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
 
   const armario = crearArmarioConectores(scene, ARMARIO.x, ARMARIO.z, 0, puertosNivel4);
   const pisos = crearZonasPiso(scene, zonasPisoNivel4);
+
+  // EL EXTINTOR QUE FALTABA.
+  //
+  // Había una zona pintada en el piso que dice "EXTINTOR · NO OBSTRUIR" y
+  // detrás no había extintor. Eso vacía la señal: se estaba pidiendo mantener
+  // despejado el acceso a un equipo que no existe, y el jugador que mira con
+  // atención lo nota enseguida.
+  //
+  // Va contra la pared, justo detrás de su zona: el equipo se cuelga en el
+  // muro y la marca del piso protege el espacio para llegar a él.
+// A 4,7, no a 5,55: a esa distancia quedaba ATRAVESANDO el muro y se veía
+  // desde fuera, tras la ventana. La cara interior de la pared está antes de
+  // lo que estimé, y el extintor sobresale 20 cm de ella.
+  //
+  // Es el mismo error que tenía el del Nivel 1, donde pasaba desapercibido
+  // solo porque la pila de cajas lo tapaba.
+  crearExtintor(scene, -4.7, 0.6, Math.PI / 2);
   const panel = crearPanelInterruptores(
     scene,
     PANEL_INTERRUPTORES.x,
@@ -495,22 +513,16 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   //
   // El cartel se retira solo a los quince segundos: es una consigna de
   // arranque, no algo que tenga que estar ahi toda la partida.
-  const pistaInterruptores = new TextBlock(
-    "pistaInterruptoresNivel4",
-    "¿No sabes qué foco es de cada interruptor? Haz clic en la llave: se apagan los demás."
-  );
-  pistaInterruptores.color = "#e8c07a";
-  pistaInterruptores.fontSize = TEXTO.menor;
-  pistaInterruptores.outlineWidth = 4;
-  pistaInterruptores.outlineColor = "rgba(0,0,0,0.8)";
-  pistaInterruptores.textWrapping = true;
-  pistaInterruptores.resizeToFit = true;
-  pistaInterruptores.width = "560px";
-  pistaInterruptores.top = "-96px";
-  pistaInterruptores.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-  gui.addControl(pistaInterruptores);
+  // La pista va en el cartel del tablero, no flotando sobre el galpón.
+  //
+  // Era una frase escrita en medio de la pantalla, encima de las plantillas y
+  // los interruptores — justo lo que hay que mirar. Y contradecía la lección:
+  // el nivel enseña que la información se instala EN el sitio, así que una
+  // instrucción suspendida en el aire predica lo contrario de lo que dice.
+  //
+  // Ahora está impresa en el propio tablero de interruptores. Ver más abajo.
+
   luegoDe(scene, 15000, () => {
-    pistaInterruptores.isVisible = false;
   });
 
   const guia = crearGuiaEstaciones(gui, [
