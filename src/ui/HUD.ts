@@ -33,6 +33,7 @@ export class HUD {
   private textoObjetivo: TextBlock;
   private textoProgreso: TextBlock;
   private textoMetrica: TextBlock;
+  private textoEstado: TextBlock;
   private franjaFase: Rectangle;
   private filaProgreso: Rectangle;
   private barraProgreso: Rectangle;
@@ -219,6 +220,17 @@ export class HUD {
     this.textoMetrica.isVisible = false;
     this.textoMetrica.isHitTestVisible = false;
     panelMarcador.addControl(this.textoMetrica);
+
+    this.textoEstado = new TextBlock("estadoNivel", "");
+    this.textoEstado.color = PALETA.cuerpo;
+    this.textoEstado.fontSize = TEXTO.rotulo;
+    this.textoEstado.fontWeight = "600";
+    this.textoEstado.height = "22px";
+    this.textoEstado.paddingLeft = "16px";
+    this.textoEstado.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.textoEstado.isVisible = false;
+    this.textoEstado.isHitTestVisible = false;
+    panelMarcador.addControl(this.textoEstado);
 
     // --- 4. Tiempo ---
     //
@@ -493,6 +505,20 @@ export class HUD {
   definirMetrica(texto: string): void {
     this.textoMetrica.text = texto;
     this.textoMetrica.isVisible = texto.length > 0;
+  }
+
+  /**
+   * Segundo indicador, para un estado con color propio.
+   *
+   * Lo usa el Nivel 3 con el estado de la fuente de suciedad: es un dato que
+   * cambia de significado —activa o sellada— y necesita color, cosa que la
+   * métrica normal no tiene. Iba escrito en medio de la pantalla, sobre el
+   * garaje.
+   */
+  definirEstado(texto: string, color = PALETA.cuerpo): void {
+    this.textoEstado.text = texto;
+    this.textoEstado.color = color;
+    this.textoEstado.isVisible = texto.length > 0;
   }
 
   actualizarPuntaje(puntaje: number): void {

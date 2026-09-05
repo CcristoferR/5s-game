@@ -246,3 +246,62 @@ export function puntoFrenteALaCamara(scene: Scene, distancia = 3.4): Vector3 {
   const adelante = camara.getForwardRay(distancia).direction.normalize();
   return camara.position.add(adelante.scale(distancia));
 }
+/**
+ * Goteo continuo desde un punto: la fuente de suciedad, visible sin texto.
+ *
+ * Sustituye al cartel "JUNTA CON FUGA — clic para sellar" que colgaba de la
+ * maquina. Ese cartel resolvia el ejercicio por el jugador: Seiso pide
+ * INSPECCIONAR para encontrar el origen, y un rotulo que lo nombra convierte
+ * la inspeccion en leer un letrero.
+ *
+ * Unas gotas cayendo dicen lo mismo y no dicen nada de mas: hay que verlas,
+ * acercarse y entender que de ahi sale el aceite. La imagen habla sola, que es
+ * exactamente lo que el video 3.4 pide del area de trabajo.
+ *
+ * @returns Una funcion para detener el goteo al sellar la junta.
+ */
+export function goteoDeFuga(scene: Scene, punto: Vector3): () => void {
+  const sistema = new ParticleSystem("goteoFuga", 60, scene);
+  // Misma mota redonda del humo de error: una gota es un punto, no una
+  // estrella.
+  sistema.particleTexture = obtenerTexturaMota(scene);
+
+  // Emisor pequeño: las gotas nacen del mismo punto de la junta, no de una
+  // nube alrededor. Un emisor ancho se lee como vapor, no como goteo.
+  sistema.emitter = punto.clone();
+  sistema.minEmitBox = new Vector3(-0.015, 0, -0.015);
+  sistema.maxEmitBox = new Vector3(0.015, 0, 0.015);
+
+  // Aceite: negro verdoso y opaco. Se apaga al final de la caida para que la
+  // gota parezca absorberse en la mancha en vez de desaparecer de golpe.
+  sistema.color1 = new Color4(0.06, 0.07, 0.05, 0.95);
+  sistema.color2 = new Color4(0.1, 0.11, 0.07, 0.9);
+  sistema.colorDead = new Color4(0.05, 0.05, 0.04, 0);
+
+  sistema.minSize = 0.022;
+  sistema.maxSize = 0.038;
+
+  // Caida corta y lenta: una gota de aceite es pesada y viscosa, no salpica.
+  sistema.minLifeTime = 0.7;
+  sistema.maxLifeTime = 1.1;
+  sistema.gravity = new Vector3(0, -3.2, 0);
+  sistema.direction1 = new Vector3(-0.02, -0.1, -0.02);
+  sistema.direction2 = new Vector3(0.02, -0.2, 0.02);
+
+  // MUY POCAS gotas. Tres por segundo es un goteo; treinta es una ducha, y eso
+  // se veria como una averia catastrofica en vez de una junta que rezuma.
+  sistema.emitRate = 3;
+  sistema.minEmitPower = 0.05;
+  sistema.maxEmitPower = 0.12;
+  sistema.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+
+  sistema.start();
+
+  return () => {
+    // stopSubEmitters no: se para la emision y se deja que las gotas que ya
+    // caen terminen su recorrido. Cortarlas en seco haria desaparecer aceite a
+    // media caida, que es justo la clase de detalle que delata un truco.
+    sistema.stop();
+    setTimeout(() => sistema.dispose(), 1500);
+  };
+}

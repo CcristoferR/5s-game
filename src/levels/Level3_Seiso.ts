@@ -4,8 +4,7 @@ import { incidentesNivel3, briefingsNiveles, microLeccionesNiveles } from "../da
 import { mostrarAperturaNivel } from "../ui/BriefingPanel";
 import { crearMancha } from "../entities/Stain";
 import { crearBidonApartable } from "../entities/BidonApartable";
-import { crearRotulo3D } from "../entities/Rotulo3D";
-import { chispasDeAcierto } from "../entities/Particulas";
+import { chispasDeAcierto, goteoDeFuga } from "../entities/Particulas";
 import { reproducir } from "../core/Sonido";
 import { crearMaquinaConFuga } from "../entities/OilMachine";
 import { crearImpresoraConToner } from "../entities/PrinterMachine";
@@ -17,7 +16,7 @@ import { ambientarNivel } from "../entities/AmbienteNivel";
 import { GameManager } from "../core/GameManager";
 import { HUD } from "../ui/HUD";
 import { luegoDe } from "../core/Animacion";
-import { TEXTO } from "../ui/EstiloUI";
+import { TEXTO, PALETA } from "../ui/EstiloUI";
 
 // ===========================================================================
 // NIVEL 3 — SEISO (Limpiar)
@@ -159,24 +158,18 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let totalManchas = incidentesVisibles.reduce((sum, inc) => sum + inc.manchas.length, 0);
   hud.definirTotalTarea(totalManchas + 1); // +1: la fuga también es una tarea
 
-  const progreso = new TextBlock("progresoNivel3", `Manchas limpias: 0/${totalManchas}`);
-  progreso.color = "white";
-  progreso.fontSize = TEXTO.cuerpo;
-  progreso.outlineWidth = 3;
-  progreso.outlineColor = "rgba(0,0,0,0.6)";
-  progreso.top = "108px";
-  progreso.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(progreso);
+  // LOS DOS INDICADORES VIVEN EN EL PANEL, NO EN MEDIO DE LA PANTALLA.
+  //
+  // "Manchas limpias" y "Fuente de suciedad" estaban escritos sobre el galpón,
+  // cruzando la máquina y el suelo que hay que inspeccionar. Son datos del
+  // tablero: van con el puntaje y el tiempo, en el panel de la izquierda. El
+  // centro queda libre para mirar la escena, que es de lo que trata este nivel.
+  hud.definirEstado("Fuente activa · sin sellar", PALETA.error);
 
-  const estadoFuente = new TextBlock("estadoFuenteNivel3", "Fuente de suciedad: ACTIVA — sin sellar");
-  estadoFuente.color = "#ff9a9a";
-  estadoFuente.fontSize = TEXTO.cuerpo;
-  estadoFuente.fontWeight = "700";
-  estadoFuente.outlineWidth = 3;
-  estadoFuente.outlineColor = "rgba(0,0,0,0.7)";
-  estadoFuente.top = "138px";
-  estadoFuente.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-  gui.addControl(estadoFuente);
+  const refrescarPanel = (): void => {
+    hud.definirMetrica(`Manchas limpias ${manchasLimpiasTotal} de ${totalManchas}`);
+  };
+
 
   // APERTURA DEL NIVEL
   //
@@ -217,7 +210,7 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   let ocultaRevelada = false;
 
   const refrescarProgreso = (): void => {
-    progreso.text = `Manchas limpias: ${manchasLimpiasTotal}/${totalManchas}`;
+    refrescarPanel();
     // La fuga cuenta como una tarea más en la barra del HUD: es la mitad del
     // trabajo de esta S, no un requisito escondido.
     hud.actualizarProgreso(manchasLimpiasTotal + (equipo.estaSellada() ? 1 : 0));
@@ -230,24 +223,17 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   // Rótulo pegado a la junta, en el dorso. Solo se lee al rodear el equipo, y
   // ahí es imprescindible: una esfera oscura sobre una tubería no le dice a
   // nadie que se pueda pinchar.
-  crearRotulo3D(
-    scene,
-    "avisoJuntaFuga",
-    "JUNTA CON FUGA — clic para sellar",
-    // Centrado en el equipo y mas angosto que su cuerpo (0.9 m): asi el propio
-    // equipo lo oculta cuando se mira de frente. Un cartel que asoma por los
-    // costados delata la respuesta antes de rodear nada.
-    new Vector3(MAQUINA_X, 0.85, MAQUINA_Z + 0.85),
-    {
-      ancho: 0.82,
-      alto: 0.22,
-      lineasMax: 2,
-      colorFondo: "#3a1f1c",
-      colorBorde: "rgba(230,140,120,0.6)",
-      mirarCamara: true,
-      alturaTextoMin: 0.07,
-    }
-  );
+  // SIN CARTEL. LA FUGA SE VE GOTEAR.
+  //
+  // Acá colgaba un rótulo que decía "JUNTA CON FUGA — clic para sellar", y eso
+  // resolvía el ejercicio por el jugador: Seiso pide INSPECCIONAR para dar con
+  // el origen, y un letrero que lo nombra convierte la inspección en leer.
+  //
+  // Unas gotas cayendo dicen lo mismo sin decir nada de más: hay que verlas,
+  // acercarse y entender de dónde sale el aceite. Es lo que el video 3.4 pide
+  // del área — que hable sola.
+  const detenerGoteo = goteoDeFuga(scene, equipo.puntoFuga.clone());
+
 
   equipo.junta.actionManager = new ActionManager(scene);
   equipo.junta.actionManager.registerAction(
@@ -255,12 +241,17 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
       if (equipo.estaSellada()) return;
 
       equipo.sellar();
+
+      // El goteo para acá. Es la confirmación real de que la fuente quedó
+      // eliminada: si siguiera cayendo aceite después de sellar, ningún texto
+      // convencería de lo contrario.
+      detenerGoteo();
+
       reproducir("acierto");
       chispasDeAcierto(scene, equipo.puntoFuga.clone(), 0.9);
       gameManager.sumarPuntos(25);
 
-      estadoFuente.text = "Fuente de suciedad: SELLADA";
-      estadoFuente.color = "#8be29a";
+      hud.definirEstado("Fuente sellada", PALETA.acierto);
 
       hud.mostrarFeedback(
         true,
@@ -418,8 +409,6 @@ export function cargarNivel3(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   function finalizarNivel(): void {
     corriendoTiempo = false;
     instruccion.isVisible = false;
-    progreso.isVisible = false;
-    estadoFuente.isVisible = false;
 
     const segundosTotales = Math.floor((performance.now() - inicioNivel) / 1000);
     // Recalibrado otra vez: ahora son 6 manchas, 3 investigaciones, una fuga
