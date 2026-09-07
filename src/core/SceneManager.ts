@@ -60,13 +60,51 @@ export class SceneManager {
     relleno.diffuse = new Color3(1, 1, 1);
 
     const principal = new DirectionalLight("luzPrincipal", new Vector3(-0.3, -1, 0.25), this.scene);
-    principal.intensity = 1.2;
-    principal.diffuse = new Color3(1, 0.97, 0.9);
+    // Subida de 1,2 a 1,45 y más cálida: es la luz del sol, y con 1,2 el
+    // interior quedaba plano. Con más intensidad el contraste entre lo que
+    // toca la luz y lo que queda en sombra se ve de verdad.
+    principal.intensity = 1.45;
+    principal.diffuse = new Color3(1, 0.96, 0.86);
 
-    const luzVentana = new DirectionalLight("luzVentana", new Vector3(0.6, -0.2, 0.1), this.scene);
-    luzVentana.intensity = 0.28;
-    luzVentana.diffuse = new Color3(0.6, 0.72, 0.85);
+    // LUZ DE VENTANA ALINEADA CON EL SOL PINTADO.
+    //
+    // Iba en dirección (0,6, -0,2, 0,1) mientras el sol del cielo está en el
+    // cuarto superior izquierdo: la luz entraba por un lado y el sol se veía
+    // por el otro. El ojo no razona eso, pero lo nota — es una de las cosas
+    // que hacen que un interior "no parezca real" sin saber por qué.
+    //
+    // Ahora apunta desde donde está el sol, casi horizontal, como entra la luz
+    // por una ventana a media mañana.
+    const luzVentana = new DirectionalLight("luzVentana", new Vector3(0.72, -0.34, -0.18), this.scene);
+    // Más intensa y más cálida: era un relleno azulado casi imperceptible.
+    // Subida, la luz que entra por los vanos se ve DE VERDAD sobre el piso y
+    // las paredes, que es lo que da la sensación de que afuera hay un día.
+    luzVentana.intensity = 0.55;
+    luzVentana.diffuse = new Color3(1, 0.94, 0.82);
     luzVentana.specular = new Color3(0, 0, 0);
+
+    // BRUMA DE DISTANCIA.
+    //
+    // Sin ella, los edificios vecinos y los árboles se ven con el mismo
+    // contraste que la pared de al lado, y todo el exterior queda pegado al
+    // cristal como un decorado plano. Un poco de niebla lejana separa los
+    // planos y es lo que convierte un fondo en un paisaje.
+    //
+    // Empieza más allá del galpón para no teñir nada del interior.
+    // BRUMA MUY LEJANA, casi imperceptible.
+    //
+    // La puse en 26-96 m y fue un error de bulto: la manzana vecina está a
+    // 44-62 m, o sea justo en mitad del degradado. Los edificios salían lavados
+    // al 40 % y el exterior entero se veía nublado — exactamente lo contrario
+    // de lo que buscaba, que era dar profundidad.
+    //
+    // Ahora empieza DESPUÉS de los edificios: ellos se ven limpios y a todo
+    // contraste, y la bruma solo actúa sobre lo que queda más allá. Eso es lo
+    // que hace la perspectiva aérea de verdad — no teñir el primer plano.
+    this.scene.fogMode = Scene.FOGMODE_LINEAR;
+    this.scene.fogStart = 72;
+    this.scene.fogEnd = 240;
+    this.scene.fogColor = new Color3(0.78, 0.85, 0.92);
 
     const shadowGenerator = new ShadowGenerator(2048, principal);
 

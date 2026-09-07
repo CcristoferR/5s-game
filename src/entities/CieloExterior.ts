@@ -45,8 +45,17 @@ function pbr(scene: Scene, nombre: string, color: Color3, rugosidad: number, met
 // ---------------------------------------------------------------------------
 
 function pintarCielo(scene: Scene): DynamicTexture {
-  const ancho = 2048;
-  const alto = 1024;
+  // RESOLUCIÓN DEL CIELO.
+  //
+  // Subida de 2048 x 1024 a 4096 x 2048. Parece mucho para un fondo, pero esa
+  // textura se estira sobre TODO el domo: a 2048 px, el trozo que se ve por
+  // una ventana usaba apenas doscientos píxeles de ancho, y por eso el cielo
+  // salía con bandas y el borde del sol dentado.
+  //
+  // Es una sola textura y se genera una vez por escena, así que el coste es
+  // memoria de vídeo, no velocidad de dibujo.
+  const ancho = 4096;
+  const alto = 2048;
   const tex = new DynamicTexture("texturaCielo", { width: ancho, height: alto }, scene, true);
   const ctx = tex.getContext() as CanvasRenderingContext2D;
 
@@ -55,10 +64,15 @@ function pintarCielo(scene: Scene): DynamicTexture {
   const horizonte = alto * 0.62;
 
   const cielo = ctx.createLinearGradient(0, 0, 0, horizonte);
-  cielo.addColorStop(0, "#2d5c96");
-  cielo.addColorStop(0.35, "#5b8ec2");
-  cielo.addColorStop(0.68, "#8fb6d8");
-  cielo.addColorStop(0.9, "#bcd3e4");
+// DÍA DESPEJADO, no cerrado.
+  //
+  // El degradado iba de un azul apagado a un gris muy claro, y eso es un cielo
+  // encapotado. Un día de sol tiene el cenit saturado y el horizonte cálido —
+  // ese contraste es lo que hace que se lea como buen tiempo.
+  cielo.addColorStop(0, "#1f5aa8");
+  cielo.addColorStop(0.35, "#4b8fd4");
+  cielo.addColorStop(0.68, "#8fc2e8");
+  cielo.addColorStop(0.9, "#d6e6f0");
   // Antes esta franja llegaba casi a blanco puro y, vista por el portón,
   // parecía una pared blanca en vez de un horizonte.
   cielo.addColorStop(1, "#cfdce4");
@@ -75,20 +89,21 @@ function pintarCielo(scene: Scene): DynamicTexture {
   // A la izquierda y alto, para coincidir con la luz direccional de la escena.
   // Si estuviera en cualquier lado, las sombras del interior contradirían al
   // cielo y la escena se sentiría rara sin que se sepa por qué.
+  const escala = ancho / 2048;
   const solX = ancho * 0.26;
   const solY = horizonte * 0.3;
 
-  const halo = ctx.createRadialGradient(solX, solY, 0, solX, solY, 340);
+  const halo = ctx.createRadialGradient(solX, solY, 0, solX, solY, 340 * escala);
   halo.addColorStop(0, "rgba(255, 251, 232, 0.9)");
   halo.addColorStop(0.1, "rgba(255, 246, 214, 0.45)");
   halo.addColorStop(0.4, "rgba(255, 242, 205, 0.14)");
   halo.addColorStop(1, "rgba(255, 242, 205, 0)");
   ctx.fillStyle = halo;
-  ctx.fillRect(solX - 340, solY - 340, 680, 680);
+  ctx.fillRect(solX - 340 * escala, solY - 340 * escala, 680 * escala, 680 * escala);
 
   ctx.fillStyle = "rgba(255, 254, 246, 0.98)";
   ctx.beginPath();
-  ctx.arc(solX, solY, 34, 0, Math.PI * 2);
+  ctx.arc(solX, solY, 34 * escala, 0, Math.PI * 2);
   ctx.fill();
 
   // --- Nubes ---
@@ -188,36 +203,207 @@ function pintarPavimento(scene: Scene): DynamicTexture {
 // Galpones vecinos
 // ---------------------------------------------------------------------------
 
+/**
+ * Fachada de edificio vecino.
+ *
+ * ─── POR QUÉ SE REHIZO ────────────────────────────────────────────────────
+ *
+ * La anterior era una retícula de rectángulos oscuros sobre un color plano, a
+ * 512 px. Vista por una ventana se leía como una caja de cartón pintada, y con
+ * razón: a un edificio real lo que lo hace creíble no es tener ventanas, es
+ * todo lo demás — que los vidrios no sean todos iguales, que haya cornisas que
+ * proyecten sombra, que la planta baja sea distinta del resto, que las juntas
+ * de los paneles se marquen y que la lluvia haya dejado chorreones bajo los
+ * alféizares.
+ *
+ * Nada de eso cuesta geometría: es todo dibujo sobre la textura. Por eso se
+ * puede subir tanto el detalle sin tocar el rendimiento — son catorce cajas
+ * igual que antes.
+ */
 function pintarFachada(scene: Scene, nombre: string, base: string): DynamicTexture {
-  const ancho = 256;
-  const alto = 256;
+  const ancho = 1024;
+  const alto = 1024;
   const tex = new DynamicTexture(nombre, { width: ancho, height: alto }, scene, true);
   const ctx = tex.getContext() as CanvasRenderingContext2D;
 
+  const azar = (semilla: number): number => {
+    const x = Math.sin(semilla * 12.9898) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  // --- Hormigón de fondo, con juntas de panel ---
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, ancho, alto);
 
-  // Chapa acanalada: líneas verticales alternando luz y sombra. Es lo que hace
-  // que una caja se lea como una nave industrial y no como un cubo de color.
-  for (let x = 0; x < ancho; x += 8) {
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    ctx.fillRect(x, 0, 3, alto);
-    ctx.fillStyle = "rgba(0,0,0,0.08)";
-    ctx.fillRect(x + 4, 0, 3, alto);
+  // Veteado: manchas grandes de baja opacidad. Un color plano es lo que más
+  // delata una superficie pintada.
+  for (let i = 0; i < 260; i++) {
+    const r = 30 + azar(i) * 90;
+    ctx.fillStyle = azar(i * 3) > 0.5 ? "rgba(0,0,0,0.045)" : "rgba(255,255,255,0.035)";
+    ctx.beginPath();
+    ctx.arc(azar(i * 7) * ancho, azar(i * 11) * alto, r, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  // Ventanas en dos filas, algunas encendidas.
-  for (let fila = 0; fila < 2; fila++) {
-    for (let col = 0; col < 6; col++) {
-      const encendida = Math.random() > 0.55;
-      ctx.fillStyle = encendida ? "rgba(255, 236, 186, 0.8)" : "rgba(52, 66, 78, 0.85)";
-      ctx.fillRect(20 + col * 38, 40 + fila * 92, 26, 42);
+  // Juntas horizontales de los paneles prefabricados, con su sombra debajo.
+  const PANELES = 8;
+  for (let f = 1; f < PANELES; f++) {
+    const y = (f / PANELES) * alto;
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(0, y - 2, ancho, 3);
+    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    ctx.fillRect(0, y + 1, ancho, 2);
+  }
+
+  // --- Ventanas ---
+  const COLS = 6;
+  const FILAS = 7;
+  const margenX = ancho * 0.06;
+  const margenSup = alto * 0.07;
+  const zonaBaja = alto * 0.2;
+  const anchoUtil = ancho - margenX * 2;
+  const altoUtil = alto - margenSup - zonaBaja;
+
+  const anchoHueco = anchoUtil / COLS;
+  const altoHueco = altoUtil / FILAS;
+  const w = anchoHueco * 0.68;
+  const h = altoHueco * 0.62;
+
+  for (let c = 0; c < COLS; c++) {
+    for (let f = 0; f < FILAS; f++) {
+      const x = margenX + c * anchoHueco + (anchoHueco - w) / 2;
+      const y = margenSup + f * altoHueco + (altoHueco - h) / 2;
+      const semilla = c * 31 + f * 7;
+
+      // Dintel: banda clara arriba del hueco. Es lo que da relieve — sin ella
+      // la ventana parece un agujero recortado en una lámina.
+      ctx.fillStyle = "rgba(255,255,255,0.13)";
+      ctx.fillRect(x - 5, y - 7, w + 10, 7);
+
+      // Sombra propia del hueco, arriba y a la izquierda.
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
+
+      // El vidrio. Cada uno distinto: ese es el punto.
+      //
+      // Un edificio con todas las ventanas idénticas se lee como un patrón
+      // repetido, que es exactamente el aspecto de cartón impreso. En uno real
+      // unas reflejan cielo, otras están en sombra, algunas tienen la luz
+      // encendida y unas pocas una persiana bajada.
+      const tipo = azar(semilla);
+
+      if (tipo > 0.86) {
+        // Encendida: amarillo cálido, más brillante cuanto más arriba.
+        const calor = 0.55 + azar(semilla * 2) * 0.35;
+        ctx.fillStyle = `rgba(255, ${Math.round(205 + calor * 30)}, ${Math.round(130 + calor * 50)}, ${calor})`;
+        ctx.fillRect(x, y, w, h);
+      } else if (tipo > 0.62) {
+        // Persiana bajada: mate y de un tono próximo al muro.
+        ctx.fillStyle = "rgba(150,146,136,0.85)";
+        ctx.fillRect(x, y, w, h);
+        for (let l = 0; l < 7; l++) {
+          ctx.fillStyle = "rgba(0,0,0,0.1)";
+          ctx.fillRect(x, y + (h / 7) * l, w, 1.5);
+        }
+      } else {
+        // Vidrio: degradado de cielo reflejado, más claro arriba.
+        const vidrio = ctx.createLinearGradient(x, y, x, y + h);
+        const frio = 0.35 + azar(semilla * 5) * 0.3;
+        vidrio.addColorStop(0, `rgba(${Math.round(120 + frio * 90)}, ${Math.round(160 + frio * 70)}, ${Math.round(190 + frio * 55)}, 1)`);
+        vidrio.addColorStop(1, "rgba(38, 52, 66, 1)");
+        ctx.fillStyle = vidrio;
+        ctx.fillRect(x, y, w, h);
+
+        // Reflejo diagonal. Es el detalle que dice "esto es vidrio" y no
+        // "esto es un rectángulo azul".
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+        ctx.fillStyle = "rgba(255,255,255,0.16)";
+        ctx.beginPath();
+        ctx.moveTo(x - w * 0.2, y + h);
+        ctx.lineTo(x + w * 0.5, y - h * 0.1);
+        ctx.lineTo(x + w * 0.78, y - h * 0.1);
+        ctx.lineTo(x + w * 0.08, y + h);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Montante central: casi ninguna ventana industrial es un solo paño.
+      ctx.fillStyle = "rgba(40,44,48,0.75)";
+      ctx.fillRect(x + w / 2 - 1.5, y, 3, h);
+      ctx.fillRect(x, y + h * 0.45, w, 2.5);
+
+      // Marco.
+      ctx.strokeStyle = "rgba(48,52,56,0.9)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, w, h);
+
+      // Alféizar y su chorreón. La suciedad que baja de las ventanas es de las
+      // señales más fuertes de que un edificio lleva años ahí.
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.fillRect(x - 5, y + h, w + 10, 5);
+
+      if (azar(semilla * 13) > 0.45) {
+        const chorreon = ctx.createLinearGradient(0, y + h, 0, y + h + altoHueco * 0.55);
+        chorreon.addColorStop(0, "rgba(0,0,0,0.16)");
+        chorreon.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = chorreon;
+        ctx.fillRect(x + w * 0.1, y + h + 5, w * 0.8, altoHueco * 0.55);
+      }
     }
   }
 
-  // Franja de zócalo.
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(0, alto - 34, ancho, 34);
+  // --- Planta baja: portones, no ventanas ---
+  //
+  // Es lo que distingue una nave industrial de un bloque de oficinas, y lo que
+  // hace que el vecindario del galpón parezca su vecindario.
+  const yBaja = alto - zonaBaja;
+
+  ctx.fillStyle = "rgba(0,0,0,0.16)";
+  ctx.fillRect(0, yBaja - 10, ancho, 10);
+
+  for (let i = 0; i < 3; i++) {
+    const pw = ancho * 0.24;
+    const px = ancho * 0.07 + i * (ancho * 0.31);
+    const ph = zonaBaja * 0.62;
+    const py = yBaja + zonaBaja * 0.16;
+
+    ctx.fillStyle = "rgba(58,62,66,0.95)";
+    ctx.fillRect(px, py, pw, ph);
+
+    // Lamas del portón seccional.
+    for (let l = 0; l < 9; l++) {
+      ctx.fillStyle = l % 2 === 0 ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.14)";
+      ctx.fillRect(px, py + (ph / 9) * l, pw, ph / 9);
+    }
+
+    ctx.strokeStyle = "rgba(30,33,36,0.9)";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(px, py, pw, ph);
+  }
+
+  // Zócalo sucio: la banda que salpica la lluvia al rebotar en el suelo.
+  const zocalo = ctx.createLinearGradient(0, alto - 60, 0, alto);
+  zocalo.addColorStop(0, "rgba(0,0,0,0)");
+  zocalo.addColorStop(1, "rgba(0,0,0,0.3)");
+  ctx.fillStyle = zocalo;
+  ctx.fillRect(0, alto - 60, ancho, 60);
+
+  // --- Cornisa ---
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.fillRect(0, margenSup * 0.34, ancho, 10);
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillRect(0, margenSup * 0.2, ancho, margenSup * 0.14);
+
+  // Bajante vertical, con su sombra. Rompe la simetría de la retícula.
+  const bx = ancho * (0.2 + azar(ancho) * 0.6);
+  ctx.fillStyle = "rgba(0,0,0,0.24)";
+  ctx.fillRect(bx + 7, margenSup * 0.34, 9, alto - margenSup * 0.34);
+  ctx.fillStyle = "rgba(90,92,88,0.9)";
+  ctx.fillRect(bx, margenSup * 0.34, 9, alto - margenSup * 0.34);
 
   tex.update();
   return tex;
@@ -244,7 +430,26 @@ function crearManzanaVecina(scene: Scene): void {
     mat.albedoTexture = pintarFachada(scene, `texVecino_${i}`, paletas[i % paletas.length]);
     // La textura ya trae el color; el tinte se deja neutro para no ensuciarla.
     mat.albedoColor = new Color3(1, 1, 1);
-    mat.emissiveColor = new Color3(0.1, 0.1, 0.1);
+
+    // LA MISMA TEXTURA HACE DE MAPA DE BRILLO.
+    //
+    // Con roughness uniforme, el vidrio y el hormigón reflejan igual, y eso es
+    // lo que hace que una fachada se vea impresa. Usando la textura como mapa
+    // de microsuperficie, las zonas CLARAS —los vidrios y los reflejos que
+    // llevan pintados— quedan pulidas y las oscuras mates.
+    //
+    // No es físicamente exacto, pero acierta donde importa: las ventanas
+    // brillan y el muro no. Y sale gratis, porque reusa una textura que ya
+    // estaba en memoria.
+    mat.microSurfaceTexture = mat.albedoTexture;
+    mat.metallic = 0.22;
+    mat.roughness = 0.58;
+
+    // Emisión ligada a la textura: las ventanas encendidas se ven encendidas
+    // aunque el edificio esté en sombra. Sin esto, al caer el sol de lado la
+    // fachada entera se apagaba por igual y el vecindario parecía deshabitado.
+    mat.emissiveTexture = mat.albedoTexture;
+    mat.emissiveColor = new Color3(0.16, 0.15, 0.13);
 
     const edificio = MeshBuilder.CreateBox(`vecino_${i}`, { width: ancho, height: alto, depth: fondo }, scene);
     edificio.position.set(Math.cos(angulo) * distancia, alto / 2, Math.sin(angulo) * distancia);

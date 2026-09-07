@@ -10,7 +10,8 @@ import { mostrarMiCuenta } from "./portal/PantallaMiCuenta";
 import { aplicarTemaUI } from "./ui/EstiloUI";
 import { iniciarPreferencias } from "./portal/Preferencias";
 import { mostrarVerificacion } from "./portal/PantallaVerificacion";
-import { registrarFaseCompletada, progresoDe, CURSO_ID } from "./portal/Datos";
+import { registrarFaseCompletada, progresoDe } from "./portal/Datos";
+import { juegoDe, registrarJuego5S, registrarJuegoGuardias, CURSO_5S } from "./portal/CursosJugables";
 import { guardarResultadoDeFase } from "./portal/Ranking";
 import { leerSesion, cerrarSesion, rolVerificado } from "./portal/Sesion";
 import type { Perfil } from "./portal/Datos";
@@ -227,7 +228,7 @@ function reintentarNivel(numeroNivel: number): void {
  */
 async function guardarConReintentos(fase: number, puntaje: number, segundos: number): Promise<void> {
   for (let intento = 1; intento <= 3; intento++) {
-    if (await guardarResultadoDeFase(CURSO_ID, fase, puntaje, segundos)) return;
+    if (await guardarResultadoDeFase(cursoActivo, fase, puntaje, segundos)) return;
     await new Promise((listo) => setTimeout(listo, intento * 1500));
   }
 
@@ -298,26 +299,46 @@ function construirNivel(numeroNivel: number): void {
     // permite retomar donde quedó aunque entre desde otro computador, y lo que
     // hace posible que el administrador vea quién completó qué.
     if (perfilActivo) {
-      void registrarFaseCompletada(perfilActivo.id, CURSO_ID, numeroNivel, gameManager.puntaje);
+      // EL ORDEN IMPORTA, y por un motivo nuevo.
+      //
+      // Desde que el avance lo calcula la base, su puntaje se obtiene SUMANDO
+      // las filas de resultados_fase. Si el avance se registrara primero, esa
+      // suma no incluiría la fase que se acaba de terminar —su fila todavía no
+      // existe— y el total quedaría corto hasta el siguiente nivel.
+      //
+      // Por eso primero se guarda el resultado de la fase y solo después se
+      // registra el avance. El await encadena las dos cosas.
+      void (async () => {
+        // Resultado de ESTA fase, para el ranking.
+        //
+        // Va separado del avance porque responden preguntas distintas: el
+        // avance dice hasta dónde llegó la persona, el resultado dice qué tan
+        // bien lo hizo. El marcador del juego se reinicia en cada nivel, así
+        // que gameManager.puntaje es exactamente el de esta fase.
+        //
+        // Con reintentos: esta escritura ya se perdió una vez en producción.
+        // Se guardó el avance —y el certificado dio el curso por completo—
+        // pero la fila del ranking no llegó, y la persona quedó con "4 de 5
+        // fases" habiendo hecho las cinco.
+        await guardarConReintentos(
+          numeroNivel,
+          gameManager.puntaje,
+          gameManager.segundosDelNivel()
+        );
 
-      // Resultado de ESTA fase, para el ranking.
-      //
-      // Va separado del avance porque responden preguntas distintas: el avance
-      // dice hasta dónde llegó la persona, el resultado dice qué tan bien lo
-      // hizo. Y sobre todo, el ranking necesita el puntaje fase por fase — el
-      // total del curso es la suma. El marcador del juego se reinicia en cada
-      // nivel, así que gameManager.puntaje es exactamente el de esta fase.
-      //
-      // Con reintentos: esta escritura ya se perdió una vez en producción. Se
-      // guardó el avance (y por lo tanto el certificado dio el curso por
-      // completo) pero la fila del ranking no llegó, y la persona quedó con
-      // "4 de 5 fases" habiendo hecho las cinco. Como se lanzaba sin esperar
-      // el resultado, el fallo solo apareció en la consola y nadie lo vio.
-      void guardarConReintentos(
-        numeroNivel,
-        gameManager.puntaje,
-        gameManager.segundosDelNivel()
-      );
+        // El avance queda asociado a la persona, no al navegador: es lo que
+        // permite retomar desde otro computador y lo que hace que el
+        // administrador vea quién completó qué.
+        //
+        // Una sola llamada, y la cuenta la hace la base. Antes eran tres
+        // viajes con un hueco entre medio por el que se perdían fases.
+        await registrarFaseCompletada(
+          perfilActivo.id,
+          cursoActivo,
+          numeroNivel,
+          gameManager.puntaje
+        );
+      })();
     }
   };
 
@@ -417,10 +438,13 @@ function abrirCatalogo(perfil: Perfil): void {
   perfilActivo = perfil;
   mostrarCatalogo(
     perfil,
-    () => {
-      // Por ahora todos los cursos abren el juego 5S, que es el único que
-      // existe. Cuando haya otros, acá se decide cuál cargar según el id.
-      void iniciarCursoDelJugador();
+    (cursoId) => {
+      // El catálogo entrega el id del curso que se abrió, y ahora se usa.
+      //
+      // Antes se descartaba: cualquier curso abría el juego de 5S porque era
+      // el único que existía. Con dos cursos publicados eso significaría que
+      // quien canjea el de guardias entra a un galpón a clasificar tornillos.
+      void iniciarCursoDelJugador(cursoId);
     },
     () => mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil)),
     () =>
@@ -438,21 +462,66 @@ function abrirCatalogo(perfil: Perfil): void {
 }
 
 /**
+ * Curso que la persona tiene abierto ahora mismo.
+ *
+ * Sustituye a CURSO_ID en todo lo que depende del curso: guardar la fase y
+ * releer el progreso. CURSO_ID sigue en Datos.ts como valor por defecto de sus
+ * funciones, pero ya no es "el curso" del sistema — ahora es solo el
+ * identificador del 5S.
+ */
+let cursoActivo: string = CURSO_5S;
+
+/** El 5S se registra a sí mismo: su juego todavía vive en este archivo. */
+registrarJuego5S(() => mostrarMenu());
+
+/**
+ * El curso de guardias se carga solo cuando alguien lo abre.
+ *
+ * El import() va aquí dentro y no arriba con los demás: así su código no entra
+ * en el paquete inicial y quien juega el 5S no descarga un curso que no va a
+ * abrir. Hoy el paquete pesa 8,3 MB en un solo archivo; con dos juegos completos
+ * dentro sería el doble.
+ */
+registrarJuegoGuardias(async () => {
+  const { abrirMenuGuardias } = await import("./juegos/JuegoGuardias");
+  abrirMenuGuardias(
+    sceneManager.scene,
+    () => {
+      if (perfilActivo) abrirCatalogo(perfilActivo);
+    },
+    perfilActivo?.nombreCompleto
+  );
+});
+
+/**
  * Arranca el curso restaurando el avance guardado de esa persona.
  *
  * Hasta ahora el progreso vivía suelto en el navegador: era del equipo, no de
  * quien jugaba. Si dos personas usaban el mismo computador de planta,
  * compartían avance; y si alguien cambiaba de equipo, empezaba de cero.
  */
-async function iniciarCursoDelJugador(): Promise<void> {
+async function iniciarCursoDelJugador(cursoId: string): Promise<void> {
+  const juego = juegoDe(cursoId, gameManager);
+
+  // Curso sembrado en la base pero todavía sin juego. Es el estado normal
+  // mientras se construye uno: se avisa y se vuelve, en vez de abrir el juego
+  // equivocado o dejar la pantalla en blanco.
+  if (!juego) {
+    window.alert("Este curso todavía no tiene contenido disponible.");
+    if (perfilActivo) abrirCatalogo(perfilActivo);
+    return;
+  }
+
+  cursoActivo = cursoId;
   gameManager.reiniciarTodo();
 
+  // El progreso se lee del curso que se está abriendo, no de una constante.
   if (perfilActivo) {
-    const guardado = await progresoDe(perfilActivo.id, CURSO_ID);
+    const guardado = await progresoDe(perfilActivo.id, cursoId);
     guardado?.fasesCompletadas.forEach((fase) => gameManager.completarNivel(fase));
   }
 
-  mostrarMenu();
+  await juego.abrir();
 }
 
 // Abre lo que corresponda a una sesión guardada, revalidando el rol.

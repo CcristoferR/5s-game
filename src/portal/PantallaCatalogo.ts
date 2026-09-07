@@ -215,7 +215,7 @@ function tarjetaCurso(t: TarjetaCurso): string {
     estado === "en_curso" || estado === "completado"
       ? `<div class="avance">
            <div class="avance__cifras">
-             <span>${fasesHechas} de ${curso.totalFases} fases</span>
+             <span>${fasesHechas} de ${curso.totalFases} ${curso.totalFases === 1 ? "fase" : "fases"}</span>
              <span>${porcentaje}%</span>
            </div>
            <div class="avance__carril"><span style="width:${porcentaje}%"></span></div>
@@ -235,7 +235,7 @@ function tarjetaCurso(t: TarjetaCurso): string {
         <p class="curso__desc">${escapar(curso.descripcion)}</p>
 
         <div class="curso__datos">
-          <span>${curso.totalFases} fases</span>
+          <span>${curso.totalFases} ${curso.totalFases === 1 ? "fase" : "fases"}</span>
           <span class="curso__punto"></span>
           <span>${curso.duracionMinutos} min aprox.</span>
         </div>

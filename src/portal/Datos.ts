@@ -1153,38 +1153,58 @@ export async function progresoDe(perfilId: string, cursoId: string): Promise<Pro
  * Se conserva el mejor puntaje alcanzado, no el último — de otro modo un
  * intento flojo borraría un buen resultado anterior.
  */
+/**
+ * Registra una fase completada.
+ *
+ * ─── ANTES SE HACÍA EN TRES VIAJES, Y AHÍ ESTABA EL FALLO ─────────────────
+ *
+ * Se leía el avance, se le sumaba la fase y se reescribía la fila entera.
+ * Entre leer y escribir hay un hueco, y si dos guardados caen ahí a la vez
+ * —dos pestañas abiertas, o un reintento por conexión lenta que se solapa con
+ * el guardado siguiente— los dos leen lo mismo y el segundo pisa al primero.
+ * La fase que anotó el primero desaparece. Es exactamente lo que pasó con la
+ * fase 3.
+ *
+ * Ahora es UNA sola llamada y la cuenta la hace la base. Dentro de un UPDATE
+ * no hay hueco: PostgreSQL bloquea la fila mientras la modifica, así que dos
+ * llamadas simultáneas se ordenan solas.
+ *
+ * De paso arregla el puntaje. Se guardaba con max(anterior, nuevo) —el mejor
+ * puntaje de UNA fase, no la suma— así que el campo decía 200 cuando lo real
+ * eran 470. Ahora lo suma la base leyendo resultados_fase, que es la tabla que
+ * tiene una fila por fase y por tanto la única fuente correcta.
+ *
+ * @returns true si quedó guardado. El llamador reintenta si devuelve false.
+ */
 export async function registrarFaseCompletada(
   perfilId: string,
   cursoId: string,
   fase: number,
   puntaje: number
-): Promise<void> {
-  const previo = await progresoDe(perfilId, cursoId);
-  const curso = await buscarCurso(cursoId);
-  const total = curso?.totalFases ?? 5;
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("registrar_fase", {
+    p_perfil_id: perfilId,
+    p_curso_id: cursoId,
+    p_fase: fase,
+    p_puntaje: puntaje,
+  });
 
-  const fases = new Set(previo?.fasesCompletadas ?? []);
-  fases.add(fase);
-  const lista = [...fases].sort((a, b) => a - b);
+  if (error) {
+    avisarError("registrarFaseCompletada", error);
+    return false;
+  }
 
-  // El tutorial es la fase 0: enseña los controles, no es contenido del curso,
-  // así que no cuenta para completarlo.
-  const reales = lista.filter((f) => f >= 1);
+  const r = data as { ok: boolean; motivo?: string };
 
-  const { error } = await supabase.from("progreso").upsert(
-    {
-      perfil_id: perfilId,
-      curso_id: cursoId,
-      fases_completadas: lista,
-      puntaje: Math.max(previo?.puntaje ?? 0, puntaje),
-      actualizado_en: new Date().toISOString(),
-      completado_en:
-        previo?.completadoEn ?? (reales.length >= total ? new Date().toISOString() : null),
-    },
-    { onConflict: "perfil_id,curso_id" }
-  );
+  if (!r.ok) {
+    // Un rechazo del servidor NO se reintenta: si dice que la fase es inválida
+    // o que el progreso es de otra persona, insistir da el mismo resultado.
+    // Reintentar solo tiene sentido ante un fallo de red.
+    console.warn(`[progreso] la base rechazó el registro: ${r.motivo}`);
+    return true;
+  }
 
-  if (error) avisarError("registrarFaseCompletada", error);
+  return true;
 }
 
 export async function reiniciarProgreso(perfilId: string, cursoId: string): Promise<void> {

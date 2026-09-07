@@ -554,14 +554,27 @@ export function cargarNivel4(scene: Scene, hud: HUD, onVolverMenu: () => void, o
   etiquetaNpc.fontSize = TEXTO.cuerpo;
   etiquetaNpc.outlineWidth = 3;
   etiquetaNpc.outlineColor = "rgba(0,0,0,0.7)";
-  etiquetaNpc.width = "260px";
-  etiquetaNpc.height = "26px";
+  // El globo CRECE CON LA FRASE.
+  //
+  // Estaba fijo en 260 x 26 px y sin ajuste de línea: cualquier frase que no
+  // cupiera en un renglón de 260 px se cortaba en seco, y ninguna de las del
+  // operario cabe. Nunca se llegó a leer una entera.
+  //
+  // Con ajuste de línea y alto automático, el globo se adapta a lo que hay que
+  // decir en vez de recortarlo. 360 px es el ancho al que las frases entran en
+  // dos renglones sin quedar demasiado altas sobre la cabeza.
+  etiquetaNpc.width = "360px";
+  etiquetaNpc.textWrapping = true;
+  etiquetaNpc.resizeToFit = true;
+  etiquetaNpc.lineSpacing = "3px";
   etiquetaNpc.isVisible = false;
   gui.addControl(etiquetaNpc);
   // Se cuelga del anclaje sobre el casco, no de la raíz: la figura apoya en
   // el piso, así que atarla a la raíz dejaría el globo sobre las piernas.
   etiquetaNpc.linkWithMesh(npc.anclaEtiqueta);
-  etiquetaNpc.linkOffsetY = -30;
+  // El desplazamiento se ajusta al alto real: con dos renglones, -30 dejaba el
+  // globo pisando el casco.
+  etiquetaNpc.linkOffsetY = -46;
 
   // APERTURA DEL NIVEL
   //
