@@ -247,7 +247,7 @@ export async function exportarPersonas(): Promise<number> {
   const COL_ESTADO = 13;
   filas.forEach((_, i) => {
     const celda = hoja.getRow(6 + i).getCell(COL_ESTADO);
-    const estado = String(celda.value ?? "");
+    const estado = textoDeCelda(celda.value);
     const color =
       estado === "Completado"
         ? VERDE
@@ -416,7 +416,7 @@ export async function exportarCodigos(): Promise<number> {
     fila.getCell(COL_CODIGO).font = { name: "Consolas", size: 11, bold: true };
 
     const celdaEstado = fila.getCell(COL_ESTADO);
-    const estado = String(celdaEstado.value ?? "");
+    const estado = textoDeCelda(celdaEstado.value);
     const color = estado === "Disponible" ? VERDE : estado === "Sin cupos" ? AMBAR : ROJO;
     celdaEstado.font = { name: "Calibri", size: 11, bold: true, color: { argb: color } };
   });
@@ -560,7 +560,7 @@ export async function exportarResumenAreas(): Promise<number> {
 
     valores.forEach((valor, c) => {
       const celda = fila.getCell(c + 1);
-      celda.value = valor as ExcelJS.CellValue;
+      celda.value = valor;
       celda.font = { name: "Calibri", size: 11, bold: true, color: { argb: VERDE } };
       celda.alignment = { vertical: "middle", horizontal: columnas[c].alineacion ?? "left" };
       if (columnas[c].formato) celda.numFmt = columnas[c].formato;
@@ -571,4 +571,35 @@ export async function exportarResumenAreas(): Promise<number> {
 
   await descargarLibro(libro, `cobertura-areas-${selloFecha()}.xlsx`);
   return filas.length;
+}
+
+/**
+ * Texto de una celda de la planilla.
+ *
+ * ExcelJS guarda en `value` cosas que no son texto: numeros, fechas, formulas
+ * y texto con formato, y estas dos ultimas son objetos. Pasarlas por String()
+ * escribe "[object Object]" en el reporte que se descarga el administrador —un
+ * fallo que no rompe nada, no da error y solo se descubre abriendo el archivo.
+ *
+ * Aqui solo se leen celdas de estado, que siempre traen texto plano; el resto
+ * de los casos existen por si alguien cambia la columna mas adelante.
+ */
+function textoDeCelda(valor: unknown): string {
+  if (valor === null || valor === undefined) return "";
+  if (typeof valor === "string") return valor;
+  if (typeof valor === "number" || typeof valor === "boolean") return String(valor);
+  if (valor instanceof Date) return valor.toISOString();
+
+  // Formula: interesa el resultado, no la formula.
+  if (typeof valor === "object" && "result" in valor) {
+    return textoDeCelda((valor).result);
+  }
+
+  // Texto con formato: se concatenan sus tramos.
+  if (typeof valor === "object" && "richText" in valor) {
+    const tramos = (valor as { richText: { text: string }[] }).richText;
+    return tramos.map((t) => t.text).join("");
+  }
+
+  return "";
 }

@@ -24,10 +24,16 @@ import { GameManager } from "../core/GameManager";
 // pantalla que ya sabe usar, que es lo que se quería.
 
 /** Título y bajada de este curso. */
-const ENCABEZADO = {
-  titulo: "Guardias de Seguridad",
-  bajada: "Formación y perfeccionamiento · manual de apoyo OS10",
-};
+// Encabezado propio del curso, pendiente de conectar.
+//
+// mostrarMenuPrincipal todavía no acepta un título/bajada por parámetro: hoy
+// muestra los del 5S fijos. Cuando el menú los reciba —es un cambio pequeño en
+// MainMenu— este es el texto que va. Se deja anotado para no perderlo.
+//
+// const ENCABEZADO = {
+//   titulo: "Guardias de Seguridad",
+//   bajada: "Formación y perfeccionamiento · manual de apoyo OS10",
+// };
 
 /**
  * Los escenarios del curso.
@@ -112,7 +118,6 @@ export function abrirMenuGuardias(
     () => onVolverAlPortal(),
     () => onVolverAlPortal(),
     usuario,
-    onVolverAlPortal,
-    ENCABEZADO
+    onVolverAlPortal
   );
 }

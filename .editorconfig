@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# Reglas de archivo del repositorio
+# ---------------------------------------------------------------------------
+#
+# Lo lee el editor solo, sin instalar nada: VS Code, WebStorm y Vim lo entienden
+# de fabrica. Es la red mas barata que existe contra una clase de error que no
+# rompe nada al compilar pero ensucia todos los diffs.
+#
+# El caso concreto que lo motiva: este repositorio esta escrito con finales de
+# linea CRLF, y basta que alguien edite un archivo desde otro sistema para que
+# aparezcan lineas LF mezcladas en medio. Git entonces marca el archivo entero
+# como modificado aunque solo hayan cambiado tres lineas, y revisar el cambio se
+# vuelve imposible.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown usa dos espacios finales como salto de linea: recortarlos rompe el
+# formato del texto.
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{yml,yaml,json}]
+indent_size = 2

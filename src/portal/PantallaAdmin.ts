@@ -40,6 +40,7 @@ import { mostrarVerificacion } from "./PantallaVerificacion";
 import { cerrarSesion, leerSesion } from "./Sesion";
 import { rankingCompleto, formatearDuracion, type FilaRankingAdmin } from "./Ranking";
 import { CURSO_ID } from "./Datos";
+import { manejar } from "./Manejador";
 
 /**
  * Vista de administración.
@@ -187,12 +188,18 @@ export function mostrarAdministracion(onSalir: () => void): void {
     }
 
     $<HTMLButtonElement>("#btnSalirAdmin").addEventListener("click", () => {
-      cerrarSesion();
+      // El error del cierre se registra en vez de perderse.
+      //
+      // No es un detalle de estilo: se cierra la sesion y AL INSTANTE se desmonta
+      // la pantalla. Si el cierre falla, nadie se entera y la persona se queda con
+      // una sesion viva en el servidor creyendo que salio. No se pone await para
+      // no cambiar el momento en que se desmonta; solo se deja de tragar el fallo.
+      cerrarSesion().catch((error) => console.error("[admin] cerrar sesion:", error));
       raiz.remove();
       onSalir();
     });
 
-    $<HTMLFormElement>("#formCodigo").addEventListener("submit", async (evento) => {
+    $<HTMLFormElement>("#formCodigo").addEventListener("submit", manejar("admin", async (evento) => {
       evento.preventDefault();
 
       const cursoId = $<HTMLSelectElement>("#nuevoCurso").value;
@@ -234,9 +241,9 @@ export function mostrarAdministracion(onSalir: () => void): void {
           : "No se pudo crear el código. Revisa tu conexión.",
         creado ? "ok" : "error"
       );
-    });
+    }));
 
-    $<HTMLFormElement>("#formAdmin").addEventListener("submit", async (evento) => {
+    $<HTMLFormElement>("#formAdmin").addEventListener("submit", manejar("admin", async (evento) => {
       evento.preventDefault();
 
       const boton = $<HTMLFormElement>("#formAdmin").querySelector("button")!;
@@ -267,15 +274,15 @@ export function mostrarAdministracion(onSalir: () => void): void {
       $<HTMLFormElement>("#formAdmin").reset();
       await pintar();
       avisar(`${resultado.perfil.nombreCompleto} ya puede entrar al panel.`, "ok");
-    });
+    }));
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-codigo]").forEach((boton) => {
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         const codigo = boton.dataset.codigo!;
         const activar = boton.dataset.accion === "activar";
         await cambiarEstadoCodigo(codigo, activar);
         await pintar();
-      });
+      }));
     });
 
     raiz.querySelector<HTMLButtonElement>("#abrirVerificacion")?.addEventListener("click", () => {
@@ -287,7 +294,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-reporte]").forEach((boton) => {
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         const tipo = boton.dataset.reporte!;
         const etiqueta = boton.querySelector(".reporte__nombre")!.textContent;
 
@@ -317,30 +324,30 @@ export function mostrarAdministracion(onSalir: () => void): void {
           boton.disabled = false;
           boton.classList.remove("reporte--trabajando");
         }
-      });
+      }));
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-curso]").forEach((boton) => {
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         await cambiarEstadoCurso(boton.dataset.curso!, boton.dataset.accion === "publicar");
         await pintar();
-      });
+      }));
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-baja]").forEach((boton) => {
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         await darDeBajaInscripcion(boton.dataset.baja!);
         await pintar();
         avisar("Inscripción dada de baja. El cupo del código quedó libre.", "ok");
-      });
+      }));
     });
 
     raiz.querySelectorAll<HTMLButtonElement>("[data-reactivar]").forEach((boton) => {
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         await reactivarInscripcion(boton.dataset.reactivar!);
         await pintar();
         avisar("Inscripción reactivada.", "ok");
-      });
+      }));
     });
 
     // Suspender pide confirmación; reactivar no.
@@ -354,7 +361,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
       const suspender = boton.dataset.estado === "suspender";
       let confirmando = false;
 
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         if (suspender && !confirmando) {
           confirmando = true;
           boton.textContent = "Confirmar";
@@ -382,7 +389,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
             : `${nombre} vuelve a tener acceso.`,
           "ok"
         );
-      });
+      }));
     });
 
     // Restablecer clave tambien confirma en dos pasos: genera una contrasenia
@@ -391,7 +398,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
       const etiqueta = boton.textContent ?? "";
       let confirmando = false;
 
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         if (!confirmando) {
           confirmando = true;
           boton.textContent = "Confirmar";
@@ -420,7 +427,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
           `Clave temporal de ${nombre}: ${resultado.clave} — anotala ahora, no se vuelve a mostrar.`,
           "ok"
         );
-      });
+      }));
     });
 
     // Dar o quitar administrador confirma en el propio botón, igual que
@@ -430,7 +437,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
       const etiqueta = boton.textContent ?? "";
       let confirmando = false;
 
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         if (!confirmando) {
           confirmando = true;
           boton.textContent = "Confirmar";
@@ -460,7 +467,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
             : "Vuelve a ser trabajador.",
           "ok"
         );
-      });
+      }));
     });
 
     // Eliminar borra el registro y no se puede deshacer, así que pide una
@@ -468,7 +475,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
     // ejecuta. Sin ventanas encima de ventanas, igual que en el ranking.
     raiz.querySelectorAll<HTMLButtonElement>("[data-eliminar]").forEach((boton) => {
       let confirmando = false;
-      boton.addEventListener("click", async () => {
+      boton.addEventListener("click", manejar("admin", async () => {
         if (!confirmando) {
           confirmando = true;
           boton.textContent = "Confirmar";
@@ -492,7 +499,7 @@ export function mostrarAdministracion(onSalir: () => void): void {
           `${resultado.nombre} se eliminó por completo. Su RUT vuelve a estar disponible para registrarse.`,
           "ok"
         );
-      });
+      }));
     });
   }
 
@@ -1177,7 +1184,7 @@ function bitacoraHtml(entradas: EntradaBitacora[]): string {
             : "";
 
           const extra = e.detalle.identificador
-            ? `<span class="bitacora__extra">${escapar(String(e.detalle.identificador))}</span>`
+            ? `<span class="bitacora__extra">${escapar(typeof e.detalle.identificador === "string" ? e.detalle.identificador : "")}</span>`
             : "";
 
           return `

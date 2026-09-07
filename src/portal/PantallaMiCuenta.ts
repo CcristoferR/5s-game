@@ -13,6 +13,7 @@ import {
 } from "./Preferencias";
 import { establecerSilencio } from "../core/Sonido";
 import { aplicarTemaUI } from "../ui/EstiloUI";
+import { manejar } from "./Manejador";
 
 /**
  * Mi cuenta.
@@ -68,7 +69,7 @@ export function mostrarMiCuenta(perfil: Perfil, onVolver: () => void): void {
   $<HTMLButtonElement>("#volverCuenta").addEventListener("click", cerrar);
 
   // --- Datos personales ---
-  $<HTMLFormElement>("#formDatos").addEventListener("submit", async (evento) => {
+  $<HTMLFormElement>("#formDatos").addEventListener("submit", manejar("mi cuenta", async (evento) => {
     evento.preventDefault();
 
     const boton = $<HTMLFormElement>("#formDatos").querySelector("button")!;
@@ -93,10 +94,10 @@ export function mostrarMiCuenta(perfil: Perfil, onVolver: () => void): void {
     }
 
     avisar("Datos actualizados.", "ok");
-  });
+  }));
 
   // --- Contraseña ---
-  $<HTMLFormElement>("#formClave").addEventListener("submit", async (evento) => {
+  $<HTMLFormElement>("#formClave").addEventListener("submit", manejar("mi cuenta", async (evento) => {
     evento.preventDefault();
 
     const boton = $<HTMLFormElement>("#formClave").querySelector("button")!;
@@ -118,7 +119,7 @@ export function mostrarMiCuenta(perfil: Perfil, onVolver: () => void): void {
     // pantalla en un equipo compartido es justo lo que no conviene.
     $<HTMLFormElement>("#formClave").reset();
     avisar("Contraseña cambiada. Úsala la próxima vez que entres.", "ok");
-  });
+  }));
 
   // --- Preferencias del equipo ---
   //

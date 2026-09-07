@@ -6,6 +6,7 @@ import {
   LARGO_MINIMO_CLAVE,
   type Perfil,
 } from "./Datos";
+import { manejar } from "./Manejador";
 
 /**
  * Puerta de entrada al curso.
@@ -71,7 +72,7 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
   // controla el código que entregó el supervisor, no una contraseña por
   // persona. Sumar contraseñas obligaría a recuperarlas, y en planta eso
   // termina en gente que no puede hacer la capacitación.
-  formIngresar.addEventListener("submit", async (evento) => {
+  formIngresar.addEventListener("submit", manejar("acceso", async (evento) => {
     evento.preventDefault();
     limpiarAviso();
 
@@ -102,10 +103,10 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
     // El código ya no se pide acá. La inscripción a un curso ocurre en el
     // catálogo, que es donde se ve a qué curso se está entrando.
     entrar(resultado.perfil);
-  });
+  }));
 
   // --- Registrarme ---
-  formRegistro.addEventListener("submit", async (evento) => {
+  formRegistro.addEventListener("submit", manejar("acceso", async (evento) => {
     evento.preventDefault();
     limpiarAviso();
 
@@ -144,7 +145,7 @@ export function mostrarAcceso(onEntrar: (resultado: ResultadoAcceso) => void): v
     }
 
     entrar(resultado.perfil);
-  });
+  }));
 
   // Foco en el primer campo: quien llega solo tiene que empezar a escribir.
   $<HTMLInputElement>("#ingresoIdentificador").focus();

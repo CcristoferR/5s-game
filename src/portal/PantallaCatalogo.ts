@@ -7,6 +7,7 @@ import {
   type TarjetaCurso,
 } from "./Datos";
 import { cerrarSesion } from "./Sesion";
+import { manejar } from "./Manejador";
 
 /**
  * Catálogo de cursos.
@@ -54,7 +55,13 @@ export function mostrarCatalogo(
     });
 
     raiz.querySelector<HTMLButtonElement>("#salirCatalogo")?.addEventListener("click", () => {
-      cerrarSesion();
+      // El error del cierre se registra en vez de perderse.
+      //
+      // No es un detalle de estilo: se cierra la sesion y AL INSTANTE se desmonta
+      // la pantalla. Si el cierre falla, nadie se entera y la persona se queda con
+      // una sesion viva en el servidor creyendo que salio. No se pone await para
+      // no cambiar el momento en que se desmonta; solo se deja de tragar el fallo.
+      cerrarSesion().catch((error) => console.error("[catalogo] cerrar sesion:", error));
       raiz.remove();
       onSalir();
     });
@@ -80,7 +87,7 @@ export function mostrarCatalogo(
     });
 
     raiz.querySelectorAll<HTMLFormElement>("[data-form-canje]").forEach((form) => {
-      form.addEventListener("submit", async (evento) => {
+      form.addEventListener("submit", manejar("catalogo", async (evento) => {
         evento.preventDefault();
         const cursoId = form.dataset.formCanje!;
         const campo = form.querySelector<HTMLInputElement>("input")!;
@@ -103,7 +110,7 @@ export function mostrarCatalogo(
         const tarjeta = tarjetas.find((t) => t.curso.id === cursoId);
         void tarjeta;
         await pintar();
-      });
+      }));
     });
   }
 }
