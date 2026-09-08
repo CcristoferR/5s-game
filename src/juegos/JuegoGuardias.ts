@@ -1,6 +1,7 @@
 import { Scene } from "@babylonjs/core";
 import { mostrarMenuPrincipal, type NivelMenuInfo } from "../ui/MainMenu";
 import { GameManager } from "../core/GameManager";
+import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
 
 // ===========================================================================
 // Curso de Guardias de Seguridad — menú del curso
@@ -107,6 +108,15 @@ export function abrirMenuGuardias(
       // Es a propósito que esto sea un aviso y no una pantalla a medias: un
       // nivel vacío se lee como que el juego está roto, y un aviso se lee como
       // que falta contenido, que es la verdad.
+      // El escenario 1 ya tiene su puesto y su mecánica: el libro se abre al
+      // hacer clic, recorre el turno completo y termina con la nota del
+      // supervisor. Al cerrar el informe final se marca el nivel completado,
+      // igual que cualquier otro escenario del juego.
+      if (numero === 1) {
+        crearPuestoConserjeria(scene, () => gameManager.completarNivel(1));
+        return;
+      }
+
       window.alert(
         `El escenario ${numero} todavía está en construcción.\n\n` +
           "El primero en llegar será el del condominio: turno completo desde el " +
