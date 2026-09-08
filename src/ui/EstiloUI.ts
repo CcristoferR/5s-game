@@ -352,22 +352,27 @@ export function crearBotonOpcion(nombre: string, texto: string, ancho: number): 
   // justamente lo que hace falta para dejar sitio a la letra.
   if (boton.textBlock) boton.textBlock.isVisible = false;
 
+  const ANCHO_ETIQUETA = ancho - SANGRIA - 20;
+
   const etiqueta = new TextBlock(`${nombre}_texto`, texto);
   etiqueta.color = PALETA.titulo;
   etiqueta.fontSize = TEXTO.destacado;
   etiqueta.fontWeight = "500";
   etiqueta.textWrapping = true;
   etiqueta.resizeToFit = true;
-  etiqueta.width = ancho - SANGRIA - 20 + "px";
+  etiqueta.width = ANCHO_ETIQUETA + "px";
   etiqueta.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   etiqueta.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
   etiqueta.left = SANGRIA + "px";
   etiqueta.isHitTestVisible = false;
   boton.addControl(etiqueta);
 
-  // Alto segun el texto, con un minimo. Una opcion de tres renglones ya no
-  // desborda ni se recorta, y una de uno no queda flotando en una caja alta.
-  const alto = Math.max(ALTO_MIN, etiqueta.heightInPixels + 30);
+  // Alto según el texto, con un mínimo. Se ESTIMA con altoDeTexto en vez de
+  // preguntarle al TextBlock: heightInPixels vale cero hasta que la interfaz
+  // dibuja, y acá estamos construyendo. Preguntándoselo, toda opción de más de
+  // un renglón salía recortada — no se veía con textos cortos, pero las
+  // redacciones del libro de novedades ocupan tres o cuatro.
+  const alto = Math.max(ALTO_MIN, altoDeTexto(texto, ANCHO_ETIQUETA, TEXTO.destacado) + 30);
   boton.height = alto + "px";
 
   // Recuadro de la letra. Da un ancla fija a la izquierda: con tres opciones

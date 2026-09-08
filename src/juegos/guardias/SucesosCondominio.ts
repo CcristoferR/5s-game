@@ -1,194 +1,185 @@
-import type { SucesoTurno } from "./LibroNovedades";
+import type { SucesoTurno, DatosServicio } from "./LibroNovedades";
 
 // ===========================================================================
-// Sucesos del turno — Condominio, 00:00 a 08:00
+// El turno — Condominio, 00:00 a 08:00
 // ===========================================================================
 //
-// Esto es SOLO contenido: la hora de cada suceso, lo que el guardia ve, y las
-// tres formas de anotarlo (factual, opinión, inventada). Las reglas de qué
-// pasa con cada una viven en LibroNovedades.ts; acá no hay lógica, solo lo
-// que le toca vivir al guardia esa noche.
+// Contenido puro: la cabecera, los tres sucesos y lo que deja escrito el
+// fiscalizador. Ninguna regla vive acá; están todas en LibroNovedades.ts.
 //
-// Van seis. Tres antes de la fiscalización de las 03:20 y tres después, para
-// que la visita del supervisor caiga a mitad de turno y no al final, que es
-// donde no enseñaría nada: si apareciera después del último suceso, la
-// revisión no podría cambiar cómo se escribe lo que queda.
+// ─── POR QUÉ ESTOS TRES Y NO OTROS ────────────────────────────────────────
 //
-// El desorden cronológico (para poner a prueba "fuera_de_orden") no está
-// como suceso aparte: se prueba dejando que el jugador intente anotar algo
-// con una hora anterior a la última, no fabricando un suceso para eso.
+// Son los del ejemplo del manual (p. 4), en su orden y con sus etiquetas:
+// RONDA a las 00:30, INGRESO a la 01:00, SALIDA a la 01:30. No están
+// inventados para el juego — el turno de ejemplo del manual ES el nivel, y
+// copiarlo es lo que hace que lo que el jugador practica se parezca a lo que
+// va a tener delante en el puesto.
+//
+// INGRESO y SALIDA son el mismo hombre y el mismo vehículo, media hora
+// después. Esa pareja importa: el manual las anota como dos constancias
+// separadas, y quien anota una y se olvida de la otra deja el libro diciendo
+// que alguien entró al condominio y nunca salió.
 
-export const APERTURA = {
+export const APERTURA: DatosServicio = {
   instalacion: "Condominio Las Araucarias",
   ciudad: "Puerto Montt",
   fecha: "14 de septiembre de 2026",
   turno: "00:00 a 08:00 horas",
+  supervisor: "Héctor Sandoval Muñoz",
+  guardiaSaliente: "Rubén Cárcamo Aguilar",
+  guardiaEntrante: "Marcelo Oyarzún Vidal",
 };
+
+/** Lo que el fiscalizador deja anotado a las 03:20. Sale del manual (p. 4). */
+export const INSTRUCCIONES_FISCALIZACION = [
+  "Seguridad personal",
+  "Control de ingreso y salida de bienes amparados",
+];
 
 export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
   {
-    id: "vehiculo-tarde",
+    id: "ronda-inicial",
+    minuto: 30,
+    actividad: "RONDA",
+    aviso:
+      "Ronda por el interior de la instalación. En el segundo piso de la torre A hay una ventana " +
+      "del pasillo abierta y las luces de ese pasillo encendidas. Cierras la ventana y apagas las " +
+      "luces.",
+    opciones: [
+      {
+        texto:
+          "Se efectúa ronda al interior de la instalación. Se encuentra ventana del pasillo del " +
+          "segundo piso de la torre A abierta y luces de ese pasillo encendidas. Se cierra la " +
+          "ventana y se apagan las luces.",
+        clase: "factual",
+        explicacion:
+          "Todo lo que dice ocurrió: el hallazgo y lo que se hizo con él. El manual pide detallar la ronda en forma pormenorizada, y nombra ventanas abiertas y luces encendidas entre las novedades que se registran.",
+      },
+      {
+        texto: "Se efectúa ronda al interior de la instalación, sin novedad.",
+        clase: "inventada",
+        explicacion:
+          "Había dos novedades y el libro quedó diciendo que no hubo ninguna. \"Sin novedad\" solo se escribe cuando de verdad no hay: ponerlo habiendo hallazgos es hacer constar algo que carece de realidad.",
+      },
+      {
+        texto:
+          "Se efectúa ronda al interior de la instalación. Se encuentra ventana del pasillo del " +
+          "segundo piso de la torre A abierta y luces encendidas, situación que compromete la " +
+          "seguridad del sector. Se cierra la ventana y se apagan las luces.",
+        clase: "opinion",
+        explicacion:
+          "La ventana, las luces y lo que se hizo son hechos. Que la situación \"comprometa la seguridad del sector\" es la evaluación del guardia: quien lea el libro necesita saber qué se encontró, no qué tan grave le pareció.",
+      },
+    ],
+  },
+  // Piloto: primer suceso generado por cámara, mismo formato que los de
+  // arriba. Si funciona, esto es lo que se replica para sumar más.
+  {
+    id: "camara-estacionamiento",
     minuto: 45,
-    actividad: "CONTROL DE ACCESO",
+    actividad: "CAMARA",
     aviso:
-      "Un vehículo no registrado en la nómina de residentes se detiene frente a la reja y hace " +
-      "luces para que le abran.",
+      "En el monitor, la cámara 2 (Estacionamiento) muestra una camioneta gris, sin patente visible, " +
+      "detenida en el sector de visitas con el motor encendido desde hace más de diez minutos. No se " +
+      "ve a nadie fuera del vehículo.",
     opciones: [
       {
         texto:
-          "23:45 hrs. Vehículo placa no identificada solicita acceso en reja principal. No figura en " +
-          "nómina de residentes. Se contacta a conserjería del edificio B, quien autoriza el ingreso " +
-          "como visita del depto. 302.",
+          "Se observa por cámara 2 (Estacionamiento) una camioneta gris, sin patente visible, detenida " +
+          "en el sector de visitas con el motor encendido desde aproximadamente las 00:35 horas. No se " +
+          "observan personas fuera del vehículo.",
         clase: "factual",
-        explicacion: "Se registra lo que se hizo y quién autorizó. Es comprobable por cualquiera que lea el libro después.",
+        explicacion:
+          "Lo que muestra la cámara: el vehículo, dónde está, desde cuándo y que no hay nadie fuera. Que no se distinga la patente también se anota tal cual — es lo que se observa, no lo que se omite.",
       },
       {
-        texto: "Vehículo sospechoso intenta entrar sin autorización, parecía que buscaba algo que robar.",
+        texto:
+          "Se observa por cámara 2 una camioneta gris estacionada de forma sospechosa en el sector de " +
+          "visitas, con el motor encendido, situación que hace prever un posible ilícito.",
         clase: "opinion",
         explicacion:
-          "\"Parecía que buscaba algo que robar\" es lo que el guardia supuso, no lo que vio. El manual lo prohíbe: no se imponen apreciaciones personales.",
+          "Que la situación sea \"sospechosa\" o \"haga prever un ilícito\" es la lectura del guardia. La cámara muestra un vehículo detenido con el motor encendido; eso es el hecho, no la conclusión.",
       },
       {
-        texto: "Vehículo del depto. 302 llega de visita, como todas las noches de jueves.",
+        texto:
+          "Se observa por cámara 2 una camioneta gris con dos sujetos en su interior, preparando un " +
+          "robo en el sector de visitas.",
         clase: "inventada",
         explicacion:
-          "Nada de lo que pasó esa noche dice que es un patrón semanal. Afirmar \"como todas las noches de jueves\" es agregar un hecho que no consta.",
+          "La cámara no muestra a nadie dentro ni fuera del vehículo, y menos qué se proponían hacer. Afirmar sujetos y un robo que no se ve es señalar un hecho que carece de realidad.",
       },
     ],
   },
   {
-    id: "ronda-perimetro",
+    id: "ingreso-vehiculo",
+    minuto: 60,
+    actividad: "INGRESO",
+    aviso:
+      "En la reja principal se presenta don Óscar Bahamonde en una camioneta patente KJVR-42, " +
+      "acompañado por dos personas. Dice que va al departamento 302. Se llama al 302 por citófono " +
+      "y confirman la visita.",
+    opciones: [
+      {
+        texto:
+          "Ingresa don Óscar Bahamonde en vehículo patente KJVR-42, acompañado por dos personas. " +
+          "Se confirma por citófono con el departamento 302, que autoriza el ingreso.",
+        clase: "factual",
+        explicacion:
+          "Nombre, patente, acompañantes y quién autorizó. Es el formato del ejemplo del manual, y es lo que permite reconstruir después quién entró y con permiso de quién.",
+      },
+      {
+        texto:
+          "Ingresa don Óscar Bahamonde en vehículo patente KJVR-42, acompañado por dos personas " +
+          "cuyo ingreso a esta hora no se justifica. Se autoriza el ingreso al departamento 302.",
+        clase: "opinion",
+        explicacion:
+          "Que la visita se justifique o no a esa hora es criterio del guardia, y el 302 ya la autorizó. El libro registra que se autorizó y quién lo hizo, no si al guardia le pareció bien.",
+      },
+      {
+        texto:
+          "Ingresa don Óscar Bahamonde en vehículo patente KJVR-42, acompañado por dos personas, " +
+          "residente del departamento 302 del condominio.",
+        clase: "inventada",
+        explicacion:
+          "Es una visita autorizada por el 302, no un residente. Convertir al visitante en residente cambia quién puede entrar sin permiso, y eso no consta en ninguna parte.",
+      },
+    ],
+  },
+  {
+    id: "salida-vehiculo",
     minuto: 90,
-    actividad: "RONDA",
-    aviso: "Toca la ronda perimetral. Al pasar por el sector de estacionamientos, un foco no enciende.",
-    opciones: [
-      {
-        texto:
-          "01:30 hrs. Ronda perimetral sin novedad. Se detecta luminaria apagada en pasillo de " +
-          "estacionamientos, sector C. Se informa a administración vía radio para su reparación.",
-        clase: "factual",
-        explicacion: "Describe lo hallado y la acción tomada, sin adornarlo. Es exactamente lo que el libro necesita registrar.",
-      },
-      {
-        texto: "Ronda perimetral sin novedad. Iluminación deficiente, un peligro para la seguridad del condominio.",
-        clase: "opinion",
-        explicacion: "Un foco apagado es un hecho. Que sea \"un peligro para la seguridad\" es la evaluación del guardia, no algo que se observó.",
-      },
-      {
-        texto: "Ronda perimetral sin novedad. Falla eléctrica en todo el sector C por corte de suministro.",
-        clase: "inventada",
-        explicacion: "Un foco apagado no prueba un corte de suministro en todo el sector. Es una causa inventada para un hecho menor.",
-      },
-    ],
-  },
-  {
-    id: "reclamo-ruido",
-    minuto: 150,
-    actividad: "ATENCIÓN A RESIDENTE",
-    aviso: "Una residente del depto. 105 baja a conserjería a reclamar por ruidos molestos del depto. 108.",
-    opciones: [
-      {
-        texto:
-          "02:30 hrs. Residente del depto. 105 reporta ruidos molestos provenientes del depto. 108. " +
-          "Se sube a verificar: se constata música a volumen alto. Se solicita bajar el volumen y el " +
-          "residente accede.",
-        clase: "factual",
-        explicacion: "Lo que se reportó, lo que se comprobó y cómo terminó. Tres hechos, en ese orden, sin agregar nada.",
-      },
-      {
-        texto:
-          "Residente del depto. 105 reporta ruidos molestos del depto. 108. Los vecinos de ese " +
-          "departamento siempre generan problemas.",
-        clase: "opinion",
-        explicacion: "\"Siempre generan problemas\" es un juicio sobre las personas, no sobre lo que pasó esta noche.",
-      },
-      {
-        texto:
-          "Residente del depto. 105 reporta ruidos molestos del depto. 108, donde según vecinos se " +
-          "estaría realizando una fiesta clandestina.",
-        clase: "inventada",
-        explicacion: "El guardia solo constató música alta. \"Fiesta clandestina\" y \"según vecinos\" no están respaldados por lo que se verificó.",
-      },
-    ],
-  },
-  {
-    id: "puerta-emergencia",
-    minuto: 260,
-    actividad: "RONDA",
+    actividad: "SALIDA",
     aviso:
-      "En la ronda de las 04:20, la puerta de emergencia de la torre A está entreabierta, con el " +
-      "seguro forzado.",
+      "Sale la misma camioneta patente KJVR-42, conducida por don Óscar Bahamonde, con las mismas " +
+      "dos personas.",
     opciones: [
       {
         texto:
-          "04:20 hrs. Ronda torre A. Se detecta puerta de emergencia entreabierta con seguro forzado. " +
-          "Se cierra y se refuerza. Se informa a administración para revisión de la cerradura.",
+          "Sale don Óscar Bahamonde en vehículo patente KJVR-42, acompañado por las mismas dos " +
+          "personas que registraron ingreso a las 01:00 horas.",
         clase: "factual",
-        explicacion: "El hallazgo, la acción inmediata y el aviso a quien corresponde. Nada más y nada menos que eso.",
+        explicacion:
+          "Cierra la pareja. El manual anota ingreso y salida como dos constancias, y es esa segunda la que deja claro que nadie se quedó dentro.",
       },
-      {
-        texto: "Ronda torre A. Puerta de emergencia forzada, obra de delincuentes que rondan el sector.",
-        clase: "opinion",
-        explicacion: "El seguro forzado es el hecho. Quién lo hizo y por qué es una conjetura que el guardia no puede sostener con lo que vio.",
-      },
-      {
-        texto: "Ronda torre A. Se sorprende a un sujeto intentando forzar la puerta de emergencia, que huye al ser visto.",
-        clase: "inventada",
-        explicacion: "Nadie fue sorprendido ni vio huir a nadie: el guardia encontró la puerta ya forzada. Inventar el momento del hecho es lo que el manual prohíbe.",
-      },
-    ],
-  },
-  {
-    id: "camion-mudanza",
-    minuto: 340,
-    actividad: "CONTROL DE ACCESO",
-    aviso: "A las 05:40 llega un camión de mudanza pidiendo entrar para descargar en la torre B.",
-    opciones: [
       {
         texto:
-          "05:40 hrs. Camión de mudanza solicita acceso para torre B. Se verifica autorización previa " +
-          "en libro de administración a nombre del depto. 604. Se autoriza el ingreso.",
-        clase: "factual",
-        explicacion: "Se verificó contra un registro antes de autorizar. Eso es lo que hace que la anotación sea comprobable, no solo una versión del guardia.",
-      },
-      {
-        texto: "Camión de mudanza a las 05:40, un horario poco apropiado para hacer ese tipo de trabajo.",
+          "Sale don Óscar Bahamonde en vehículo patente KJVR-42, acompañado por las mismas dos " +
+          "personas. Permanencia de treinta minutos, tiempo razonable para la visita declarada.",
         clase: "opinion",
-        explicacion: "Que el horario sea \"poco apropiado\" es una opinión del guardia sobre la mudanza, no un hecho del servicio.",
+        explicacion:
+          "Los treinta minutos salen del libro y son un hecho. Que sean un tiempo \"razonable\" es la evaluación del guardia: se anota cuánto duró, no si le pareció apropiado.",
       },
-      {
-        texto: "Camión de mudanza a las 05:40, autorizado telefónicamente por el administrador del condominio.",
-        clase: "inventada",
-        explicacion: "La autorización fue por libro de administración, no telefónica. Cambiar cómo se autorizó es afirmar algo que no ocurrió así.",
-      },
-    ],
-  },
-  {
-    id: "corte-luz",
-    minuto: 410,
-    actividad: "INCIDENTE",
-    aviso: "A las 06:50 se corta la luz en todo el condominio por unos minutos.",
-    opciones: [
       {
         texto:
-          "06:50 hrs. Corte de suministro eléctrico en todo el condominio, duración aproximada de 6 " +
-          "minutos. Se activa iluminación de emergencia. Se restablece el servicio sin incidentes.",
-        clase: "factual",
-        explicacion: "Duración, respuesta y resultado. Es todo lo que hace falta para que quien lea el libro entienda qué pasó.",
-      },
-      {
-        texto: "Corte de luz en todo el condominio, la compañía eléctrica de la zona tiene un pésimo servicio.",
-        clase: "opinion",
-        explicacion: "Calificar el servicio de la eléctrica es un juicio del guardia. El libro registra el corte, no una opinión sobre la empresa.",
-      },
-      {
-        texto: "Corte de luz provocado por sobrecarga en el tablero del edificio C, según indica el eléctrico de turno.",
+          "Sale don Óscar Bahamonde en vehículo patente KJVR-42, solo, tras dejar a sus dos " +
+          "acompañantes en el departamento 302.",
         clase: "inventada",
-        explicacion: "Nadie confirmó la causa esa noche. Atribuirla a una sobrecarga y citar a \"el eléctrico de turno\" es inventar un dato que no consta.",
+        explicacion:
+          "Salieron los tres. Escribir que dos se quedaron adentro deja constancia de dos personas dentro del condominio que en realidad ya no están.",
       },
     ],
   },
 ];
 
-/** Minuto del turno en el que cae la fiscalización del manual (03:20). */
-export const MINUTO_SUPERVISOR = 200;
+/** Minuto del turno en el que llega el fiscalizador (03:20). */
+export const MINUTO_FISCALIZACION = 200;

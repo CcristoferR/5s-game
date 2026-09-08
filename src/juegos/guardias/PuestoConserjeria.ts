@@ -10,6 +10,9 @@ import {
   PointLight,
   SpotLight,
   Mesh,
+  Plane,
+  MirrorTexture,
+  ReflectionProbe,
   DefaultRenderingPipeline,
   SSAO2RenderingPipeline,
   ShadowGenerator,
@@ -23,7 +26,6 @@ import { texturaGrano, texturaMetalCepillado } from "../../entities/TexturasSupe
 import {
   superficieMadera,
   superficieCaucho,
-  superficieHormigon,
   relievePapel,
 } from "./TexturasPuesto";
 
@@ -135,10 +137,17 @@ export function crearPuestoConserjeria(scene: Scene, onLibroCompletado?: () => v
   const { radio, avisarRadio } = construirRadio(scene);
   construirLibro(scene, () => mostrarPantallaLibro(scene, () => onLibroCompletado?.()));
   construirTablaDeClaves(scene);
+  construirSala(scene);
   construirHallYVentanal(scene);
+  construirLuminarias(scene);
   const flexo = construirFlexo(scene);
 
   montarSombras(scene, flexo);
+
+  // Los reflejos van los ÚLTIMOS: la sonda fotografía la sala y el espejo
+  // guarda la lista de lo que refleja, así que todo tiene que existir ya.
+  montarReflejos(scene);
+  ampliarLucesPorMaterial(scene);
 
   // La cámara se engancha al final, cuando ya no se va a mover nada más.
   camara.attachControl(true);
@@ -222,44 +231,48 @@ function configurarEscenaNocturna(scene: Scene): void {
   scene.cameras.slice().forEach((camara) => camara.dispose());
   scene.fogMode = Scene.FOGMODE_NONE;
 
-  // Azul muy oscuro, no negro. El negro puro delata los bordes de la geometría
-  // contra el fondo y hace que todo se vea recortado.
+  // Azul muy oscuro, no negro. Solo se ve por el ventanal, pero es el color
+  // contra el que se recorta el edificio de enfrente.
   scene.clearColor = new Color4(0.016, 0.019, 0.028, 1);
 
-  // Relleno mínimo y frío. Sin esto, lo que queda fuera del alcance de las
-  // lámparas es una silueta negra sin volumen; con demasiado, se pierde el
-  // contraste que hace que la escena se vea bien.
-  const relleno = new HemisphericLight("luzRellenoNoche", new Vector3(0, 1, 0), scene);
-  relleno.intensity = 0.13;
-  relleno.diffuse = new Color3(0.42, 0.5, 0.68);
-  relleno.groundColor = new Color3(0.05, 0.05, 0.08);
-
-  // Postproceso: acá el grano y la viñeta sí corresponden.
+  // Relleno mínimo y frío.
   //
-  // En el 5S se descartaron porque un taller iluminado no tiene ninguna de las
-  // dos cosas. Una escena nocturna sí: el grano imita el ruido de una cámara
-  // con poca luz y la viñeta concentra la mirada en el mesón, que es donde
-  // ocurre todo.
+  // Baja respecto a cuando la sala estaba a oscuras: entonces era lo único que
+  // daba volumen a lo que las tres lámparas no alcanzaban. Ahora el techo
+  // ilumina el hall entero y este relleno solo tiene que evitar que los
+  // rincones se cierren del todo. Dejarlo alto aplanaría los reflejos del
+  // piso, que es lo que ahora hace el trabajo.
+  const relleno = new HemisphericLight("luzRellenoNoche", new Vector3(0, 1, 0), scene);
+  relleno.intensity = 0.07;
+  relleno.diffuse = new Color3(0.42, 0.5, 0.68);
+  relleno.groundColor = new Color3(0.06, 0.06, 0.09);
+
+  // Postproceso.
+  //
+  // El grano y la viñeta siguen valiendo —es de noche— pero bajan los dos. Con
+  // la sala iluminada, el grano de antes se veía como suciedad sobre una
+  // superficie clara en vez de como ruido de sensor, y la viñeta cerraba tanto
+  // que se comía los muros laterales justo ahora que existen.
   const tuberia = new DefaultRenderingPipeline("postProcesoPuesto", true, scene, scene.cameras);
   tuberia.samples = 4;
 
   tuberia.bloomEnabled = true;
-  // Umbral alto: solo florecen las fuentes de luz —pantalla, pilotos, farola—
-  // y no las superficies claras. Con el umbral bajo el mesón entero brilla.
-  tuberia.bloomThreshold = 0.72;
-  tuberia.bloomWeight = 0.38;
-  tuberia.bloomKernel = 52;
+  // Umbral alto: florecen las luminarias, la pantalla y los pilotos, no el
+  // techo ni el mesón.
+  tuberia.bloomThreshold = 0.85;
+  tuberia.bloomWeight = 0.3;
+  tuberia.bloomKernel = 46;
 
   tuberia.grainEnabled = true;
-  tuberia.grain.intensity = 7;
+  tuberia.grain.intensity = 3.5;
   tuberia.grain.animated = true;
 
   tuberia.imageProcessingEnabled = true;
   tuberia.imageProcessing.vignetteEnabled = true;
-  tuberia.imageProcessing.vignetteWeight = 2.4;
+  tuberia.imageProcessing.vignetteWeight = 1.5;
   tuberia.imageProcessing.vignetteColor = new Color4(0, 0, 0.02, 1);
-  tuberia.imageProcessing.contrast = 1.18;
-  tuberia.imageProcessing.exposure = 1.05;
+  tuberia.imageProcessing.contrast = 1.12;
+  tuberia.imageProcessing.exposure = 0.95;
   tuberia.imageProcessing.toneMappingEnabled = true;
 
   // OCLUSIÓN AMBIENTAL
@@ -829,39 +842,372 @@ function construirTablaDeClaves(scene: Scene): void {
  * poco más, que es exactamente lo que se ve de noche desde detrás de un mesón
  * con un monitor encendido en la cara.
  */
-function construirHallYVentanal(scene: Scene): void {
-  const hormigon = superficieHormigon(scene, "texHormigonHall");
+// ---------------------------------------------------------------------------
+// La sala
+// ---------------------------------------------------------------------------
 
-  const matPiso = new PBRMaterial("matPisoHall", scene);
-  matPiso.albedoTexture = hormigon.color;
-  matPiso.bumpTexture = hormigon.relieve;
-  // Piso pulido: refleja la farola y el monitor. Con la irregularidad del
-  // hormigón esos reflejos se rompen en vez de salir como manchas perfectas,
-  // que es justo lo que delata una imagen generada.
-  matPiso.roughness = 0.27;
-  matPiso.metallic = 0.12;
-  // La textura se repite: un metro de hormigón por baldosa, no una imagen
-  // estirada sobre dieciséis metros.
-  [hormigon.color, hormigon.relieve].forEach((t) => {
-    t.uScale = 8;
-    t.vScale = 11;
+const ANCHO_SALA = 8.8;
+const ALTO_SALA = 3.2;
+const Z_FONDO = 4.6;
+const Z_ESPALDA = -2.8;
+
+/**
+ * El hall del condominio: piso, muros, techo y zócalo.
+ *
+ * ─── POR QUÉ AHORA SÍ HAY TECHO ───────────────────────────────────────────
+ *
+ * Antes la escena era un mesón flotando sobre un suelo, con un muro al fondo y
+ * nada más. Funcionaba porque estaba a oscuras: lo que no existe no se ve.
+ *
+ * Pero un hall de condominio a las tres de la mañana NO está a oscuras. Tiene
+ * las luminarias encendidas —a media potencia, en modo noche, pero encendidas—
+ * porque el conserje trabaja ahí y porque un edificio con el hall apagado se
+ * ve abandonado. En cuanto se enciende la luz, el vacío de arriba se nota.
+ *
+ * Así que la sala se cierra: cuatro muros, techo y zócalo. Es geometría muy
+ * barata —seis cajas y dos planos— y es lo que permite que la escena aguante
+ * estar iluminada.
+ *
+ * ─── EL PISO ES LO QUE HACE EL TRABAJO ────────────────────────────────────
+ *
+ * Porcelanato pulido, que es lo que hay en el hall de cualquier condominio de
+ * los últimos veinte años. Refleja las luminarias del techo en franjas
+ * verticales, y esas franjas son la firma visual del sitio: se reconoce el
+ * lugar por el suelo antes que por ninguna otra cosa.
+ *
+ * El reflejo es real, no pintado — ver montarReflejos().
+ */
+function construirSala(scene: Scene): void {
+  // --- Piso: porcelanato pulido, baldosa de 80 cm ---------------------------
+  const matPiso = materialPintado(scene, "matPisoHall", 1024, 1024, (ctx, w, h) => {
+    // Base cálida grisácea. El porcelanato de hall casi nunca es blanco puro:
+    // tira a hueso o a gris arena, que es lo que le da el aire de sitio usado.
+    ctx.fillStyle = "#8d8b86";
+    ctx.fillRect(0, 0, w, h);
+
+    // Veteado suave, como el mármol falso de las baldosas comerciales. Van
+    // pocas y muy tenues: el porcelanato imita la piedra de lejos, no de cerca.
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    for (let i = 0; i < 90; i += 1) {
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      ctx.lineWidth = 0.6 + Math.random() * 2.2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.bezierCurveTo(
+        x + 60 - Math.random() * 120,
+        y + 40,
+        x + 120 - Math.random() * 240,
+        y + 90,
+        x + 180 - Math.random() * 360,
+        y + 150
+      );
+      ctx.stroke();
+    }
+
+    // Manchas grandes de tono, para que dos baldosas contiguas no salgan
+    // idénticas. Sin esto se ve la repetición de la textura al instante.
+    for (let i = 0; i < 24; i += 1) {
+      const r = 60 + Math.random() * 150;
+      const mancha = ctx.createRadialGradient(
+        Math.random() * w,
+        Math.random() * h,
+        4,
+        Math.random() * w,
+        Math.random() * h,
+        r
+      );
+      mancha.addColorStop(0, "rgba(160,155,148,0.14)");
+      mancha.addColorStop(1, "rgba(160,155,148,0)");
+      ctx.fillStyle = mancha;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // Junta. Fina y oscura: en el porcelanato rectificado casi no se ve, pero
+    // es la línea que dice "esto son baldosas" y no una superficie continua.
+    ctx.strokeStyle = "rgba(46,44,42,0.55)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, w, h);
   });
 
-  const piso = MeshBuilder.CreateGround("pisoHall", { width: 16, height: 22 }, scene);
-  piso.position.set(0, 0, 3);
+  matPiso.albedoTexture!.wrapU = Texture.WRAP_ADDRESSMODE;
+  matPiso.albedoTexture!.wrapV = Texture.WRAP_ADDRESSMODE;
+  (matPiso.albedoTexture as Texture).uScale = 11;
+  (matPiso.albedoTexture as Texture).vScale = 9;
+  // Rugosidad muy baja: es la que convierte la luminaria en una franja larga
+  // sobre el suelo. Por encima de 0,15 el reflejo se disuelve y el piso vuelve
+  // a parecer hormigón pintado.
+  matPiso.roughness = 0.09;
+  matPiso.metallic = 0;
+
+  const piso = MeshBuilder.CreateGround(
+    "pisoHall",
+    { width: ANCHO_SALA, height: Z_FONDO - Z_ESPALDA },
+    scene
+  );
+  piso.position.set(0, 0, (Z_FONDO + Z_ESPALDA) / 2);
   piso.material = matPiso;
   piso.receiveShadows = true;
 
+  // --- Muros ---------------------------------------------------------------
+  //
+  // Pintura mate clara. En el hall real es beige o gris claro; acá tira a frío
+  // porque de noche todo lo blanco recoge el color de la luz que le llega, y
+  // la que llega es la de las luminarias y la del monitor.
   const matMuro = new PBRMaterial("matMuroHall", scene);
-  matMuro.albedoColor = new Color3(0.1, 0.1, 0.115);
-  matMuro.roughness = 0.85;
+  matMuro.albedoColor = new Color3(0.42, 0.42, 0.44);
+  matMuro.roughness = 0.82;
   matMuro.metallic = 0;
-  matMuro.microSurfaceTexture = texturaGrano(scene, 0.14);
+  matMuro.microSurfaceTexture = texturaGrano(scene, 0.16);
+
+  const matZocalo = new PBRMaterial("matZocaloHall", scene);
+  matZocalo.albedoColor = new Color3(0.13, 0.13, 0.145);
+  matZocalo.roughness = 0.35;
+  matZocalo.metallic = 0.1;
+
+  const largo = Z_FONDO - Z_ESPALDA;
+  const centroZ = (Z_FONDO + Z_ESPALDA) / 2;
+
+  [-1, 1].forEach((lado) => {
+    const muro = MeshBuilder.CreateBox(
+      `MuroLateralHall_${lado > 0 ? "d" : "i"}`,
+      { width: 0.16, height: ALTO_SALA, depth: largo },
+      scene
+    );
+    muro.position.set((lado * ANCHO_SALA) / 2, ALTO_SALA / 2, centroZ);
+    muro.material = matMuro;
+    muro.receiveShadows = true;
+
+    // Zócalo: el remate oscuro donde el muro toca el suelo. Es una caja de
+    // doce centímetros y hace más por el realismo que casi cualquier otra
+    // pieza — sin él, muro y piso se juntan en una arista limpia que ningún
+    // edificio construido tiene.
+    const zocalo = MeshBuilder.CreateBox(
+      `ZocaloHall_${lado > 0 ? "d" : "i"}`,
+      { width: 0.04, height: 0.12, depth: largo },
+      scene
+    );
+    zocalo.position.set((lado * (ANCHO_SALA - 0.18)) / 2, 0.06, centroZ);
+    zocalo.material = matZocalo;
+    zocalo.receiveShadows = true;
+  });
+
+  // Muro de la espalda del conserje. La cámara no gira lo suficiente para
+  // verlo, pero la sonda de reflejos sí lo ve: sin él, el piso reflejaría el
+  // vacío por detrás y se abriría un agujero negro en el suelo.
+  const espalda = MeshBuilder.CreateBox(
+    "MuroEspaldaHall",
+    { width: ANCHO_SALA, height: ALTO_SALA, depth: 0.16 },
+    scene
+  );
+  espalda.position.set(0, ALTO_SALA / 2, Z_ESPALDA);
+  espalda.material = matMuro;
+  espalda.receiveShadows = true;
+
+  // --- Techo ---------------------------------------------------------------
+  //
+  // Cielo falso de placas de 60 cm, que es lo que lleva un hall de condominio.
+  // La retícula se pinta en vez de modelarse: a tres metros y vista siempre en
+  // escorzo, la diferencia no se aprecia y ahorra doscientas cajas.
+  const matTecho = materialPintado(scene, "matTechoHall", 512, 512, (ctx, w, h) => {
+    ctx.fillStyle = "#c9c7c2";
+    ctx.fillRect(0, 0, w, h);
+
+    // Poro de la placa mineral: puntitos irregulares, muy tenues.
+    for (let i = 0; i < 2600; i += 1) {
+      ctx.fillStyle = `rgba(150,148,143,${0.06 + Math.random() * 0.14})`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+    }
+
+    // Perfilería vista, en T. La sombra al costado es lo que la levanta del
+    // plano: sin ella la retícula se lee como una raya dibujada.
+    ctx.strokeStyle = "rgba(96,94,90,0.5)";
+    ctx.lineWidth = 5;
+    ctx.strokeRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(224,222,218,0.55)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(3, 3, w - 6, h - 6);
+  });
+
+  matTecho.albedoTexture!.wrapU = Texture.WRAP_ADDRESSMODE;
+  matTecho.albedoTexture!.wrapV = Texture.WRAP_ADDRESSMODE;
+  (matTecho.albedoTexture as Texture).uScale = 14;
+  (matTecho.albedoTexture as Texture).vScale = 12;
+  matTecho.roughness = 0.94;
+  matTecho.metallic = 0;
+
+  const techo = MeshBuilder.CreateGround(
+    "TechoHall",
+    { width: ANCHO_SALA, height: largo },
+    scene
+  );
+  techo.position.set(0, ALTO_SALA, centroZ);
+  // El suelo mira hacia arriba; girado media vuelta, mira hacia abajo.
+  techo.rotation.z = Math.PI;
+  techo.material = matTecho;
+}
+
+/**
+ * Luminarias empotradas del cielo falso.
+ *
+ * ─── POR QUÉ SEIS PANELES Y SOLO DOS LÁMPARAS ─────────────────────────────
+ *
+ * Porque cada luz real cuesta en cada cuadro y cada panel emisivo es gratis.
+ * Los seis paneles se VEN encendidos —y se reflejan en el piso, que es lo que
+ * de verdad importa— pero solo dos emiten luz de verdad, colocadas para cubrir
+ * el mesón y el fondo del hall.
+ *
+ * Nadie mira un techo y cuenta cuántas de las luminarias que ve están
+ * iluminando. Lo que se nota es que el sitio está alumbrado y que el suelo
+ * devuelve las franjas, y eso lo dan los paneles.
+ *
+ * ─── Y POR QUÉ A MEDIA POTENCIA ───────────────────────────────────────────
+ *
+ * Es la iluminación de noche de un edificio: la suficiente para trabajar y
+ * para que el hall no parezca abandonado, no la de las diez de la mañana. Deja
+ * sitio para que el flexo siga siendo la luz que manda sobre el libro, que es
+ * donde ocurre el nivel.
+ */
+function construirLuminarias(scene: Scene): void {
+  const matPanel = new PBRMaterial("matPanelLuminaria", scene);
+  // Blanco neutro tirando a cálido: el LED de 4000 K que se usa en halls.
+  matPanel.albedoColor = new Color3(0, 0, 0);
+  matPanel.emissiveColor = new Color3(1, 0.94, 0.82);
+  matPanel.roughness = 1;
+  matPanel.metallic = 0;
+
+  const matMarco = new PBRMaterial("matMarcoLuminaria", scene);
+  matMarco.albedoColor = new Color3(0.16, 0.16, 0.17);
+  matMarco.roughness = 0.4;
+  matMarco.metallic = 0.5;
+
+  const posiciones: [number, number][] = [
+    [-1.9, 0.4],
+    [1.9, 0.4],
+    [-1.9, 2.2],
+    [1.9, 2.2],
+    [-1.9, 4.0],
+    [1.9, 4.0],
+  ];
+
+  posiciones.forEach(([x, z], i) => {
+    const marco = MeshBuilder.CreateBox(
+      `luminariaMarcoHall_${i}`,
+      { width: 1.24, height: 0.06, depth: 0.34 },
+      scene
+    );
+    marco.position.set(x, ALTO_SALA - 0.03, z);
+    marco.material = matMarco;
+
+    const panel = MeshBuilder.CreateGround(
+      `luminariaPanelHall_${i}`,
+      { width: 1.16, height: 0.26 },
+      scene
+    );
+    panel.position.set(x, ALTO_SALA - 0.062, z);
+    panel.rotation.z = Math.PI;
+    panel.material = matPanel;
+  });
+
+  // Las dos que sí alumbran: una sobre el mesón, otra sobre el fondo del hall.
+  [
+    { z: 0.9, intensidad: 5.2 },
+    { z: 3.6, intensidad: 4.2 },
+  ].forEach((l, i) => {
+    const luz = new PointLight(`luzTechoHall_${i}`, new Vector3(0, ALTO_SALA - 0.12, l.z), scene);
+    luz.diffuse = new Color3(1, 0.95, 0.86);
+    luz.specular = new Color3(1, 0.97, 0.92);
+    luz.intensity = l.intensidad;
+    luz.range = 9;
+  });
+}
+
+/**
+ * Reflejos reales: el piso devuelve la sala.
+ *
+ * ─── DOS COSAS DISTINTAS, PORQUE HACEN FALTA LAS DOS ──────────────────────
+ *
+ * 1. La SONDA (ReflectionProbe) fotografía la sala en un cubo y se la entrega
+ *    a la escena entera como entorno. Sin ella, todo lo metálico —el flexo, el
+ *    bisel del monitor, la carcasa de la radio— refleja la nada y sale negro,
+ *    que es el aspecto de plástico barato que tienen los metales en 3D cuando
+ *    nadie les dice qué hay alrededor.
+ *
+ *    Se dibuja UNA sola vez, al arrancar. La sala está quieta: refrescarla en
+ *    cada cuadro sería pagar seis renderizados por fotograma para obtener
+ *    siempre la misma imagen.
+ *
+ * 2. El ESPEJO (MirrorTexture) es el reflejo del suelo, y es plano: devuelve
+ *    las luminarias como franjas verticales que se estiran hacia la cámara.
+ *    La sonda no puede darlo —un cubo no sabe de planos— y es justamente lo
+ *    que hace que un piso se lea como pulido y no como gris claro.
+ *
+ *    Este sí se dibuja cada cuadro, pero a media resolución y con desenfoque:
+ *    un reflejo de porcelanato nunca es nítido, así que la falta de definición
+ *    no solo no molesta, es lo correcto.
+ */
+function montarReflejos(scene: Scene): void {
+  const piso = scene.getMeshByName("pisoHall");
+  if (!piso) return;
+
+  // Todo lo que no sea el propio suelo entra en el reflejo.
+  const reflejables = scene.meshes.filter((m) => m !== piso && m.name !== "calleExterior");
+
+  // --- 1. Entorno -----------------------------------------------------------
+  const sonda = new ReflectionProbe("sondaPuesto", 256, scene);
+  sonda.position = new Vector3(0, 1.5, 1.2);
+  reflejables.forEach((m) => sonda.renderList!.push(m));
+  // Cero significa "dibújate una vez y no vuelvas": la sala no se mueve, así
+  // que refrescarla cada cuadro sería pagar seis renderizados por fotograma
+  // para obtener siempre exactamente la misma imagen.
+  sonda.refreshRate = 0;
+  scene.environmentTexture = sonda.cubeTexture;
+  // Bajo, porque es de noche: el entorno tiene que dar forma a los metales,
+  // no iluminar la escena por su cuenta.
+  scene.environmentIntensity = 0.35;
+
+  // --- 2. Espejo del suelo --------------------------------------------------
+  const espejo = new MirrorTexture("espejoPiso", 512, scene, true);
+  // El plano del suelo, mirando hacia arriba. La distancia es 0 porque el
+  // suelo está exactamente en y = 0.
+  espejo.mirrorPlane = new Plane(0, -1, 0, 0);
+  espejo.renderList = reflejables;
+  // Desenfoque adaptativo: difumina más cuanto más lejos, que es como se
+  // comporta un reflejo real sobre un suelo. Sin desenfoque el porcelanato
+  // sale como un espejo de baño y se ve peor, no mejor.
+  espejo.adaptiveBlurKernel = 26;
+  espejo.level = 0.42;
+
+  const matPiso = piso.material as PBRMaterial;
+  matPiso.reflectionTexture = espejo;
+}
+
+/**
+ * Sube el tope de luces por material.
+ *
+ * Babylon compila cada material para un número fijo de luces —cuatro por
+ * defecto— y las que sobran simplemente no se calculan, en silencio. Con el
+ * relleno, las dos del techo, el monitor, el flexo y la farola son seis, así
+ * que sin esto el mesón perdería dos y nadie diría por qué.
+ *
+ * Se hace al final, cuando ya existen todos los materiales.
+ */
+function ampliarLucesPorMaterial(scene: Scene): void {
+  scene.materials.forEach((mat) => {
+    if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = 8;
+  });
+}
+
+function construirHallYVentanal(scene: Scene): void {
+  // El piso y los muros laterales los pone construirSala. Acá queda solo lo
+  // que mira al exterior: el hueco del ventanal, el cristal, la calle y la
+  // farola que entra por él.
+  const matMuro = scene.getMaterialByName("matMuroHall") as PBRMaterial;
 
   // Muro del fondo con el hueco del ventanal.
   [-1, 1].forEach((lado) => {
     const paño = MeshBuilder.CreateBox(
-      `muroFondo_${lado}`,
+      `MuroFondoHall_${lado}`,
       { width: 3.4, height: 3.2, depth: 0.18 },
       scene
     );
@@ -870,11 +1216,11 @@ function construirHallYVentanal(scene: Scene): void {
     paño.receiveShadows = true;
   });
 
-  const dintel = MeshBuilder.CreateBox("dintelVentanal", { width: 2.8, height: 0.9, depth: 0.18 }, scene);
+  const dintel = MeshBuilder.CreateBox("MuroDintelHall", { width: 2.8, height: 0.9, depth: 0.18 }, scene);
   dintel.position.set(0, 2.75, 4.6);
   dintel.material = matMuro;
 
-  const antepecho = MeshBuilder.CreateBox("antepechoVentanal", { width: 2.8, height: 0.9, depth: 0.18 }, scene);
+  const antepecho = MeshBuilder.CreateBox("MuroAntepechoHall", { width: 2.8, height: 0.9, depth: 0.18 }, scene);
   antepecho.position.set(0, 0.45, 4.6);
   antepecho.material = matMuro;
 

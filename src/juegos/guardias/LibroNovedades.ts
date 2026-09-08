@@ -86,6 +86,8 @@ export type TipoFalta =
   | "fuera_de_orden"
   | "opinion_registrada"
   | "hecho_inventado"
+  | "novedad_no_anotada"
+  | "ingreso_sin_salida"
   | "inventario_incompleto"
   | "parrafo_mal_citado";
 
@@ -95,6 +97,21 @@ export interface Falta {
   descripcion: string;
   /** La regla del manual que lo prohíbe. */
   fundamento: string;
+  /**
+   * Párrafo que la originó, cuando la falta nace de una constancia concreta.
+   *
+   * Sirve para saber qué falta subsana una anulación: sin esto, anular una
+   * línea sería un gesto vacío que no cambia nada de lo ya anotado.
+   */
+  parrafo?: number;
+  /**
+   * La constancia que la causó fue anulada.
+   *
+   * No la borra —el manual es explícito en que el rastro queda— pero pesa
+   * menos: reconocer el error y dejarlo anulado a la vista es lo correcto,
+   * aunque nunca salga tan barato como haberlo escrito bien la primera vez.
+   */
+  subsanada?: boolean;
 }
 
 const FUNDAMENTOS: Record<TipoFalta, string> = {
@@ -104,10 +121,14 @@ const FUNDAMENTOS: Record<TipoFalta, string> = {
   opinion_registrada:
     "No se pueden imponer situaciones según la apreciación personal: se registra lo que se observa, no lo que se supone.",
   hecho_inventado: "No se pueden señalar hechos o situaciones que carezcan de realidad.",
+  novedad_no_anotada:
+    "Es una obligación irrenunciable dejar constancia escrita de todo hecho, situación o suceso que se observe.",
+  ingreso_sin_salida:
+    "Ingreso y salida se anotan como constancias separadas. Sin la salida, el libro deja a esas personas dentro de la instalación.",
   inventario_incompleto:
     "La entrega del servicio se hace conforme al cargo fijo: hay que declararlo completo.",
   parrafo_mal_citado:
-    "La entrega cita el párrafo donde constan las novedades del servicio; si la numeración no es correlativa, la cita no sirve.",
+    "La entrega cita el párrafo donde constan las novedades del servicio: tiene que existir, estar vigente y contener novedades.",
 };
 
 /**
@@ -124,6 +145,24 @@ export const CARGO_FIJO = [
   "45 llaves de vehículos",
 ];
 
+/**
+ * La cabecera del servicio.
+ *
+ * El manual (p. 3 y 4) pide instalación, ciudad y fecha, turno, supervisor de
+ * turno y los guardias de turno uno por línea; y cierra el párrafo con las
+ * firmas del saliente y el entrante. Las firmas se guardan porque vuelven a
+ * aparecer en la entrega de las 08:00, con el mismo formato.
+ */
+export interface DatosServicio {
+  instalacion: string;
+  ciudad: string;
+  fecha: string;
+  turno: string;
+  supervisor: string;
+  guardiaSaliente: string;
+  guardiaEntrante: string;
+}
+
 export interface EstadoLibro {
   entradas: EntradaLibro[];
   faltas: Falta[];
@@ -131,10 +170,19 @@ export interface EstadoLibro {
   proximoParrafo: number;
   abierto: boolean;
   cerrado: boolean;
+  /** Cabecera con la que se abrió. Null mientras el servicio no se abre. */
+  servicio: DatosServicio | null;
 }
 
 export function libroVacio(): EstadoLibro {
-  return { entradas: [], faltas: [], proximoParrafo: 1, abierto: false, cerrado: false };
+  return {
+    entradas: [],
+    faltas: [],
+    proximoParrafo: 1,
+    abierto: false,
+    cerrado: false,
+    servicio: null,
+  };
 }
 
 /** Minuto del turno a hora de reloj. El turno del manual va de 00:00 a 08:00. */
@@ -151,19 +199,20 @@ export function horaDe(minuto: number): string {
  * supervisor y las firmas del guardia saliente y el entrante. Va como primera
  * entrada y con su número de párrafo, igual que todo lo demás.
  */
-export function abrirServicio(
-  estado: EstadoLibro,
-  datos: { instalacion: string; ciudad: string; fecha: string; turno: string }
-): EstadoLibro {
+export function abrirServicio(estado: EstadoLibro, datos: DatosServicio): EstadoLibro {
   if (estado.abierto) return estado;
 
   const observaciones =
     `INSTALACIÓN: ${datos.instalacion}. ${datos.ciudad}, ${datos.fecha}. ` +
-    `TURNO: ${datos.turno}. Se inicia el servicio sin novedad.`;
+    `TURNO: ${datos.turno}. SUPERVISOR DE TURNO: ${datos.supervisor}. ` +
+    `GUARDIA DE TURNO: ${datos.guardiaEntrante}. Se inicia el servicio sin novedad. ` +
+    `${datos.guardiaSaliente}, guardia de seguridad saliente — ` +
+    `${datos.guardiaEntrante}, guardia de seguridad entrante.`;
 
   return {
     ...estado,
     abierto: true,
+    servicio: datos,
     proximoParrafo: estado.proximoParrafo + 1,
     entradas: [
       ...estado.entradas,
@@ -198,6 +247,7 @@ export function registrar(
   opcionElegida: OpcionRedaccion
 ): EstadoLibro {
   const faltas = [...estado.faltas];
+  const parrafo = estado.proximoParrafo;
 
   const ultima = estado.entradas[estado.entradas.length - 1];
   if (ultima && horaDe(suceso.minuto) < ultima.hora) {
@@ -205,6 +255,7 @@ export function registrar(
       tipo: "fuera_de_orden",
       descripcion: `Se anotó ${horaDe(suceso.minuto)} después de ${ultima.hora}.`,
       fundamento: FUNDAMENTOS.fuera_de_orden,
+      parrafo,
     });
   }
 
@@ -213,6 +264,7 @@ export function registrar(
       tipo: "opinion_registrada",
       descripcion: `«${opcionElegida.texto}» es una apreciación, no una observación.`,
       fundamento: FUNDAMENTOS.opinion_registrada,
+      parrafo,
     });
   }
 
@@ -221,6 +273,7 @@ export function registrar(
       tipo: "hecho_inventado",
       descripcion: `«${opcionElegida.texto}» afirma algo que no consta.`,
       fundamento: FUNDAMENTOS.hecho_inventado,
+      parrafo,
     });
   }
 
@@ -231,7 +284,7 @@ export function registrar(
     entradas: [
       ...estado.entradas,
       {
-        numero: estado.proximoParrafo,
+        numero: parrafo,
         hora: horaDe(suceso.minuto),
         actividad: suceso.actividad,
         observaciones: opcionElegida.texto,
@@ -249,11 +302,27 @@ export function registrar(
  * legible. Eso es lo que pide el manual y lo que hace que el libro sirva como
  * prueba — si las líneas erradas se pudieran quitar, cualquiera podría
  * reescribir el turno a posteriori y el documento no valdría nada.
+ *
+ * ─── QUÉ PASA CON LA FALTA QUE VENÍA CON ESA LÍNEA ───────────────────────
+ *
+ * Baja, pero no se va. Si anular borrara la falta, la fiscalización de las
+ * 03:20 sería un examen con las respuestas al reverso: bastaría esperar a que
+ * el supervisor señale los errores y anularlos todos para salir impecable.
+ * Y si no bajara nada, anular no serviría para nada y lo correcto sería no
+ * tocar el libro nunca, que es la lección contraria a la del manual.
+ *
+ * Queda en medio: reconocer el error y dejarlo anulado a la vista cuesta menos
+ * que dejarlo en pie, y más que haberlo escrito bien la primera vez.
+ *
+ * Ojo: anular una novedad sin volver a anotarla deja el turno SIN esa
+ * constancia, y eso es una falta mayor (ver entregarServicio). Anular es el
+ * primer paso de la corrección, no la corrección entera.
  */
 export function anular(estado: EstadoLibro, numero: number): EstadoLibro {
   return {
     ...estado,
     entradas: estado.entradas.map((e) => (e.numero === numero ? { ...e, anulada: true } : e)),
+    faltas: estado.faltas.map((f) => (f.parrafo === numero ? { ...f, subsanada: true } : f)),
   };
 }
 
@@ -279,19 +348,102 @@ export function intentarBorrar(estado: EstadoLibro): EstadoLibro {
 }
 
 /**
+ * Anota la fiscalización de las 03:20.
+ *
+ * En el manual la visita del supervisor no es un aviso que pasa y se olvida:
+ * es un párrafo más del libro, con sus instrucciones y la firma del
+ * fiscalizador (p. 4). Por eso se escribe como constancia y consume su número
+ * correlativo, igual que cualquier otra.
+ *
+ * Escribirla mueve la última hora del libro a las 03:20. Si quedaba alguna
+ * novedad anterior sin anotar, apuntarla después ya cae fuera de orden — que
+ * es exactamente lo que pasa en un libro de verdad.
+ */
+export function registrarFiscalizacion(
+  estado: EstadoLibro,
+  instrucciones: string[]
+): EstadoLibro {
+  const supervisor = estado.servicio?.supervisor ?? "SUPERVISOR DE TURNO";
+  const observaciones =
+    "De la instalación 01 GG.SS. en su puesto de trabajo. INSTRUCCIONES: " +
+    instrucciones.map((t, i) => `${i + 1}) ${t}`).join(", ") +
+    `. Firma del fiscalizador: ${supervisor}, supervisor de turno.`;
+
+  return {
+    ...estado,
+    proximoParrafo: estado.proximoParrafo + 1,
+    entradas: [
+      ...estado.entradas,
+      {
+        numero: estado.proximoParrafo,
+        hora: horaDe(200),
+        actividad: "FISCALIZACION",
+        observaciones,
+        anulada: false,
+        clase: null,
+      },
+    ],
+  };
+}
+
+/**
  * Cierra el servicio con la entrega del cargo fijo.
  *
  * @param inventario     Lo que el jugador declara entregar.
  * @param parrafoCitado  Número de párrafo donde constan las novedades. El
  *                       manual lo pide literalmente: "Novedades indicadas en
  *                       el párrafo ____ del presente servicio".
+ * @param novedadesDelTurno  Todo lo que ocurrió durante el turno. Se comprueba
+ *                       contra el libro, porque el manual es tajante: dejar
+ *                       constancia escrita de todo hecho o suceso observado es
+ *                       una obligación irrenunciable. Se pasa como parámetro y
+ *                       no se deduce del libro por lo obvio — el libro solo
+ *                       sabe lo que SÍ se escribió; lo que faltó solo lo sabe
+ *                       quien conoce el turno.
  */
 export function entregarServicio(
   estado: EstadoLibro,
   inventario: string[],
-  parrafoCitado: number
+  parrafoCitado: number,
+  novedadesDelTurno: SucesoTurno[] = []
 ): EstadoLibro {
   const faltas = [...estado.faltas];
+
+  /** ¿Quedó constancia viva de esta novedad? Anulada no cuenta: no dice nada. */
+  const tieneConstancia = (suceso: SucesoTurno): boolean =>
+    estado.entradas.some(
+      (e) => !e.anulada && e.hora === horaDe(suceso.minuto) && e.actividad === suceso.actividad
+    );
+
+  const sinAnotar = novedadesDelTurno.filter((s) => !tieneConstancia(s));
+
+  for (const suceso of sinAnotar) {
+    // Caso especial: falta la SALIDA y el INGRESO sí está escrito. No es una
+    // novedad más que se olvidó — el libro queda afirmando que esas personas
+    // siguen dentro de la instalación cuando el turno se entrega.
+    const esSalidaHuerfana =
+      suceso.actividad === "SALIDA" &&
+      novedadesDelTurno.some((otro) => otro.actividad === "INGRESO" && tieneConstancia(otro));
+
+    if (esSalidaHuerfana) {
+      faltas.push({
+        tipo: "ingreso_sin_salida",
+        descripcion:
+          `Quedó anotado el ingreso de las ${horaDe(
+            novedadesDelTurno.find((o) => o.actividad === "INGRESO")!.minuto
+          )} y no su salida. El libro entrega el servicio con esas personas dentro.`,
+        fundamento: FUNDAMENTOS.ingreso_sin_salida,
+      });
+    } else {
+      faltas.push({
+        tipo: "novedad_no_anotada",
+        descripcion: `La novedad de las ${horaDe(suceso.minuto)} (${
+          suceso.actividad
+        }) no quedó anotada en el libro.`,
+        fundamento: FUNDAMENTOS.novedad_no_anotada,
+      });
+    }
+  }
 
   const faltantes = CARGO_FIJO.filter((item) => !inventario.includes(item));
   if (faltantes.length > 0) {
@@ -302,21 +454,33 @@ export function entregarServicio(
     });
   }
 
-  // La cita tiene que apuntar a un párrafo que exista y que no esté anulado.
+  // La cita tiene que apuntar a un párrafo que exista, que no esté anulado y
+  // que contenga NOVEDADES. Apertura, fiscalización y la propia entrega no lo
+  // son: se reconocen porque su clase es null, ya que no hay nada que redactar
+  // bien o mal en ellas. Citar una de esas manda a quien lea el libro a un
+  // párrafo donde no hay ninguna novedad que leer.
   const citado = estado.entradas.find((e) => e.numero === parrafoCitado);
-  if (!citado || citado.anulada) {
+  if (!citado || citado.anulada || citado.clase === null) {
     faltas.push({
       tipo: "parrafo_mal_citado",
-      descripcion: citado
-        ? `El párrafo ${parrafoCitado} está anulado y no puede citarse.`
-        : `No existe el párrafo ${parrafoCitado}.`,
+      descripcion: !citado
+        ? `No existe el párrafo ${parrafoCitado}.`
+        : citado.anulada
+          ? `El párrafo ${parrafoCitado} está anulado y no puede citarse.`
+          : `El párrafo ${parrafoCitado} es la constancia de ${citado.actividad}, y ahí no consta ninguna novedad.`,
       fundamento: FUNDAMENTOS.parrafo_mal_citado,
     });
   }
 
+  const firmas = estado.servicio
+    ? ` ${estado.servicio.guardiaEntrante}, guardia de seguridad saliente — ` +
+      `${estado.servicio.guardiaSaliente}, guardia de seguridad entrante.`
+    : "";
+
   const observaciones =
     `Procedo a hacer entrega del servicio conforme al cargo fijo: ${inventario.join("; ")}. ` +
-    `Novedades indicadas en el párrafo ${parrafoCitado} del presente servicio.`;
+    `Novedades indicadas en el párrafo ${parrafoCitado} del presente servicio.` +
+    firmas;
 
   return {
     ...estado,
@@ -359,17 +523,32 @@ export function revisionDelSupervisor(estado: EstadoLibro): Falta[] {
  * forma: anotar una opinión como si fuera un hecho compromete el valor del
  * libro como prueba, mientras que una línea fuera de orden se ve fea pero se
  * entiende igual.
+ *
+ * Lo que más pesa es lo que NO está: una novedad sin anotar deja al libro
+ * mintiendo por omisión, y no hay forma de saber después qué faltó. Peor aún
+ * un ingreso sin su salida, porque el turno se entrega afirmando que hay
+ * gente dentro de la instalación.
+ *
+ * Una falta subsanada —la constancia que la causó quedó anulada— descuenta
+ * poco menos de un tercio. Lo suficiente para que anular valga la pena, no
+ * tanto como para que la fiscalización de las 03:20 sea un examen con las
+ * respuestas al reverso.
  */
 export function calificar(estado: EstadoLibro): { nota: number; faltas: Falta[] } {
   const PESO: Record<TipoFalta, number> = {
     hecho_inventado: 30,
+    ingreso_sin_salida: 25,
     opinion_registrada: 20,
+    novedad_no_anotada: 18,
     intento_de_borrado: 12,
     inventario_incompleto: 12,
     parrafo_mal_citado: 10,
     fuera_de_orden: 8,
   };
 
-  const descuento = estado.faltas.reduce((suma, f) => suma + PESO[f.tipo], 0);
+  const descuento = estado.faltas.reduce(
+    (suma, f) => suma + (f.subsanada ? Math.round(PESO[f.tipo] * 0.3) : PESO[f.tipo]),
+    0
+  );
   return { nota: Math.max(0, 100 - descuento), faltas: estado.faltas };
 }

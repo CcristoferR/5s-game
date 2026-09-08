@@ -69,11 +69,27 @@ const ESCENARIOS: NivelMenuInfo[] = [
   },
   {
     numero: 3,
-    nombre: "RADIO - Comunicaciones y enlace",
+    nombre: "BANCO - Comunicaciones y enlace",
     desbloqueado: false,
     completado: false,
   },
 ];
+
+/**
+ * Escenarios de guardias ya terminados, en esta sesión.
+ *
+ * ─── POR QUÉ NO USA GameManager ───────────────────────────────────────────
+ *
+ * Porque GameManager guarda los niveles completados en un único Set de
+ * números, sin distinguir de qué curso son. Marcar ahí el escenario 1 de
+ * guardias marcaría también el Nivel 1 del 5S: subiría el porcentaje de
+ * madurez y acercaría el certificado de un curso que la persona no jugó.
+ *
+ * Esto es un parche a la espera de que GameManager acepte una clave de curso.
+ * Se pierde al recargar, que es mejor que corromper el progreso del otro
+ * curso — y mientras haya un solo escenario jugable casi no se nota.
+ */
+const escenariosCompletados = new Set<number>();
 
 /**
  * Abre el menú del curso.
@@ -93,9 +109,7 @@ export function abrirMenuGuardias(
 
   const escenarios = ESCENARIOS.map((e) => ({
     ...e,
-    // El progreso guardado manda sobre el valor de la tabla: si la persona ya
-    // terminó un escenario en otra sesión, tiene que verlo terminado.
-    completado: gameManager.estaCompletado(e.numero),
+    completado: escenariosCompletados.has(e.numero),
   }));
 
   mostrarMenuPrincipal(
@@ -108,12 +122,14 @@ export function abrirMenuGuardias(
       // Es a propósito que esto sea un aviso y no una pantalla a medias: un
       // nivel vacío se lee como que el juego está roto, y un aviso se lee como
       // que falta contenido, que es la verdad.
-      // El escenario 1 ya tiene su puesto y su mecánica: el libro se abre al
-      // hacer clic, recorre el turno completo y termina con la nota del
-      // supervisor. Al cerrar el informe final se marca el nivel completado,
-      // igual que cualquier otro escenario del juego.
+      // El escenario 1 está jugable de punta a punta: se abre el libro
+      // haciendo clic sobre él, se recorre el turno de 00:00 a 08:00 y se
+      // cierra con el informe del supervisor.
       if (numero === 1) {
-        crearPuestoConserjeria(scene, () => gameManager.completarNivel(1));
+        crearPuestoConserjeria(scene, () => {
+          escenariosCompletados.add(1);
+          abrirMenuGuardias(scene, onVolverAlPortal, usuario);
+        });
         return;
       }
 
