@@ -19,8 +19,12 @@ import {
   Texture,
   ActionManager,
   ExecuteCodeAction,
+  PointerEventTypes,
+  type IWheelEvent,
 } from "@babylonjs/core";
-import { mostrarPantallaLibro } from "./PantallaLibro";
+import { mostrarPantallaLibro, type SesionLibro } from "./PantallaLibro";
+import { crearMonitorCamaras, type MonitorCamaras } from "./MonitorCamaras";
+import { CAMARAS_POR_SUCESO } from "./SucesosCondominio";
 import { materialPintado, materialPintadoNitido } from "../../entities/ObjetosComunes";
 import { texturaGrano, texturaMetalCepillado } from "../../entities/TexturasSuperficie";
 import {
@@ -82,8 +86,14 @@ import {
 //   GIRADO un cuarto de vuelta      ->  el problema es la rotación de la
 //                                       malla, no la textura
 
-/** Pantalla del monitor: plano vertical mirando al jugador. */
-const ORIENTACION_PANTALLA = { horizontal: -1, vertical: 1 };
+/**
+ * Pantalla del monitor: plano vertical mirando al jugador.
+ *
+ * El horizontal estaba en -1 para compensar que el plano se veía por detrás,
+ * girado media vuelta. Ya no se gira (ver construirMonitor), así que se ve la
+ * cara frontal y la textura va tal cual.
+ */
+const ORIENTACION_PANTALLA = { horizontal: 1, vertical: 1 };
 
 /** Piezas apoyadas en el mesón, vistas desde arriba: libro y tarjeta. */
 const ORIENTACION_APOYADA = { horizontal: 1, vertical: 1 };
@@ -132,10 +142,36 @@ export function crearPuestoConserjeria(scene: Scene, onLibroCompletado?: () => v
   configurarEscenaNocturna(scene);
   const camara = montarCamara(scene);
 
+  const monitor = crearMonitorCamaras(scene);
+
   const meson = construirMeson(scene);
-  const { pantalla } = construirMonitor(scene);
+  const { pantalla } = construirMonitor(scene, monitor);
+  montarZoomMonitor(scene, camara);
   const { radio, avisarRadio } = construirRadio(scene);
-  construirLibro(scene, () => mostrarPantallaLibro(scene, () => onLibroCompletado?.()));
+
+  // El libro se abre y se cierra las veces que haga falta: la sesión se crea
+  // en el primer clic y desde ahí se reabre donde quedó. Sin esto el turno
+  // sería un viaje de ida —abrir el libro y no poder volver al puesto—, y el
+  // monitor no lo miraría nadie nunca.
+  let libro: SesionLibro | null = null;
+  construirLibro(scene, () => {
+    if (libro) {
+      libro.abrir();
+      return;
+    }
+    libro = mostrarPantallaLibro(scene, () => onLibroCompletado?.(), {
+      // Traducir de sucesos a cuadrantes es cosa de acá: el libro no sabe
+      // que existe un monitor, y un escenario sin cámaras pasaría un enlace
+      // vacío sin tocar una línea del libro.
+      alOcurrir(suceso) {
+        const toma = CAMARAS_POR_SUCESO[suceso.id];
+        if (toma) monitor.encender(suceso.id, toma.indice, toma.escena, suceso.minuto);
+      },
+      alQuedarEscrita(suceso) {
+        monitor.apagar(suceso.id);
+      },
+    });
+  });
   construirTablaDeClaves(scene);
   construirSala(scene);
   construirHallYVentanal(scene);
@@ -415,7 +451,7 @@ function construirMeson(scene: Scene): Mesh {
 // Monitor de cámaras
 // ---------------------------------------------------------------------------
 
-function construirMonitor(scene: Scene): { pantalla: Mesh } {
+function construirMonitor(scene: Scene, monitor: MonitorCamaras): { pantalla: Mesh } {
   const X = 0.18;
   const Z = 0.56;
 
@@ -459,9 +495,14 @@ function construirMonitor(scene: Scene): { pantalla: Mesh } {
 
   // Pantalla: la fuente de luz principal de la escena.
   //
-  // Va como material emisivo Y como luz puntual. Solo lo primero haría una
+  // Va como material propio Y como luz puntual. Solo lo primero haría una
   // pantalla brillante que no ilumina nada; solo lo segundo, una luz que sale
   // de un cristal apagado.
+  //
+  // El material es `unlit` (ver MonitorCamaras): la luz de abajo está a
+  // catorce centímetros por delante del cristal, y con un material normal se
+  // reflejaba en él y lo tapaba entero con una mancha blanca. Un monitor
+  // emite su luz, no la recibe.
   const pantalla = MeshBuilder.CreatePlane(
     "pantallaMonitor",
     { width: ANCHO - 0.045, height: ALTO - 0.045 },
@@ -472,9 +513,20 @@ function construirMonitor(scene: Scene): { pantalla: Mesh } {
     ALTO_MESON + 0.39 + Math.sin(-INCLINACION) * 0.02,
     Z - 0.021
   );
+  // Solo la inclinación, SIN girar el plano media vuelta.
+  //
+  // Antes llevaba también `rotation.y = Math.PI`, y ahí estaba el problema:
+  // Babylon compone los ángulos de Euler en orden YXZ, así que ese giro de
+  // 180° invierte el eje X y la inclinación acaba aplicándose al revés que en
+  // la carcasa. Los dos quedaban inclinados 0,11 rad en sentidos opuestos: el
+  // borde de arriba del plano se hundía unos cuatro centímetros dentro de la
+  // carcasa y solo se veía la mitad de abajo de la imagen.
+  //
+  // Sin el giro, el plano queda paralelo a la carcasa y con su cara frontal
+  // hacia la cámara —que está en z negativo, y la normal de un plano de
+  // Babylon apunta hacia -Z—, así que se ve entero y sin espejar.
   pantalla.rotation.x = INCLINACION;
-  pantalla.rotation.y = Math.PI;
-  pantalla.material = orientar(materialCuadrantes(scene), ORIENTACION_PANTALLA);
+  pantalla.material = orientar(monitor.material, ORIENTACION_PANTALLA);
 
   const luzPantalla = new PointLight(
     "luzPantallaMonitor",
@@ -487,61 +539,79 @@ function construirMonitor(scene: Scene): { pantalla: Mesh } {
   luzPantalla.intensity = 1.35;
   luzPantalla.range = 2.6;
 
+  // Esta luz está catorce centímetros POR DELANTE del cristal, mirándolo de
+  // frente. Sin excluirla, el monitor se ilumina a sí mismo y la imagen
+  // desaparece bajo su propio reflejo. El material ya no acepta luz, pero se
+  // deja igual: si alguien alguna vez le devuelve la iluminación al cristal,
+  // que no reaparezca la mancha por este lado.
+  luzPantalla.excludedMeshes.push(pantalla);
+
   return { pantalla };
 }
 
+
 /**
- * Los cuatro cuadros del monitor.
+ * Acercarse al monitor con la rueda del mouse.
  *
- * Por ahora es una imagen fija: cuatro recuadros con su rótulo, marca de hora y
- * las bandas de una señal analógica. Cuando exista la mecánica de cámaras, este
- * mismo lienzo se repinta con lo que muestra cada una — la textura ya está
- * dimensionada para eso.
+ * Los cuadrantes miden algo más de un palmo en la pantalla real y están al
+ * fondo del mesón: se distingue que una cámara está en ámbar, pero no la
+ * patente de una camioneta. La rueda acerca y aleja de forma continua.
+ *
+ * ─── POR QUÉ LA RUEDA Y NO UN CLIC ────────────────────────────────────────
+ *
+ * Antes era un clic sobre el cristal que alternaba entre dos posiciones
+ * fijas: o lejos o cerca, sin nada en medio. Tenía dos problemas. Uno, que
+ * hay que apuntarle a la pantalla para usarlo, y a un objeto pequeño al fondo
+ * del mesón no siempre se le acierta. Dos, que el 5S ya usa la rueda para
+ * acercarse, así que el jugador que viene del otro curso llega con el gesto
+ * aprendido y acá no le respondía.
+ *
+ * ─── POR QUÉ MUEVE EL CAMPO DE VISIÓN Y NO LA CÁMARA ──────────────────────
+ *
+ * Acercar la cámara la metería dentro del mesón o de la carcasa según hacia
+ * dónde estuviera mirando el jugador, y habría que resolver colisiones para
+ * algo que en el fondo es entornar los ojos. Moviendo el FOV el tope de giro
+ * sigue funcionando igual, porque la cámara no se ha movido de la silla.
+ *
+ * ─── POR QUÉ EL PASO ES PROPORCIONAL ──────────────────────────────────────
+ *
+ * Cada muesca de la rueda cambia el campo un porcentaje del que hay, no una
+ * cantidad fija. Es lo mismo que hace el 5S con la distancia de su cámara
+ * (wheelDeltaPercentage), y es lo que hace que el gesto se sienta parejo:
+ * con paso fijo, las últimas muescas al acercarse darían saltos enormes
+ * porque el campo que queda ya es muy chico.
  */
-function materialCuadrantes(scene: Scene): PBRMaterial {
-  const mat = materialPintadoNitido(scene, "matPantallaCCTV", 640, 400, 2, (ctx, w, h) => {
-    ctx.fillStyle = "#05070a";
-    ctx.fillRect(0, 0, w, h);
+function montarZoomMonitor(scene: Scene, camara: FreeCamera): void {
+  const FOV_LEJOS = camara.fov;
+  /** Con este campo, la patente de la camioneta se lee. */
+  const FOV_CERCA = 0.3;
+  /** Cuánto cambia el campo por muesca, en tanto por uno. */
+  const PASO = 0.12;
+  /** Cuánto del camino que falta se recorre por cuadro. */
+  const SUAVIDAD = 0.18;
 
-    const rotulos = ["CAM 01  ACCESO", "CAM 02  ESTACIONAMIENTO", "CAM 03  PASILLO", "CAM 04  BODEGA"];
-    const mw = w / 2;
-    const mh = h / 2;
+  let destino = FOV_LEJOS;
 
-    rotulos.forEach((rotulo, i) => {
-      const cx = (i % 2) * mw;
-      const cy = Math.floor(i / 2) * mh;
+  scene.onPointerObservable.add((info) => {
+    if (info.type !== PointerEventTypes.POINTERWHEEL) return;
+    const evento = info.event as IWheelEvent;
 
-      // Fondo del cuadro, con un degradado que insinúa una lámpara al fondo.
-      const grad = ctx.createRadialGradient(cx + mw * 0.6, cy + mh * 0.35, 4, cx + mw / 2, cy + mh / 2, mw * 0.8);
-      grad.addColorStop(0, "#2b3138");
-      grad.addColorStop(1, "#0b0e12");
-      ctx.fillStyle = grad;
-      ctx.fillRect(cx + 2, cy + 2, mw - 4, mh - 4);
+    // deltaY es positivo al girar hacia el usuario, que es alejarse.
+    const sentido = Math.sign(evento.deltaY) || 0;
+    if (sentido === 0) return;
 
-      // Bandas horizontales: el rastro de una señal analógica. Es lo que separa
-      // una imagen de CCTV de una foto.
-      ctx.fillStyle = "rgba(255,255,255,0.022)";
-      for (let y = cy; y < cy + mh; y += 3) ctx.fillRect(cx, y, mw, 1);
+    destino = Math.min(FOV_LEJOS, Math.max(FOV_CERCA, destino * (1 + sentido * PASO)));
 
-      ctx.strokeStyle = "#151a20";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(cx + 2, cy + 2, mw - 4, mh - 4);
-
-      ctx.fillStyle = "#93e3a8";
-      ctx.font = "bold 15px monospace";
-      ctx.textAlign = "left";
-      ctx.fillText(rotulo, cx + 12, cy + 22);
-
-      ctx.textAlign = "right";
-      ctx.fillText("00:00:00", cx + mw - 12, cy + mh - 12);
-    });
+    // Sin esto la rueda hace scroll en la página que contiene el juego.
+    evento.preventDefault?.();
   });
 
-  mat.emissiveColor = new Color3(1, 1, 1);
-  mat.emissiveTexture = mat.albedoTexture;
-  mat.roughness = 0.22;
-  mat.metallic = 0;
-  return mat;
+  scene.onBeforeRenderObservable.add(() => {
+    const resto = destino - camara.fov;
+    // Por debajo de una milésima ya no se ve moverse: se asienta y se deja de
+    // calcular una interpolación que nunca termina de llegar.
+    camara.fov = Math.abs(resto) < 0.001 ? destino : camara.fov + resto * SUAVIDAD;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1161,10 +1231,31 @@ function montarReflejos(scene: Scene): void {
   // que refrescarla cada cuadro sería pagar seis renderizados por fotograma
   // para obtener siempre exactamente la misma imagen.
   sonda.refreshRate = 0;
-  scene.environmentTexture = sonda.cubeTexture;
-  // Bajo, porque es de noche: el entorno tiene que dar forma a los metales,
-  // no iluminar la escena por su cuenta.
-  scene.environmentIntensity = 0.35;
+
+  // El entorno se enchufa DESPUÉS de que la sonda se haya dibujado.
+  //
+  // Si se asigna antes —que es lo que parece natural, y era lo que había—,
+  // cada material que la sonda dibuja dentro de sí misma intenta leer la
+  // misma textura que la sonda está escribiendo en ese momento. WebGL no lo
+  // permite y aborta el draw:
+  //
+  //   GL_INVALID_OPERATION: glDrawElements: Feedback loop formed between
+  //   Framebuffer and active Texture
+  //
+  // Son seis caras de cubo por cada malla de la lista, así que la consola se
+  // llena de cientos de errores en el primer fotograma y los objetos que
+  // caen en ellos se dibujan mal.
+  //
+  // Esperar un fotograma lo resuelve entero: la sonda se dibuja sin entorno
+  // —no hay nada que leer, no hay bucle— y el entorno queda puesto para todo
+  // lo que venga después. Lo único que se pierde es el rebote del entorno
+  // sobre sí mismo dentro del cubo, que a 256 píxeles y de noche no se ve.
+  scene.onAfterRenderObservable.addOnce(() => {
+    scene.environmentTexture = sonda.cubeTexture;
+    // Bajo, porque es de noche: el entorno tiene que dar forma a los metales,
+    // no iluminar la escena por su cuenta.
+    scene.environmentIntensity = 0.35;
+  });
 
   // --- 2. Espejo del suelo --------------------------------------------------
   const espejo = new MirrorTexture("espejoPiso", 512, scene, true);

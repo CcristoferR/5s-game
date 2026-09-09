@@ -183,3 +183,40 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
 
 /** Minuto del turno en el que llega el fiscalizador (03:20). */
 export const MINUTO_FISCALIZACION = 200;
+
+// ---------------------------------------------------------------------------
+// Qué se ve de cada suceso en el monitor
+// ---------------------------------------------------------------------------
+//
+// El monitor del puesto tiene cuatro cámaras, y resultó que los sucesos del
+// turno caen en tres de ellas sin forzar nada: la ronda transcurre en un
+// pasillo, el ingreso y la salida ocurren en la reja, la camioneta está en el
+// estacionamiento. La bodega no ve ninguno, y así se queda — cuatro cámaras
+// donde siempre pasa algo serían cuatro cámaras que nadie mira.
+//
+// Esto es un MAPA, no una regla: si un suceso no aparece acá simplemente no
+// se ve por cámara, y se sigue jugando igual desde el libro. Por eso vive
+// junto al contenido y no dentro de SucesoTurno, que es lo que califica.
+
+/** Qué dibuja el monitor. Lo interpreta MonitorCamaras. */
+export type EscenaCamara =
+  | "vehiculo-en-reja"
+  | "vehiculo-saliendo"
+  | "vehiculo-detenido"
+  | "pasillo-abierto";
+
+export interface TomaDeCamara {
+  /** Cuadrante del monitor: 0 acceso, 1 estacionamiento, 2 pasillo, 3 bodega. */
+  indice: number;
+  escena: EscenaCamara;
+}
+
+// El ingreso y la salida comparten la CAM 01 a propósito: son la misma reja
+// y la misma camioneta, media hora después. Ver esa repetición en el mismo
+// cuadrante es parte de lo que hay que notar para redactarlo bien.
+export const CAMARAS_POR_SUCESO: Record<string, TomaDeCamara> = {
+  "ronda-inicial": { indice: 2, escena: "pasillo-abierto" },
+  "camara-estacionamiento": { indice: 1, escena: "vehiculo-detenido" },
+  "ingreso-vehiculo": { indice: 0, escena: "vehiculo-en-reja" },
+  "salida-vehiculo": { indice: 0, escena: "vehiculo-saliendo" },
+};

@@ -47,6 +47,7 @@ import {
   APERTURA,
   SUCESOS_CONDOMINIO,
   INSTRUCCIONES_FISCALIZACION,
+  CAMARAS_POR_SUCESO,
 } from "./SucesosCondominio";
 
 // ===========================================================================
@@ -91,14 +92,54 @@ const X_ACTIVIDAD = COL_HORA + 6;
 const X_OBS = X_ACTIVIDAD + COL_ACTIVIDAD + 6;
 const X_ACCIONES = X_OBS + COL_OBS + 20;
 
-export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): void {
+/**
+ * El libro abierto, como algo que dura todo el turno.
+ *
+ * Antes esta pantalla era de ida: se abría y no se salía hasta entregar el
+ * servicio. Ahora se puede cerrar para volver al puesto —a mirar el monitor,
+ * que es donde se ve ocurrir lo que hay que anotar— y volver a abrirla con
+ * todo lo escrito donde estaba.
+ */
+export interface SesionLibro {
+  /** Vuelve a abrir el libro donde quedó. */
+  abrir(): void;
+}
+
+/**
+ * Lo que el libro le cuenta al monitor.
+ *
+ * El libro no sabe de cuadrantes ni de cámaras: solo avisa qué pasó y qué
+ * quedó escrito. Quién enciende qué pantalla se decide fuera — así el libro
+ * sigue funcionando igual en un escenario que no tenga monitor.
+ */
+export interface EnlaceMonitor {
+  /** Un suceso acaba de ocurrir. */
+  alOcurrir(suceso: SucesoTurno): void;
+  /** La novedad quedó escrita: ya no está pendiente. */
+  alQuedarEscrita(suceso: SucesoTurno): void;
+}
+
+export function mostrarPantallaLibro(
+  scene: Scene,
+  onCompletado: () => void,
+  monitor: EnlaceMonitor
+): SesionLibro {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("pantallaLibro", true, scene);
 
   let estado: EstadoLibro = libroVacio();
-  /** Cuántos sucesos han ocurrido ya. Los ocurridos y no escritos son pendientes. */
-  let sucesosLlegados = 0;
   const escritos = new Set<string>();
   let fiscalizacionHecha = false;
+
+  /** Cuántos sucesos han ocurrido ya. Los ocurridos y no escritos son pendientes. */
+  let sucesosLlegados = 0;
+
+  /**
+   * Qué pantalla está al frente.
+   *
+   * Interesa solo para saber si el libro está cerrado —el jugador se fue a
+   * mirar el monitor— y el clic sobre la tapa debe reabrirlo.
+   */
+  let pantallaActual: "libro" | "otra" | "cerrado" = "otra";
 
   let capaActual: Rectangle | null = null;
 
@@ -116,7 +157,8 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
     }
   }
 
-  function cerrarTodo(): void {
+  /** Quita de pantalla lo que esté al frente, sin tocar el estado. */
+  function desmontarCapa(): void {
     const velo = capaActual;
     capaActual = null;
     if (!velo) return;
@@ -131,6 +173,24 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
         }
       }, 0);
     });
+  }
+
+  /**
+   * Cierra el libro para volver al puesto.
+   *
+   * La sesión sigue viva: lo escrito, lo anulado y la hora del turno siguen
+   * donde estaban. El turno NO se pausa mientras el libro está cerrado —esa
+   * es la gracia, porque es entonces cuando se ve pasar algo por el monitor.
+   */
+  function cerrarPorAhora(): void {
+    pantallaActual = "cerrado";
+    desmontarCapa();
+  }
+
+  /** Cierra del todo. El turno se entregó y ya no hay a qué volver. */
+  function cerrarTodo(): void {
+    pantallaActual = "cerrado";
+    desmontarCapa();
   }
 
   /** Botón chico para las acciones de cada renglón. */
@@ -189,6 +249,15 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
 
   mostrarApertura();
 
+  return {
+    abrir() {
+      // Con el servicio ya entregado no hay libro al que volver, y con el
+      // libro ya en pantalla el clic sobre la tapa no debe apilar otra capa.
+      if (estado.cerrado || pantallaActual !== "cerrado") return;
+      mostrarLibro();
+    },
+  };
+
   // ─── 00:00 · La cabecera ────────────────────────────────────────────────
   //
   // No es un trámite: el manual dedica media página al formato, y abrir mal
@@ -196,6 +265,7 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
   // por campo, con los nombres que usa el manual, y se escribe entera como
   // párrafo 1.
   function mostrarApertura(): void {
+    pantallaActual = "otra";
     const { velo, tarjeta, columna } = armarCapa("Apertura", 560, PALETA.aviso);
 
     columna.addControl(crearRotulo("rotuloApertura", "00:00 · INICIO DEL SERVICIO"));
@@ -287,6 +357,8 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
   // turno, se anota una novedad pendiente, se anula una constancia o se
   // intenta borrarla.
   function mostrarLibro(): void {
+    pantallaActual = "libro";
+
     const ALTO = 640;
     const { velo, tarjeta } = armarCapa("Libro", ALTO, PALETA.aviso);
 
@@ -386,9 +458,14 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
       zona.addControl(crearEspacio("airePendientes", 8));
 
       pendientes.forEach((suceso) => {
+        // Si el suceso se ve por cámara se dice cuál. Es la pista que conecta
+        // el libro con el monitor: sin ella el jugador no tiene por qué
+        // sospechar que ahí fuera hay algo que mirar.
+        const toma = CAMARAS_POR_SUCESO[suceso.id];
+        const pista = toma ? `  ·  CAM 0${toma.indice + 1}` : "";
         const boton = crearBotonSecundario(
           `btnPendiente_${suceso.id}`,
-          `${horaDe(suceso.minuto)}  ·  ${suceso.actividad}`,
+          `${horaDe(suceso.minuto)}  ·  ${suceso.actividad}${pista}`,
           ANCHO_CONTENIDO
         );
         if (boton.textBlock) {
@@ -401,9 +478,18 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
       });
     }
 
-    botonAbajo(tarjeta, "btnAvanzar", textoAvanzar(), 260).onPointerUpObservable.add(() =>
-      avanzar()
-    );
+    const btnAvanzar = botonAbajo(tarjeta, "btnAvanzar", textoAvanzar(), 260);
+    btnAvanzar.onPointerUpObservable.add(() => avanzar());
+
+    // Salir al puesto. Es la pieza que hace utilizable el monitor: sin esto
+    // el libro tapa la escena de punta a punta y las cámaras no las ve nadie.
+    const btnPuesto = crearBotonSecundario("btnVolverPuesto", "Volver al puesto", 200);
+    btnPuesto.left = MARGEN + "px";
+    btnPuesto.top = "-24px";
+    btnPuesto.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    btnPuesto.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    tarjeta.addControl(btnPuesto);
+    btnPuesto.onPointerUpObservable.add(() => cerrarPorAhora());
 
     desvanecer(velo, 0, 1, 160);
     reemplazarCapa(velo);
@@ -417,7 +503,11 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
 
   function avanzar(): void {
     if (sucesosLlegados < SUCESOS_CONDOMINIO.length) {
+      const suceso = SUCESOS_CONDOMINIO[sucesosLlegados];
       sucesosLlegados += 1;
+      // El monitor se entera antes de que se pinte el libro: si el suceso se
+      // ve por cámara, ya está encendido cuando el jugador salga a mirarlo.
+      monitor.alOcurrir(suceso);
       mostrarLibro();
       return;
     }
@@ -568,6 +658,7 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
 
   // ─── Un suceso: tres formas de anotarlo, cero comentarios ───────────────
   function mostrarSuceso(suceso: SucesoTurno): void {
+    pantallaActual = "otra";
     // El alto sale del texto real, con la MISMA cuenta que usa crearBotonOpcion
     // por dentro (sangría 62 + 20 de aire, mínimo 60, más 30 de relleno). Si las
     // dos cuentas se separan, o la tarjeta corta la última opción o queda un
@@ -610,6 +701,8 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
         // Se escribe y se vuelve al libro. Nada más: ni marca, ni explicación.
         estado = registrar(estado, suceso, opcion);
         escritos.add(suceso.id);
+        // La cámara vuelve a la calma: lo que mostraba ya está en el libro.
+        monitor.alQuedarEscrita(suceso);
         mostrarLibro();
       });
       columna.addControl(boton);
@@ -651,6 +744,7 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
   // Aquí sale todo lo que entró en silencio. El párrafo ya quedó escrito en el
   // libro antes de mostrar esta pantalla; lo que se ve acá son los reparos.
   function mostrarFiscalizacion(): void {
+    pantallaActual = "otra";
     const faltas = revisionDelSupervisor(estado);
     const alto = Math.min(620, 320 + faltas.length * 96);
     const { velo, tarjeta, columna } = armarCapa(
@@ -735,6 +829,7 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
 
   // ─── 08:00 · La entrega ─────────────────────────────────────────────────
   function mostrarEntrega(): void {
+    pantallaActual = "otra";
     const inventario = new Set<string>();
     let parrafoCitado = 1;
 
@@ -890,6 +985,7 @@ export function mostrarPantallaLibro(scene: Scene, onCompletado: () => void): vo
 
   // ─── El informe del turno ───────────────────────────────────────────────
   function mostrarInformeFinal(): void {
+    pantallaActual = "otra";
     const { nota, faltas } = calificar(estado);
     const alto = Math.min(620, 300 + faltas.length * 96);
     const { velo, tarjeta, columna } = armarCapa(
