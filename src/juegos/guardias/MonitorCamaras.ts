@@ -102,6 +102,16 @@ export interface MonitorCamaras {
   encender(id: string, indice: number, escena: EscenaCamara, minuto: number): void;
   /** Apaga la toma de ese suceso. Se llama cuando la novedad queda escrita. */
   apagar(id: string): void;
+  /**
+   * Pone las cámaras en hora con el turno.
+   *
+   * Antes cada cuadrante llevaba su propia cuenta desde que se encendía, así
+   * que dos cámaras encendidas a distinta hora marcaban horas distintas. Ahora
+   * la hora la manda el reloj del turno, que es lo correcto: un CCTV tiene un
+   * solo reloj. Y de paso, estando en el puesto con el libro cerrado, esa
+   * marca es el ÚNICO sitio donde el jugador puede ver qué hora es.
+   */
+  ajustarHora(minuto: number): void;
 }
 
 export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
@@ -219,10 +229,16 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
 
   /** La marca de hora, como la escribiría una cámara: hh:mm:ss. */
   function marcaDeHora(): string {
-    const total = Math.max(0, minutoBase + segundosEnBase / 60);
+    // Hora y minuto los manda el reloj del TURNO; los segundos corren en tiempo
+    // real. Suena contradictorio y es a propósito: el turno va comprimido, así
+    // que un minuto de servicio dura una fracción de segundo real. Sacando los
+    // segundos del mismo sitio, el contador se quedaría clavado en 00 y la
+    // marca parecería rota. Nadie cuadra los segundos de un CCTV contra su
+    // minutero; lo que sí se nota es un reloj que no se mueve.
+    const total = Math.max(0, minutoBase);
     const h = Math.floor(total / 60) % 24;
     const m = Math.floor(total) % 60;
-    const s = Math.floor((total % 1) * 60);
+    const s = Math.floor(segundos) % 60;
     return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
   }
 
@@ -292,6 +308,9 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
 
   return {
     material,
+    ajustarHora(minuto) {
+      minutoBase = minuto;
+    },
     encender(id, indice, escena, minuto) {
       minutoBase = minuto;
       segundosEnBase = 0;

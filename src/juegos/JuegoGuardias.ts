@@ -1,6 +1,7 @@
 import { Scene } from "@babylonjs/core";
 import { mostrarMenuPrincipal, type NivelMenuInfo } from "../ui/MainMenu";
 import { GameManager } from "../core/GameManager";
+import { estaAprobado } from "./guardias/HistorialTurnos";
 import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
 
 // ===========================================================================
@@ -78,6 +79,10 @@ const ESCENARIOS: NivelMenuInfo[] = [
 /**
  * Escenarios de guardias ya terminados, en esta sesión.
  *
+ * OBSOLETO: lo reemplazó el historial de turnos, que sí sobrevive a recargar
+ * la página. Se deja el comentario porque explica por qué el progreso de este
+ * curso no vive en GameManager, que sigue siendo cierto.
+ *
  * ─── POR QUÉ NO USA GameManager ───────────────────────────────────────────
  *
  * Porque GameManager guarda los niveles completados en un único Set de
@@ -90,6 +95,7 @@ const ESCENARIOS: NivelMenuInfo[] = [
  * curso — y mientras haya un solo escenario jugable casi no se nota.
  */
 const escenariosCompletados = new Set<number>();
+void escenariosCompletados;
 
 /**
  * Abre el menú del curso.
@@ -107,9 +113,16 @@ export function abrirMenuGuardias(
 ): void {
   const gameManager = GameManager.getInstance();
 
+  // Sin nombre no hay a quién guardarle el turno. "invitado" mantiene el juego
+  // utilizable —se puede jugar y ver la nota— pero deja el historial en un
+  // cajón compartido, que es exactamente lo que es.
+  const quienJuega = usuario?.trim() || "invitado";
+
   const escenarios = ESCENARIOS.map((e) => ({
     ...e,
-    completado: escenariosCompletados.has(e.numero),
+    // Del historial guardado, no de una variable que se pierde al recargar. Y
+    // aprobado no es lo mismo que jugado: hace falta la nota mínima.
+    completado: estaAprobado(quienJuega, e.numero),
   }));
 
   mostrarMenuPrincipal(
@@ -126,8 +139,9 @@ export function abrirMenuGuardias(
       // haciendo clic sobre él, se recorre el turno de 00:00 a 08:00 y se
       // cierra con el informe del supervisor.
       if (numero === 1) {
-        crearPuestoConserjeria(scene, () => {
-          escenariosCompletados.add(1);
+        crearPuestoConserjeria(scene, quienJuega, () => {
+          // No se marca nada acá: el turno ya quedó registrado al entregarlo,
+          // con su nota y sus faltas. Al volver, el menú lo lee del historial.
           abrirMenuGuardias(scene, onVolverAlPortal, usuario);
         });
         return;

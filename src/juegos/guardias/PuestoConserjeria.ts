@@ -10,6 +10,7 @@ import {
   PointLight,
   SpotLight,
   Mesh,
+  TransformNode,
   Plane,
   MirrorTexture,
   ReflectionProbe,
@@ -23,6 +24,7 @@ import {
   type IWheelEvent,
 } from "@babylonjs/core";
 import { mostrarPantallaLibro, type SesionLibro } from "./PantallaLibro";
+import { crearFigura, UNIFORME_SUPERVISOR, ROPA_RESIDENTE } from "./Figura";
 import { crearMonitorCamaras, type MonitorCamaras } from "./MonitorCamaras";
 import { CAMARAS_POR_SUCESO } from "./SucesosCondominio";
 import { materialPintado, materialPintadoNitido } from "../../entities/ObjetosComunes";
@@ -138,7 +140,11 @@ export interface PuestoResult {
   avisarRadio: (encendido: boolean) => void;
 }
 
-export function crearPuestoConserjeria(scene: Scene, onLibroCompletado?: () => void): PuestoResult {
+export function crearPuestoConserjeria(
+  scene: Scene,
+  usuario: string,
+  onLibroCompletado?: () => void
+): PuestoResult {
   configurarEscenaNocturna(scene);
   const camara = montarCamara(scene);
 
@@ -154,27 +160,65 @@ export function crearPuestoConserjeria(scene: Scene, onLibroCompletado?: () => v
   // sería un viaje de ida —abrir el libro y no poder volver al puesto—, y el
   // monitor no lo miraría nadie nunca.
   let libro: SesionLibro | null = null;
+  // El supervisor se monta más abajo, cuando ya existe la puerta por la que
+  // tiene que entrar. Para cuando alguien haga clic en el libro ya está.
+  let supervisor: Supervisor | null = null;
+  let residentes: Residentes | null = null;
+
   construirLibro(scene, () => {
     if (libro) {
       libro.abrir();
       return;
     }
-    libro = mostrarPantallaLibro(scene, () => onLibroCompletado?.(), {
-      // Traducir de sucesos a cuadrantes es cosa de acá: el libro no sabe
-      // que existe un monitor, y un escenario sin cámaras pasaría un enlace
-      // vacío sin tocar una línea del libro.
-      alOcurrir(suceso) {
-        const toma = CAMARAS_POR_SUCESO[suceso.id];
-        if (toma) monitor.encender(suceso.id, toma.indice, toma.escena, suceso.minuto);
+    libro = mostrarPantallaLibro(
+      scene,
+      () => onLibroCompletado?.(),
+      {
+        // Traducir de sucesos a cuadrantes es cosa de acá: el libro no sabe
+        // que existe un monitor, y un escenario sin cámaras pasaría un enlace
+        // vacío sin tocar una línea del libro.
+        alOcurrir(suceso) {
+          const toma = CAMARAS_POR_SUCESO[suceso.id];
+          if (toma) monitor.encender(suceso.id, toma.indice, toma.escena, suceso.minuto);
+        },
+        alQuedarEscrita(suceso) {
+          monitor.apagar(suceso.id);
+        },
       },
-      alQuedarEscrita(suceso) {
-        monitor.apagar(suceso.id);
+      {
+        llegaSupervisor(alPlantarse) {
+          // Si por lo que sea no hay figura montada, el libro no se queda
+          // colgado esperando a alguien que no va a entrar nunca: se muestran
+          // los reparos igual. Una sala mal montada puede verse fea; no puede
+          // dejar el turno sin poder terminarse.
+          if (!supervisor) {
+            alPlantarse();
+            return;
+          }
+          supervisor.llegar(alPlantarse);
+        },
+        seRetiraSupervisor() {
+          supervisor?.retirarse();
+        },
+        alAvanzarMinuto(minuto) {
+          residentes?.enMinuto(minuto);
+          // Las cámaras marcan la hora del turno, no una suya. Es el único
+          // reloj que el jugador tiene a la vista estando en el puesto.
+          monitor.ajustarHora(minuto);
+        },
       },
-    });
+      usuario
+    );
   });
   construirTablaDeClaves(scene);
   construirSala(scene);
   construirHallYVentanal(scene);
+  const puerta = construirPuertaHall(scene);
+  // Antes de las sombras y de los reflejos, para que la figura entre en las dos
+  // listas: proyecta sombra sobre el piso y se refleja en él como todo lo demás.
+  supervisor = montarSupervisor(scene, camara, puerta);
+  const ascensor = construirAscensor(scene);
+  residentes = montarResidentes(scene, puerta, ascensor);
   construirLuminarias(scene);
   const flexo = construirFlexo(scene);
 
@@ -1296,15 +1340,52 @@ function construirHallYVentanal(scene: Scene): void {
   const matMuro = scene.getMaterialByName("matMuroHall") as PBRMaterial;
 
   // Muro del fondo con el hueco del ventanal.
-  [-1, 1].forEach((lado) => {
-    const paño = MeshBuilder.CreateBox(
-      `MuroFondoHall_${lado}`,
-      { width: 3.4, height: 3.2, depth: 0.18 },
+  // Paño izquierdo, partido para dejar el hueco del ascensor.
+  //
+  // Los residentes tienen que ir A ALGÚN SITIO. Antes caminaban hacia el muro
+  // lateral y se metían dentro de él: no había ascensor, ni puerta, ni nada —
+  // simplemente desaparecían atravesando la pared, que es de las cosas que más
+  // delatan que un escenario está a medio construir.
+  //
+  // Va en la pared del fondo y no en la lateral por una razón de encuadre: la
+  // cámara solo gira treinta y cinco grados a cada lado, y el muro lateral cae
+  // casi fuera de ese arco. Aquí, a la izquierda del ventanal, queda dentro de
+  // lo que el jugador puede mirar.
+  [
+    { nombre: "MuroFondoHall_-1", x: -4.275, ancho: 1.05, alto: 3.2, y: 1.6 },
+    { nombre: "JambaAscensorHall", x: -1.925, ancho: 1.05, alto: 3.2, y: 1.6 },
+    { nombre: "DintelAscensorHall", x: -3.1, ancho: 1.3, alto: 1.05, y: 2.675 },
+  ].forEach((p) => {
+    const pieza = MeshBuilder.CreateBox(
+      p.nombre,
+      { width: p.ancho, height: p.alto, depth: 0.18 },
       scene
     );
-    paño.position.set(lado * 3.1, 1.6, 4.6);
-    paño.material = matMuro;
-    paño.receiveShadows = true;
+    pieza.position.set(p.x, p.y, 4.6);
+    pieza.material = matMuro;
+    pieza.receiveShadows = true;
+  });
+
+  // Paño derecho, partido para dejar el vano de la puerta.
+  //
+  // Hasta ahora la sala no tenía por dónde entrar. Daba igual mientras no
+  // entrara nadie, pero el supervisor de las 03:20 tiene que aparecer por
+  // algún sitio, y aparecer de la nada en medio del hall es peor que no
+  // aparecer. Un hall de condominio tiene su puerta junto al ventanal, y esta
+  // está donde estaría.
+  [
+    { nombre: "JambaPuertaHall", x: 1.575, ancho: 0.35, alto: 3.2, y: 1.6 },
+    { nombre: "MuroFondoHall_1", x: 3.875, ancho: 1.85, alto: 3.2, y: 1.6 },
+    { nombre: "DintelPuertaHall", x: 2.35, ancho: 1.2, alto: 1.05, y: 2.675 },
+  ].forEach((p) => {
+    const pieza = MeshBuilder.CreateBox(
+      p.nombre,
+      { width: p.ancho, height: p.alto, depth: 0.18 },
+      scene
+    );
+    pieza.position.set(p.x, p.y, 4.6);
+    pieza.material = matMuro;
+    pieza.receiveShadows = true;
   });
 
   const dintel = MeshBuilder.CreateBox("MuroDintelHall", { width: 2.8, height: 0.9, depth: 0.18 }, scene);
@@ -1314,6 +1395,31 @@ function construirHallYVentanal(scene: Scene): void {
   const antepecho = MeshBuilder.CreateBox("MuroAntepechoHall", { width: 2.8, height: 0.9, depth: 0.18 }, scene);
   antepecho.position.set(0, 0.45, 4.6);
   antepecho.material = matMuro;
+
+  // Acera. Sin ella, al abrirse la puerta se ve el vacío detrás —y al
+  // supervisor de pie sobre nada mientras espera para entrar. También tapa el
+  // hueco que se veía por debajo del ventanal, donde el suelo del hall
+  // terminaba y empezaba el color de fondo.
+  const matAcera = new PBRMaterial("matAceraExterior", scene);
+  matAcera.albedoColor = new Color3(0.17, 0.17, 0.185);
+  matAcera.roughness = 0.88;
+  matAcera.metallic = 0;
+  matAcera.microSurfaceTexture = texturaGrano(scene, 0.3);
+
+  const acera = MeshBuilder.CreateGround(
+    "aceraExterior",
+    { width: 14, height: 4.2 },
+    scene
+  );
+  // A ras del hall, no un escalón por debajo.
+  //
+  // Un umbral con su peldaño sería más fiel, pero la figura que espera fuera
+  // para entrar apoya siempre en y = 0: con la acera hundida se quedaría
+  // flotando sobre ella, y eso se ve justo cuando la puerta se abre y se mira
+  // hacia allá. Vale más un suelo continuo que un detalle que delata al muñeco.
+  acera.position.set(0, 0, 6.5);
+  acera.material = matAcera;
+  acera.receiveShadows = true;
 
   // Cristal. Apenas visible, con un reflejo tenue: es lo que separa el adentro
   // del afuera sin tapar lo que pasa al otro lado.
@@ -1326,6 +1432,37 @@ function construirHallYVentanal(scene: Scene): void {
   const cristal = MeshBuilder.CreatePlane("cristalVentanal", { width: 2.8, height: 1.4 }, scene);
   cristal.position.set(0, 1.6, 4.52);
   cristal.material = matCristal;
+
+  // Marco del ventanal.
+  //
+  // Sin él, el hueco se leía como un rectángulo negro pegado a la pared y no
+  // como una ventana. Lo que convierte un agujero en ventana no es lo que se
+  // vea al otro lado —de noche, poco— sino el perfil que lo enmarca y el
+  // travesaño que lo parte: son las dos cosas que el ojo busca para
+  // reconocerlo.
+  const matMarcoVentanal = new PBRMaterial("matMarcoVentanal", scene);
+  matMarcoVentanal.albedoColor = new Color3(0.22, 0.23, 0.25);
+  matMarcoVentanal.roughness = 0.36;
+  matMarcoVentanal.metallic = 0.78;
+  matMarcoVentanal.albedoTexture = texturaMetalCepillado(scene);
+
+  [
+    { n: "marcoVentanalSup", w: 2.9, h: 0.09, x: 0, y: 2.34 },
+    { n: "marcoVentanalInf", w: 2.9, h: 0.09, x: 0, y: 0.86 },
+    { n: "marcoVentanalIzq", w: 0.09, h: 1.58, x: -1.45, y: 1.6 },
+    { n: "marcoVentanalDer", w: 0.09, h: 1.58, x: 1.45, y: 1.6 },
+    // Montante central. Es el que de verdad hace el trabajo: parte el hueco en
+    // dos hojas y le da escala a lo que hay detrás.
+    { n: "marcoVentanalCentro", w: 0.07, h: 1.5, x: 0, y: 1.6 },
+  ].forEach((p) => {
+    const m = MeshBuilder.CreateBox(
+      p.n,
+      { width: p.w, height: p.h, depth: 0.09 },
+      scene
+    );
+    m.position.set(p.x, p.y, 4.55);
+    m.material = matMarcoVentanal;
+  });
 
   // Calle: un plano lejano con la luz de una farola. No hay geometría detrás
   // porque no hace falta — de noche, desde dentro, no se ve más que eso.
@@ -1344,6 +1481,584 @@ function construirHallYVentanal(scene: Scene): void {
   );
   farola.diffuse = new Color3(1, 0.86, 0.62);
   farola.intensity = 26;
+}
+
+/**
+ * El ascensor del hall.
+ *
+ * Cabina, dos hojas correderas e indicador de piso. No es adorno: es el sitio
+ * al que van los residentes, y hasta que existió no tenían ninguno — cruzaban
+ * el hall y se metían dentro del muro.
+ *
+ * ─── POR QUÉ HAY CABINA Y NO SOLO UNAS PUERTAS ────────────────────────────
+ *
+ * Porque una figura que se apaga justo en el plano de la puerta se ve tan mal
+ * como una que atraviesa la pared. Con la cabina detrás, el residente ENTRA,
+ * se queda dentro, las hojas se cierran y recién entonces deja de dibujarse.
+ * Ya no desaparece: se va, que es distinto.
+ *
+ * La cabina es una caja cerrada con su plafón encendido dentro. Cuesta seis
+ * planos y es lo que se ve cada vez que las puertas se abren.
+ */
+interface Ascensor {
+  pedirAbierto(quien: string): void;
+  soltar(quien: string): void;
+  /** Delante de las puertas, en el hall. */
+  readonly frente: Vector3;
+  /** Dentro de la cabina. */
+  readonly dentro: Vector3;
+}
+
+function construirAscensor(scene: Scene): Ascensor {
+  const X = -3.1;
+  const ANCHO = 1.3;
+  const ALTO = 2.15;
+  /** Cara interior del muro del fondo. */
+  const Z_MURO = 4.69;
+  const FONDO_CABINA = 5.5;
+
+  const matAcero = new PBRMaterial("matAceroAscensor", scene);
+  matAcero.albedoColor = new Color3(0.34, 0.35, 0.37);
+  matAcero.roughness = 0.3;
+  matAcero.metallic = 0.85;
+  matAcero.albedoTexture = texturaMetalCepillado(scene);
+
+  const matCabina = new PBRMaterial("matCabinaAscensor", scene);
+  matCabina.albedoColor = new Color3(0.2, 0.2, 0.22);
+  matCabina.roughness = 0.42;
+  matCabina.metallic = 0.35;
+
+  // --- Cabina ---------------------------------------------------------------
+  const centroZ = (Z_MURO + FONDO_CABINA) / 2;
+  const hondo = FONDO_CABINA - Z_MURO;
+  [
+    { n: "cabinaFondoHall", w: ANCHO, h: ALTO, d: 0.06, x: X, y: ALTO / 2, z: FONDO_CABINA },
+    { n: "cabinaIzqHall", w: 0.06, h: ALTO, d: hondo, x: X - ANCHO / 2, y: ALTO / 2, z: centroZ },
+    { n: "cabinaDerHall", w: 0.06, h: ALTO, d: hondo, x: X + ANCHO / 2, y: ALTO / 2, z: centroZ },
+    { n: "cabinaTechoHall", w: ANCHO, h: 0.06, d: hondo, x: X, y: ALTO, z: centroZ },
+    { n: "cabinaSueloHall", w: ANCHO, h: 0.04, d: hondo, x: X, y: 0.02, z: centroZ },
+  ].forEach((p) => {
+    const m = MeshBuilder.CreateBox(p.n, { width: p.w, height: p.h, depth: p.d }, scene);
+    m.position.set(p.x, p.y, p.z);
+    m.material = matCabina;
+    m.receiveShadows = true;
+  });
+
+  // Plafón de la cabina. Es emisivo y no una lámpara de verdad: la escena ya
+  // lleva seis luces y esta se ve dos veces en todo el turno.
+  const matPlafon = new PBRMaterial("matPlafonAscensor", scene);
+  matPlafon.albedoColor = new Color3(0, 0, 0);
+  matPlafon.emissiveColor = new Color3(0.95, 0.92, 0.84);
+  matPlafon.roughness = 1;
+  const plafon = MeshBuilder.CreateGround(
+    "cabinaPlafonHall",
+    { width: ANCHO - 0.24, height: hondo - 0.24 },
+    scene
+  );
+  plafon.position.set(X, ALTO - 0.05, centroZ);
+  plafon.rotation.z = Math.PI;
+  plafon.material = matPlafon;
+
+  // --- Marco ----------------------------------------------------------------
+  [
+    { n: "marcoAscIzqHall", w: 0.08, h: ALTO + 0.08, d: 0.1, x: X - ANCHO / 2 - 0.04, y: ALTO / 2 },
+    { n: "marcoAscDerHall", w: 0.08, h: ALTO + 0.08, d: 0.1, x: X + ANCHO / 2 + 0.04, y: ALTO / 2 },
+    { n: "marcoAscSupHall", w: ANCHO + 0.16, h: 0.08, d: 0.1, x: X, y: ALTO + 0.04 },
+  ].forEach((p) => {
+    const m = MeshBuilder.CreateBox(p.n, { width: p.w, height: p.h, depth: p.d }, scene);
+    m.position.set(p.x, p.y, 4.64);
+    m.material = matAcero;
+  });
+
+  // Indicador de piso: la flecha que se enciende cuando el ascensor llega.
+  const matIndicador = new PBRMaterial("matIndicadorAscensor", scene);
+  matIndicador.albedoColor = new Color3(0, 0, 0);
+  matIndicador.emissiveColor = new Color3(0.12, 0.12, 0.14);
+  matIndicador.roughness = 1;
+  const indicador = MeshBuilder.CreatePlane(
+    "indicadorAscensorHall",
+    { width: 0.16, height: 0.1 },
+    scene
+  );
+  indicador.position.set(X, ALTO + 0.2, 4.58);
+  indicador.rotation.y = Math.PI;
+  indicador.material = matIndicador;
+
+  // --- Hojas ----------------------------------------------------------------
+  //
+  // Van detrás de la cara del muro. Al abrirse se meten por detrás de los
+  // paños de pared, que es donde se esconden las de verdad: sin ese retranqueo
+  // se verían deslizarse por delante de la pared como dos placas sueltas.
+  const hojas = [-1, 1].map((lado) => {
+    const hoja = MeshBuilder.CreateBox(
+      `hojaAscensorHall_${lado > 0 ? "d" : "i"}`,
+      { width: ANCHO / 2, height: ALTO, depth: 0.05 },
+      scene
+    );
+    hoja.position.set(X + (lado * ANCHO) / 4, ALTO / 2, 4.7);
+    hoja.material = matAcero;
+    return { malla: hoja, lado, cerrada: X + (lado * ANCHO) / 4 };
+  });
+
+  const RECORRIDO = ANCHO / 2 + 0.04;
+  let abierto = 0;
+  const pidiendo = new Set<string>();
+
+  scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
+    const objetivo = pidiendo.size > 0 ? 1 : 0;
+    const resto = objetivo - abierto;
+    if (Math.abs(resto) > 0.001) {
+      // Las puertas de ascensor van lentas y parejas, sin acelerón ni frenazo.
+      abierto += Math.sign(resto) * Math.min(Math.abs(resto), dt * 0.9);
+      hojas.forEach((h) => {
+        h.malla.position.x = h.cerrada + h.lado * RECORRIDO * abierto;
+      });
+    }
+    // El indicador acompaña a la puerta: encendido con ella abierta.
+    matIndicador.emissiveColor.set(
+      0.12 + abierto * 0.7,
+      0.12 + abierto * 0.62,
+      0.14 + abierto * 0.2
+    );
+  });
+
+  return {
+    pedirAbierto(quien) {
+      pidiendo.add(quien);
+    },
+    soltar(quien) {
+      pidiendo.delete(quien);
+    },
+    frente: new Vector3(X, 0, 3.85),
+    dentro: new Vector3(X, 0, 5.05),
+  };
+}
+
+/**
+ * La puerta de acceso al hall.
+ *
+ * Hoja acristalada con marco de aluminio, de las que lleva cualquier
+ * condominio: perfil delgado, travesaño a media altura, tirador vertical
+ * largo y brazo cierrapuertas arriba.
+ *
+ * ─── POR QUÉ GIRA SOBRE UN NODO Y NO SOBRE SÍ MISMA ───────────────────────
+ *
+ * Una malla gira alrededor de su centro, y una puerta que gira sobre su centro
+ * atraviesa el muro con medio batiente. El eje va en un nodo colocado sobre el
+ * gozne, y la hoja cuelga de él desplazada media hoja: así el borde del gozne
+ * se queda quieto y el resto barre, que es lo que hace una puerta.
+ *
+ * Abre hacia DENTRO, que es como abren las puertas de hall — hacia fuera darían
+ * en la vereda.
+ */
+export interface PuertaHall {
+  /** Pide que se abra y la mantiene abierta hasta que ese mismo soltar(). */
+  pedirAbierta(quien: string): void;
+  soltar(quien: string): void;
+}
+
+function construirPuertaHall(scene: Scene): PuertaHall {
+  const ANCHO = 1.2;
+  const ALTO = 2.15;
+  const X_GOZNE = 2.95;
+
+  const eje = new TransformNode("ejePuertaHall", scene);
+  eje.position.set(X_GOZNE, 0, 4.6);
+
+  const matPerfil = new PBRMaterial("matPerfilPuerta", scene);
+  matPerfil.albedoColor = new Color3(0.2, 0.21, 0.23);
+  matPerfil.roughness = 0.34;
+  matPerfil.metallic = 0.82;
+  matPerfil.albedoTexture = texturaMetalCepillado(scene);
+
+  const matVidrio = new PBRMaterial("matVidrioPuerta", scene);
+  matVidrio.albedoColor = new Color3(0.05, 0.06, 0.08);
+  matVidrio.roughness = 0.06;
+  matVidrio.metallic = 0.55;
+  matVidrio.alpha = 0.3;
+
+  // El cristal, colgando del eje desplazado media hoja hacia dentro.
+  const cristal = MeshBuilder.CreateBox(
+    "cristalPuertaHall",
+    { width: ANCHO - 0.1, height: ALTO - 0.12, depth: 0.012 },
+    scene
+  );
+  cristal.position.set(-ANCHO / 2, ALTO / 2, 0);
+  cristal.material = matVidrio;
+  cristal.parent = eje;
+
+  // Marco: cuatro perfiles y un travesaño. El travesaño importa más de lo que
+  // parece — es lo que impide que la hoja se lea como una lámina de vidrio
+  // suelta y la convierte en una puerta.
+  const perfiles: [number, number, number, number][] = [
+    [-ANCHO / 2, ALTO - 0.03, ANCHO, 0.06],
+    [-ANCHO / 2, 0.03, ANCHO, 0.06],
+    [-0.03, ALTO / 2, 0.06, ALTO],
+    [-ANCHO + 0.03, ALTO / 2, 0.06, ALTO],
+    [-ANCHO / 2, 0.98, ANCHO, 0.09],
+  ];
+  perfiles.forEach(([x, y, ancho, alto], i) => {
+    const p = MeshBuilder.CreateBox(
+      `perfilPuertaHall_${i}`,
+      { width: ancho, height: alto, depth: 0.05 },
+      scene
+    );
+    p.position.set(x, y, 0);
+    p.material = matPerfil;
+    p.parent = eje;
+  });
+
+  // Tirador vertical, del lado opuesto al gozne.
+  const tirador = MeshBuilder.CreateCylinder(
+    "tiradorPuertaHall",
+    { diameter: 0.03, height: 0.85, tessellation: 12 },
+    scene
+  );
+  tirador.position.set(-ANCHO + 0.11, 1.05, -0.055);
+  tirador.material = matPerfil;
+  tirador.parent = eje;
+
+  // Brazo del cierrapuertas. Va fijo al muro, no a la hoja: no gira con ella.
+  const brazo = MeshBuilder.CreateBox(
+    "cierraPuertaHall",
+    { width: 0.26, height: 0.05, depth: 0.05 },
+    scene
+  );
+  brazo.position.set(X_GOZNE - 0.2, ALTO + 0.02, 4.52);
+  brazo.material = matPerfil;
+
+  // --- Apertura -------------------------------------------------------------
+  //
+  // Se guarda el ángulo al que se quiere llegar y cada cuadro se acerca un
+  // poco. Es un cierrapuertas hidráulico: nunca da un golpe, siempre llega
+  // frenando. Y como es una interpolación y no una animación con duración
+  // fija, pedirle que cierre a mitad de la apertura no la hace saltar.
+  let objetivo = 0;
+  const ABIERTA = -1.35;
+
+  scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
+    const resto = objetivo - eje.rotation.y;
+    if (Math.abs(resto) < 0.002) {
+      eje.rotation.y = objetivo;
+      return;
+    }
+    // Abre más rápido de lo que cierra, como el muelle de verdad.
+    const rapidez = objetivo < eje.rotation.y ? 5.5 : 2.6;
+    eje.rotation.y += resto * Math.min(1, dt * rapidez);
+  });
+
+  // ─── QUIÉN LA TIENE ABIERTA ───────────────────────────────────────────
+  //
+  // Se lleva la cuenta de quién la está pidiendo, no un simple abierta/cerrada.
+  // Por el hall pasan el supervisor y los residentes, y con un interruptor
+  // suelto el primero que terminara de cruzar cerraría la puerta en las
+  // narices del que venía detrás. Con la cuenta, la hoja se cierra cuando la
+  // ha soltado el último.
+  const pidiendo = new Set<string>();
+  const revisar = (): void => {
+    objetivo = pidiendo.size > 0 ? ABIERTA : 0;
+  };
+
+  return {
+    pedirAbierta(quien) {
+      pidiendo.add(quien);
+      revisar();
+    },
+    soltar(quien) {
+      pidiendo.delete(quien);
+      revisar();
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Los residentes
+// ---------------------------------------------------------------------------
+
+/**
+ * Gente que entra y sale del condominio durante el turno.
+ *
+ * ─── POR QUÉ HACEN FALTA ──────────────────────────────────────────────────
+ *
+ * Porque un hall vacío ocho horas seguidas no es un condominio, es un
+ * decorado. Y sobre todo porque el conserje no está solo en un edificio
+ * abandonado: está en un sitio donde vive gente que llega tarde, que sale a
+ * trabajar de madrugada y que pasa por delante del mesón. Esa es la mitad del
+ * trabajo que el manual describe —control de acceso— aunque en este escenario
+ * todavía no haya que anotarlos.
+ *
+ * ─── DÓNDE CAEN EN EL TURNO, Y POR QUÉ AHÍ ────────────────────────────────
+ *
+ * En los huecos. El turno tiene dos tramos largos sin ninguna novedad: de la
+ * 01:30 a la fiscalización de las 03:20, y de ahí a las 08:00. Son las horas
+ * muertas de cualquier turno de noche, y son también donde el jugador estaría
+ * mirando una sala quieta sin nada que hacer.
+ *
+ * Los residentes las llenan sin inventarse nada: los que llegan tarde a casa
+ * caen en la primera parte de la noche, y los que salen a trabajar entre las
+ * 06:30 y las 07:35, que es cuando sale la gente a trabajar de verdad. La hora
+ * muerta se llena con lo que de hecho pasa a esa hora.
+ *
+ * Y NINGUNO cruza cerca de las 03:20. No es casualidad: el hall tiene que
+ * estar despejado cuando entra el supervisor, porque ese momento es el que
+ * carga todo el peso del nivel y no puede competir con nadie.
+ */
+export interface Residentes {
+  /** El turno avanzó un minuto. Decide si a alguien le toca cruzar. */
+  enMinuto(minuto: number): void;
+}
+
+interface Cruce {
+  minuto: number;
+  /** Cuál de los vecinos. Índice en VECINOS. */
+  vecino: number;
+  /** Entrar desde la calle, o salir del edificio hacia la calle. */
+  sentido: "entra" | "sale";
+}
+
+/**
+ * Los vecinos del edificio.
+ *
+ * Son personas fijas, no combinaciones al azar. El color de la ropa y la
+ * estatura se cuecen al construir la malla, así que no se pueden cambiar a
+ * mitad de partida: intentarlo daría un horario que dice una cosa y una figura
+ * que se ve de otra.
+ *
+ * Y tiene sentido que sean fijos. En un condominio se repite la misma gente:
+ * quien sale a trabajar a las seis y media es el mismo que ayer, y el conserje
+ * lo conoce. Que el jugador reconozca a alguien que ya vio entrar de madrugada
+ * vale más que tener veinte desconocidos distintos.
+ */
+const VECINOS = [
+  { paleta: 0, altura: 1.72, velocidad: 1.12 },
+  { paleta: 1, altura: 1.63, velocidad: 1.02 },
+  { paleta: 2, altura: 1.8, velocidad: 1.24 },
+  { paleta: 3, altura: 1.58, velocidad: 0.96 },
+];
+
+const CRUCES: Cruce[] = [
+  // Primera parte de la noche: los que vuelven a casa.
+  { minuto: 12, vecino: 0, sentido: "entra" },
+  { minuto: 52, vecino: 1, sentido: "entra" },
+  { minuto: 118, vecino: 2, sentido: "entra" },
+  // Madrugada: los que salen a trabajar. El 0 y el 2 son los mismos que
+  // volvieron de noche; el 3 no se le vio entrar, y tampoco hace falta —
+  // llevaba en casa desde antes de que empezara el turno.
+  { minuto: 388, vecino: 3, sentido: "sale" },
+  { minuto: 424, vecino: 0, sentido: "sale" },
+  { minuto: 451, vecino: 2, sentido: "sale" },
+];
+
+function montarResidentes(
+  scene: Scene,
+  puerta: PuertaHall,
+  ascensor: Ascensor
+): Residentes {
+  // Recorrido: la calle, el umbral, el cruce por delante del mesón y el
+  // ascensor. Cada punto es un sitio que EXISTE en la escena y que el jugador
+  // puede mirar. Nadie se desvanece contra una pared.
+  const CALLE = new Vector3(2.35, 0, 6.2);
+  const UMBRAL = new Vector3(2.35, 0, 4.15);
+  const CRUCE = new Vector3(0.5, 0, 3.1);
+
+  const vecinos = VECINOS.map((v, i) => ({
+    figura: crearFigura(scene, `vecino${i}`, {
+      paleta: ROPA_RESIDENTE[v.paleta],
+      altura: v.altura,
+    }),
+    velocidad: v.velocidad,
+    ocupado: false,
+  }));
+
+  function cruzar(cruce: Cruce): void {
+    const vecino = vecinos[cruce.vecino];
+    // Si ese vecino todavía está cruzando —solo puede pasar adelantando mucho
+    // el turno— sencillamente no sale otra vez. Vale más un residente de menos
+    // que el mismo hombre duplicado a media sala.
+    if (!vecino || vecino.ocupado) return;
+
+    vecino.ocupado = true;
+    const { figura, velocidad } = vecino;
+    const clave = `vecino_${cruce.vecino}`;
+
+    const terminar = (): void => {
+      figura.visible(false);
+      puerta.soltar(clave);
+      ascensor.soltar(clave);
+      vecino.ocupado = false;
+    };
+
+    figura.visible(true);
+
+    if (cruce.sentido === "entra") {
+      puerta.pedirAbierta(clave);
+      figura.situar(CALLE, UMBRAL);
+      // Un momento entre que la hoja empieza a abrirse y el residente cruza el
+      // vano. Sin esa pausa lo atraviesa cuando todavía está en medio.
+      setTimeout(() => {
+        figura.caminar([UMBRAL], velocidad, () => {
+          // Ya está dentro: la puerta de calle se suelta y se cierra detrás.
+          puerta.soltar(clave);
+          figura.caminar([CRUCE], velocidad, () => {
+            // El ascensor se pide al llegar al cruce, no al final: le da tiempo
+            // a abrirse mientras el residente recorre los últimos metros, igual
+            // que quien llama al ascensor desde lejos.
+            ascensor.pedirAbierto(clave);
+            figura.caminar([ascensor.frente, ascensor.dentro], velocidad, () => {
+              figura.mirarHacia(new Vector3(ascensor.dentro.x, 0, 0));
+              // Las puertas se cierran con él dentro, y recién entonces se deja
+              // de dibujar. No desaparece: se va.
+              ascensor.soltar(clave);
+              setTimeout(terminar, 1600);
+            });
+          });
+        });
+      }, 420);
+      return;
+    }
+
+    // Sale: aparece dentro de la cabina, con las puertas ya abriéndose.
+    ascensor.pedirAbierto(clave);
+    figura.situar(ascensor.dentro, ascensor.frente);
+    setTimeout(() => {
+      figura.caminar([ascensor.frente, CRUCE], velocidad, () => {
+        ascensor.soltar(clave);
+        // Se pide la puerta de calle AL LLEGAR al cruce, por lo mismo.
+        puerta.pedirAbierta(clave);
+        figura.caminar([UMBRAL, CALLE], velocidad, terminar);
+      });
+    }, 900);
+  }
+
+  let siguiente = 0;
+
+  return {
+    enMinuto(minuto) {
+      // Se recorre hacia delante y nunca hacia atrás: con el turno adelantado
+      // pueden vencer varios minutos de golpe, y ninguno debe perderse ni
+      // repetirse.
+      while (siguiente < CRUCES.length && CRUCES[siguiente].minuto <= minuto) {
+        cruzar(CRUCES[siguiente]);
+        siguiente += 1;
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// La visita de las 03:20
+// ---------------------------------------------------------------------------
+
+/**
+ * El supervisor entra, camina hasta el mesón y después se va.
+ *
+ * ─── POR QUÉ ESTO NO PODÍA SER UN PANEL ───────────────────────────────────
+ *
+ * La fiscalización es el momento del nivel: es cuando todo lo que el jugador
+ * escribió mal en silencio sale a la luz. Hasta ahora llegaba como un cartel
+ * que aparecía encima del libro, y un cartel no llega: se muestra. La
+ * diferencia entre las dos cosas es la diferencia entre que te fiscalicen y
+ * que te avisen de que te fiscalizaron.
+ *
+ * ─── Y POR QUÉ EL LIBRO SE APARTA ─────────────────────────────────────────
+ *
+ * Porque el libro ocupa la pantalla entera sobre un velo opaco. Si el
+ * supervisor caminara con el libro abierto, caminaría detrás de una cortina y
+ * no lo vería nadie. Así que el orden es: se cierra el libro, se ve entrar al
+ * supervisor, y el panel de reparos aparece cuando ya está delante del mesón.
+ * Cuando se cierra el panel, se le ve irse.
+ *
+ * ─── LA CÁMARA GIRA SOLA, Y SE DEVUELVE ───────────────────────────────────
+ *
+ * El jugador podría estar mirando la radio cuando se abre la puerta y perderse
+ * la entrada entera. Durante la secuencia el control del ratón se suelta y la
+ * cámara gira hacia la puerta, como giraría cualquiera al oír entrar a alguien
+ * a las tres de la mañana. Al terminar se devuelve el control exactamente
+ * donde estaba: la cámara no se queda enganchada ni salta de vuelta.
+ */
+export interface Supervisor {
+  /** Entra por la puerta y camina al mesón. Avisa al llegar. */
+  llegar(alPlantarse: () => void): void;
+  /** Da media vuelta y se va. */
+  retirarse(): void;
+}
+
+function montarSupervisor(scene: Scene, camara: FreeCamera, puerta: PuertaHall): Supervisor {
+  const figura = crearFigura(scene, "supervisor", { paleta: UNIFORME_SUPERVISOR, altura: 1.78 });
+
+  // Fuera, en la vereda, esperando. Nunca se le ve ahí: la puerta está cerrada
+  // y el muro tapa, pero tiene que existir en algún sitio antes de entrar.
+  const FUERA = new Vector3(2.35, 0, 6.1);
+  const UMBRAL = new Vector3(2.35, 0, 4.2);
+  const MEDIO = new Vector3(1.5, 0, 2.5);
+  const ANTE_MESON = new Vector3(0.62, 0, 1.18);
+  /** Dónde está la cara del guardia, que es a lo que mira al plantarse. */
+  const OJOS_GUARDIA = new Vector3(0, ALTURA_OJO, -0.62);
+
+  figura.situar(FUERA, UMBRAL);
+
+  // --- Giro asistido de la cámara ------------------------------------------
+  let mirandoA: Vector3 | null = null;
+
+  scene.onBeforeRenderObservable.add(() => {
+    if (!mirandoA) return;
+    const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
+    const dx = mirandoA.x - camara.position.x;
+    const dz = mirandoA.z - camara.position.z;
+    const deseado = Math.atan2(dx, dz);
+    // Despacio: es un giro de cabeza, no un latigazo de cámara.
+    camara.rotation.y += (deseado - camara.rotation.y) * Math.min(1, dt * 2.2);
+  });
+
+  function tomarCamara(destino: Vector3): void {
+    camara.detachControl();
+    mirandoA = destino;
+  }
+
+  function devolverCamara(): void {
+    mirandoA = null;
+    camara.attachControl(true);
+  }
+
+  return {
+    llegar(alPlantarse) {
+      figura.visible(true);
+      figura.situar(FUERA, UMBRAL);
+      tomarCamara(new Vector3(2.35, 0, 4.6));
+      puerta.pedirAbierta("supervisor");
+
+      // Medio segundo entre que la puerta empieza a abrirse y él entra. Sin esa
+      // pausa cruza el vano mientras la hoja todavía está en medio.
+      setTimeout(() => {
+        figura.caminar([UMBRAL, MEDIO, ANTE_MESON], 1.15, () => {
+          figura.mirarHacia(OJOS_GUARDIA);
+          puerta.soltar("supervisor");
+          // Un momento parado antes de que salte el panel: llega, se planta,
+          // y entonces habla. Abrir el panel en el mismo cuadro en que se
+          // detiene le quita el peso a la llegada entera.
+          setTimeout(() => {
+            devolverCamara();
+            alPlantarse();
+          }, 700);
+        });
+        // La cámara lo sigue de verdad mientras cruza el hall: se le pasa la
+        // posición VIVA de la figura, no una copia. Apuntando a un punto fijo
+        // la cámara se quedaba mirando el mesón mientras él caminaba fuera de
+        // cuadro, que es peor que no girar.
+        mirandoA = figura.raiz.position;
+      }, 520);
+    },
+
+    retirarse() {
+      puerta.pedirAbierta("supervisor");
+      figura.caminar([MEDIO, UMBRAL, FUERA], 1.15, () => {
+        puerta.soltar("supervisor");
+        figura.visible(false);
+      });
+    },
+  };
 }
 
 function materialCalleNocturna(scene: Scene): PBRMaterial {

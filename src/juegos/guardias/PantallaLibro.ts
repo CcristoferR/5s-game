@@ -43,10 +43,14 @@ import {
   type EntradaLibro,
   type SucesoTurno,
 } from "./LibroNovedades";
+import { crearRelojTurno, type RelojTurno } from "./RelojTurno";
+import { registrarTurno, NOTA_APROBACION } from "./HistorialTurnos";
 import {
   APERTURA,
   SUCESOS_CONDOMINIO,
   INSTRUCCIONES_FISCALIZACION,
+  MINUTO_FISCALIZACION,
+  MINUTO_ENTREGA,
   CAMARAS_POR_SUCESO,
 } from "./SucesosCondominio";
 
@@ -119,16 +123,44 @@ export interface EnlaceMonitor {
   alQuedarEscrita(suceso: SucesoTurno): void;
 }
 
+/**
+ * Lo que el libro necesita de la sala.
+ *
+ * Igual que con el monitor: el libro no sabe que hay una puerta ni una figura
+ * caminando. Solo avisa que llegó la hora de la fiscalización y espera a que
+ * le digan que ya puede mostrar los reparos. Un escenario sin sala —o sin
+ * supervisor modelado— pasa un enlace que llama al aviso de inmediato y el
+ * libro funciona igual.
+ */
+export interface EnlaceEscena {
+  /** Es la hora: que entre. Llama a `alPlantarse` cuando esté en el mesón. */
+  llegaSupervisor(alPlantarse: () => void): void;
+  /** Terminó la fiscalización: que se vaya. */
+  seRetiraSupervisor(): void;
+  /**
+   * El turno avanzó un minuto.
+   *
+   * La sala decide qué hace con esa hora: quién cruza el hall, qué marcan las
+   * cámaras. El libro no sabe nada de eso — solo lleva la hora, porque la hora
+   * del turno es un dato del documento.
+   */
+  alAvanzarMinuto(minuto: number): void;
+}
+
 export function mostrarPantallaLibro(
   scene: Scene,
   onCompletado: () => void,
-  monitor: EnlaceMonitor
+  monitor: EnlaceMonitor,
+  escena: EnlaceEscena,
+  usuario: string
 ): SesionLibro {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("pantallaLibro", true, scene);
 
   let estado: EstadoLibro = libroVacio();
   const escritos = new Set<string>();
   let fiscalizacionHecha = false;
+  /** Cuándo se abrió el servicio de verdad, para medir cuánto duró el intento. */
+  const comenzadoEn = new Date();
 
   /** Cuántos sucesos han ocurrido ya. Los ocurridos y no escritos son pendientes. */
   let sucesosLlegados = 0;
@@ -140,6 +172,18 @@ export function mostrarPantallaLibro(
    * mirar el monitor— y el clic sobre la tapa debe reabrirlo.
    */
   let pantallaActual: "libro" | "otra" | "cerrado" = "otra";
+
+  /**
+   * Hay una secuencia en marcha en la sala.
+   *
+   * Es un estado aparte de "qué pantalla está al frente", y hace falta porque
+   * durante la llegada del supervisor NO hay ninguna pantalla al frente: el
+   * libro se aparta a propósito para que se le vea entrar. Sin esta bandera,
+   * apartar el libro se leía como "el jugador se fue al puesto" y el reloj se
+   * reanudaba solo, con el turno corriendo por debajo de una escena guionada
+   * — y residentes cruzando el hall justo cuando entra el supervisor.
+   */
+  let enSecuencia = false;
 
   let capaActual: Rectangle | null = null;
 
@@ -155,6 +199,32 @@ export function mostrarPantallaLibro(
         }
       }, 0);
     }
+  }
+
+  /**
+   * Deja correr el turno solo cuando el jugador no está decidiendo.
+   *
+   * Con el libro a la vista o estando en el puesto, el reloj corre: son los
+   * momentos en los que el jugador mira, espera y decide qué hacer, y es ahí
+   * donde el tiempo tiene que pesar.
+   *
+   * Con un panel delante —eligiendo una redacción, leyendo los reparos,
+   * cuadrando el cargo fijo— se detiene. No por piedad: porque dejarlo correr
+   * ahí solo metería prisa por leer, y porque con el reloj parado NINGÚN
+   * suceso puede dispararse encima de otra pantalla. Toda una familia de
+   * errores desaparece por construcción.
+   */
+  function verPantalla(cual: "libro" | "otra" | "cerrado"): void {
+    pantallaActual = cual;
+    ajustarReloj();
+  }
+
+  function ajustarReloj(): void {
+    if (estado.cerrado || enSecuencia) {
+      reloj.correr(false);
+      return;
+    }
+    reloj.correr(pantallaActual === "libro" || pantallaActual === "cerrado");
   }
 
   /** Quita de pantalla lo que esté al frente, sin tocar el estado. */
@@ -183,13 +253,13 @@ export function mostrarPantallaLibro(
    * es la gracia, porque es entonces cuando se ve pasar algo por el monitor.
    */
   function cerrarPorAhora(): void {
-    pantallaActual = "cerrado";
+    verPantalla("cerrado");
     desmontarCapa();
   }
 
   /** Cierra del todo. El turno se entregó y ya no hay a qué volver. */
   function cerrarTodo(): void {
-    pantallaActual = "cerrado";
+    verPantalla("cerrado");
     desmontarCapa();
   }
 
@@ -247,6 +317,18 @@ export function mostrarPantallaLibro(
     return boton;
   }
 
+  /**
+   * El reloj del turno.
+   *
+   * Arranca detenido: hasta que no se abre el libro con la cabecera de las
+   * 00:00, el servicio no ha empezado. Y se detiene en cada panel de decisión,
+   * que es lo que garantiza que nada salte encima de otra pantalla.
+   */
+  const reloj: RelojTurno = crearRelojTurno(scene, {
+    minutoFinal: MINUTO_ENTREGA,
+    alAvanzar: alPasarMinuto,
+  });
+
   mostrarApertura();
 
   return {
@@ -265,7 +347,7 @@ export function mostrarPantallaLibro(
   // por campo, con los nombres que usa el manual, y se escribe entera como
   // párrafo 1.
   function mostrarApertura(): void {
-    pantallaActual = "otra";
+    verPantalla("otra");
     const { velo, tarjeta, columna } = armarCapa("Apertura", 560, PALETA.aviso);
 
     columna.addControl(crearRotulo("rotuloApertura", "00:00 · INICIO DEL SERVICIO"));
@@ -357,7 +439,7 @@ export function mostrarPantallaLibro(
   // turno, se anota una novedad pendiente, se anula una constancia o se
   // intenta borrarla.
   function mostrarLibro(): void {
-    pantallaActual = "libro";
+    verPantalla("libro");
 
     const ALTO = 640;
     const { velo, tarjeta } = armarCapa("Libro", ALTO, PALETA.aviso);
@@ -478,8 +560,23 @@ export function mostrarPantallaLibro(
       });
     }
 
-    const btnAvanzar = botonAbajo(tarjeta, "btnAvanzar", textoAvanzar(), 260);
-    btnAvanzar.onPointerUpObservable.add(() => avanzar());
+    // Adelantar. Ya no hace avanzar el turno —eso lo hace el reloj, corra el
+    // jugador o no—: solo acelera las horas muertas. Se apaga solo en cuanto
+    // ocurre algo, así que no hay forma de saltarse una novedad con él.
+    const btnAvanzar = botonAbajo(
+      tarjeta,
+      "btnAdelantar",
+      reloj.estaAdelantando() ? "Adelantando…" : "Adelantar el turno",
+      260
+    );
+    btnAvanzar.onPointerUpObservable.add(() => {
+      reloj.adelantar(!reloj.estaAdelantando());
+      if (btnAvanzar.textBlock) {
+        btnAvanzar.textBlock.text = reloj.estaAdelantando()
+          ? "Adelantando…"
+          : "Adelantar el turno";
+      }
+    });
 
     // Salir al puesto. Es la pieza que hace utilizable el monitor: sin esto
     // el libro tapa la escena de punta a punta y las cámaras no las ve nadie.
@@ -495,29 +592,71 @@ export function mostrarPantallaLibro(
     reemplazarCapa(velo);
   }
 
-  function textoAvanzar(): string {
-    if (sucesosLlegados < SUCESOS_CONDOMINIO.length) return "Seguir el turno";
-    if (!fiscalizacionHecha) return "03:20 · Llega el supervisor";
-    return "08:00 · Entregar el servicio";
-  }
+  /**
+   * El turno corrió un minuto. Aquí se decide qué pasa a esa hora.
+   *
+   * Es el único sitio del nivel donde se dispara algo por tiempo, y el orden
+   * importa: primero las novedades, después la fiscalización, al final la
+   * entrega. Si en un mismo minuto coincidieran dos cosas —y con el turno
+   * adelantado puede pasar— la novedad se anota antes de que llegue nadie a
+   * revisarla, que es lo justo.
+   */
+  function alPasarMinuto(minuto: number): void {
+    escena.alAvanzarMinuto(minuto);
 
-  function avanzar(): void {
-    if (sucesosLlegados < SUCESOS_CONDOMINIO.length) {
-      const suceso = SUCESOS_CONDOMINIO[sucesosLlegados];
+    // --- ¿Ocurre alguna novedad a esta hora? --------------------------------
+    //
+    // En bucle porque con el turno adelantado pueden vencer dos de golpe. Se
+    // repinta UNA vez al final y no dentro del bucle: dos repintados seguidos
+    // del mismo libro es trabajo tirado y un parpadeo de la capa.
+    let ocurrioAlgo = false;
+    while (
+      sucesosLlegados < SUCESOS_CONDOMINIO.length &&
+      SUCESOS_CONDOMINIO[sucesosLlegados].minuto <= minuto
+    ) {
+      monitor.alOcurrir(SUCESOS_CONDOMINIO[sucesosLlegados]);
       sucesosLlegados += 1;
-      // El monitor se entera antes de que se pinte el libro: si el suceso se
-      // ve por cámara, ya está encendido cuando el jugador salga a mirarlo.
-      monitor.alOcurrir(suceso);
-      mostrarLibro();
-      return;
+      ocurrioAlgo = true;
     }
-    if (!fiscalizacionHecha) {
+    if (ocurrioAlgo) {
+      // Pasó algo: se corta el adelanto. Quien estuviera saltándose las horas
+      // muertas se entera en el acto, en vez de descubrir la novedad tres
+      // horas más tarde en la bandeja.
+      reloj.adelantar(false);
+      if (pantallaActual === "libro") mostrarLibro();
+    }
+
+    // --- 03:20, la fiscalización -------------------------------------------
+    if (!fiscalizacionHecha && minuto >= MINUTO_FISCALIZACION) {
       fiscalizacionHecha = true;
       estado = registrarFiscalizacion(estado, INSTRUCCIONES_FISCALIZACION);
-      mostrarFiscalizacion();
+
+      // El libro se aparta: el supervisor entra por la puerta del hall y hay
+      // que poder verlo. Si el panel saliera ahora, taparía con un velo opaco
+      // justamente lo que hay que mirar.
+      //
+      // Y el turno se detiene mientras dura. No es una pausa de cortesía: con
+      // el reloj corriendo por debajo, los residentes seguirían cruzando el
+      // hall en mitad de la fiscalización.
+      enSecuencia = true;
+      verPantalla("cerrado");
+      desmontarCapa();
+      escena.llegaSupervisor(() => {
+        enSecuencia = false;
+        verPantalla("otra");
+        mostrarFiscalizacion();
+      });
       return;
     }
-    mostrarEntrega();
+
+    // --- 08:00, la entrega --------------------------------------------------
+    //
+    // Llega el relevo. No se pregunta si el jugador está listo, igual que en el
+    // puesto: lo que no quedó anotado a las 08:00 ya no se anota.
+    if (fiscalizacionHecha && minuto >= MINUTO_ENTREGA) {
+      reloj.correr(false);
+      mostrarEntrega();
+    }
   }
 
   /**
@@ -658,7 +797,7 @@ export function mostrarPantallaLibro(
 
   // ─── Un suceso: tres formas de anotarlo, cero comentarios ───────────────
   function mostrarSuceso(suceso: SucesoTurno): void {
-    pantallaActual = "otra";
+    verPantalla("otra");
     // El alto sale del texto real, con la MISMA cuenta que usa crearBotonOpcion
     // por dentro (sangría 62 + 20 de aire, mínimo 60, más 30 de relleno). Si las
     // dos cuentas se separan, o la tarjeta corta la última opción o queda un
@@ -744,7 +883,7 @@ export function mostrarPantallaLibro(
   // Aquí sale todo lo que entró en silencio. El párrafo ya quedó escrito en el
   // libro antes de mostrar esta pantalla; lo que se ve acá son los reparos.
   function mostrarFiscalizacion(): void {
-    pantallaActual = "otra";
+    verPantalla("otra");
     const faltas = revisionDelSupervisor(estado);
     const alto = Math.min(620, 320 + faltas.length * 96);
     const { velo, tarjeta, columna } = armarCapa(
@@ -820,7 +959,13 @@ export function mostrarPantallaLibro(
     );
 
     botonAbajo(tarjeta, "btnCerrarFiscalizacion", "Volver al libro", 220).onPointerUpObservable.add(
-      () => mostrarLibro()
+      () => {
+        // Se va mientras el libro se vuelve a abrir. No hay que esperarlo:
+        // sale por detrás del panel y quien cierre el libro después lo pilla
+        // cruzando el hall o ya fuera, según cuánto tarde.
+        escena.seRetiraSupervisor();
+        mostrarLibro();
+      }
     );
 
     desvanecer(velo, 0, 1, 160);
@@ -829,7 +974,7 @@ export function mostrarPantallaLibro(
 
   // ─── 08:00 · La entrega ─────────────────────────────────────────────────
   function mostrarEntrega(): void {
-    pantallaActual = "otra";
+    verPantalla("otra");
     const inventario = new Set<string>();
     let parrafoCitado = 1;
 
@@ -985,16 +1130,32 @@ export function mostrarPantallaLibro(
 
   // ─── El informe del turno ───────────────────────────────────────────────
   function mostrarInformeFinal(): void {
-    pantallaActual = "otra";
+    verPantalla("otra");
     const { nota, faltas } = calificar(estado);
-    const alto = Math.min(620, 300 + faltas.length * 96);
+    const aprobado = nota >= NOTA_APROBACION;
+
+    // El turno queda registrado ANTES de dibujar nada. Si la pantalla fallara
+    // al pintarse, el intento ya está guardado: lo que no puede perderse es el
+    // desempeño, no el cartel que lo muestra.
+    const { guardado } = registrarTurno({
+      usuario,
+      curso: "guardias",
+      escenario: 1,
+      iniciadoEn: comenzadoEn,
+      nota,
+      faltas,
+    });
+
+    const alto = Math.min(640, 330 + faltas.length * 96);
     const { velo, tarjeta, columna } = armarCapa(
       "Informe",
       alto,
-      nota >= 60 ? PALETA.acierto : PALETA.error
+      aprobado ? PALETA.acierto : PALETA.error
     );
 
-    columna.addControl(crearRotulo("rotuloInforme", "TURNO ENTREGADO"));
+    columna.addControl(
+      crearRotulo("rotuloInforme", aprobado ? "TURNO APROBADO" : "TURNO NO APROBADO")
+    );
     columna.addControl(crearEspacio("aireRotuloInforme", 10));
     columna.addControl(
       crearParrafo(
@@ -1002,8 +1163,20 @@ export function mostrarPantallaLibro(
         `${nota} / 100`,
         ANCHO_CONTENIDO,
         TEXTO.mayor,
-        nota >= 60 ? PALETA.acierto : PALETA.error,
+        aprobado ? PALETA.acierto : PALETA.error,
         "600"
+      )
+    );
+    columna.addControl(crearEspacio("aireMinimoInforme", 4));
+    columna.addControl(
+      crearParrafo(
+        "minimoInforme",
+        guardado
+          ? `Mínimo para aprobar: ${NOTA_APROBACION}. El turno queda registrado en tu historial.`
+          : `Mínimo para aprobar: ${NOTA_APROBACION}. No se pudo guardar el turno en este equipo.`,
+        ANCHO_CONTENIDO,
+        TEXTO.menor,
+        PALETA.tenue
       )
     );
     columna.addControl(crearEspacio("aireDivisorInforme", 16));

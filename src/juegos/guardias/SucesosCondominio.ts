@@ -184,6 +184,14 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
 /** Minuto del turno en el que llega el fiscalizador (03:20). */
 export const MINUTO_FISCALIZACION = 200;
 
+/**
+ * Minuto en que llega el relevo: las 08:00.
+ *
+ * Es el final del turno y no se negocia. Lo que no quedó anotado a esa hora ya
+ * no se anota, igual que en el puesto.
+ */
+export const MINUTO_ENTREGA = 480;
+
 // ---------------------------------------------------------------------------
 // Qué se ve de cada suceso en el monitor
 // ---------------------------------------------------------------------------
