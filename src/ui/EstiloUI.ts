@@ -144,7 +144,44 @@ export const MARGEN = 40;
  * suaviza el muestreo sin tocar la resolución.
  */
 export function afinarGui(gui: AdvancedDynamicTexture): void {
-  gui.renderScale = 1;
+  // RESTAURADA. Estuvo en 1 y el texto de todos los menús se volvió blando.
+  //
+  // El motor dibuja con el buffer del tamaño del lienzo en píxeles CSS, y eso
+  // es intocable: cuando el buffer no coincide con el lienzo, la conversión
+  // de coordenadas del puntero se desalinea y los clics caen una fila más
+  // abajo. Ver el aviso de setHardwareScalingLevel en main.ts, donde está
+  // contado el historial completo de las tres veces que se intentó.
+  //
+  // El efecto secundario de eso es que en una pantalla con escala de Windows
+  // al 125 % o 150 % —lo normal en un portátil— la textura tiene menos
+  // píxeles que el área donde se muestra, y el navegador la agranda. De ahí
+  // el texto con los bordes lavados.
+  //
+  // renderScale multiplica la resolución DE LA TEXTURA de la interfaz, sin
+  // tocar el motor ni la geometría del puntero: se dibuja con más píxeles y
+  // se muestra al mismo tamaño. Resuelve el texto blando y NO reabre el
+  // problema de los clics, que son dos cosas distintas por mucho que las dos
+  // suenen a "resolución".
+  //
+  // El factor sale de la escala real de la pantalla, con tope en 2: por
+  // encima se gasta memoria de vídeo sin ganancia visible.
+  // El factor sale de multiplicar la densidad de la pantalla por la escala
+  // del motor, y así se ajusta solo:
+  //
+  //   textura = tamañoDeRender × renderScale
+  //   tamañoDeRender = tamañoCSS / escalaDeHardware
+  //
+  // Para que la textura acabe midiendo lo mismo en píxeles físicos, el
+  // factor tiene que ser densidad × escalaDeHardware. Con el buffer ya en
+  // resolución física —que es como está ahora, ver main.ts— eso da 1 y no se
+  // supersamplea de más; si algún día el buffer volviera a píxeles CSS, la
+  // misma cuenta devuelve la densidad y la interfaz sigue saliendo nítida.
+  const densidad = window.devicePixelRatio || 1;
+  const escalaMotor = gui.getScene()?.getEngine().getHardwareScalingLevel() ?? 1;
+  gui.renderScale = Math.min(2, Math.max(1, densidad * escalaMotor));
+
+  // Filtrado trilineal al muestrear: con más resolución de la que se
+  // muestra, sin filtrar quedan los cantos dentados.
   gui.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
 }
 

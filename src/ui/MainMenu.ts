@@ -10,8 +10,23 @@ export interface NivelMenuInfo {
   completado: boolean;
 }
 
-const TITULO = "Operación 5S";
-const BAJADA = "Programa de formación en metodología 5S";
+/**
+ * Encabezado por defecto: el del 5S, que fue el primer curso.
+ *
+ * Se queda como valor por defecto y no como constante fija porque esta
+ * pantalla nunca fue del 5S — recibe los niveles como dato desde el primer
+ * día. El título era lo último que quedaba atado a un curso concreto, y con
+ * él atado, el curso de guardias mostraba "Operación 5S" en su propio menú.
+ */
+const ENCABEZADO_5S = {
+  titulo: "Operación 5S",
+  bajada: "Programa de formación en metodología 5S",
+};
+
+export interface EncabezadoCurso {
+  titulo: string;
+  bajada: string;
+}
 
 /**
  * Colores del menú, por tema.
@@ -110,7 +125,9 @@ export function mostrarMenuPrincipal(
   /** Nombre de quien tiene la sesion abierta. Se muestra en la cabecera. */
   usuario?: string,
   /** Si se pasa, aparece el boton para salir de la sesion. */
-  onCerrarSesion?: () => void
+  onCerrarSesion?: () => void,
+  /** Título y bajada del curso. Sin esto, los del 5S. */
+  encabezado: EncabezadoCurso = ENCABEZADO_5S
 ): { ocultar: () => void } {
   // La paleta se fija acá, al construir. El tema puede haber cambiado desde
   // Mi cuenta mientras el menú no estaba en pantalla.
@@ -131,10 +148,13 @@ export function mostrarMenuPrincipal(
   if (gui.layer) {
     gui.layer.applyPostProcess = false;
   }
-  // 2. renderScale queda en 1 a proposito: la nitidez real la da el buffer
-  //    del motor (setHardwareScalingLevel en main.ts). Supersamplear aqui
-  //    encima solo costaria rendimiento sin ganar definicion.
-  gui.renderScale = 1;
+  // 2. La resolución de la capa la fija afinarGui, unas líneas más arriba, y
+  //    de ahí sale la nitidez del texto. Este renglón llegó a ponerla en 1
+  //    con el argumento de que el buffer del motor ya daba la definición y
+  //    supersamplear encima solo costaba rendimiento. No es así: el buffer
+  //    del motor está clavado en píxeles CSS por el problema de los clics
+  //    desplazados, así que es justamente la capa la que tiene que traer los
+  //    píxeles que faltan. Puesto en 1, todos los menús salían blandos.
   // 3. La composicion escala proporcionalmente sin desarmarse.
   gui.idealWidth = 1600;
   gui.idealHeight = 900;
@@ -163,7 +183,7 @@ export function mostrarMenuPrincipal(
   columna.width = ANCHO - 2 + "px";
   panel.addControl(columna);
 
-  columna.addControl(crearCabecera(usuario));
+  columna.addControl(crearCabecera(encabezado, usuario));
   columna.addControl(separador("sepCabecera"));
 
   const filas: Array<{ marco: Rectangle; zona: Button; nivel: NivelMenuInfo }> = [];
@@ -178,7 +198,7 @@ export function mostrarMenuPrincipal(
   const progreso = crearProgreso(completadas, fases.length);
   columna.addControl(progreso.bloque);
 
-  const pie = crearPie(certificadoListo, Boolean(onCerrarSesion));
+  const pie = crearPie(certificadoListo, Boolean(onCerrarSesion), fases.length);
   columna.addControl(pie.barra);
 
   // --- Interaccion ---
@@ -422,14 +442,14 @@ function trazarRectRedondo(ctx: CanvasRenderingContext2D, x: number, y: number, 
 // Cabecera
 // ---------------------------------------------------------------------------
 
-function crearCabecera(usuario?: string): Rectangle {
+function crearCabecera(encabezado: EncabezadoCurso, usuario?: string): Rectangle {
   const cabecera = new Rectangle("cabeceraMenu");
   cabecera.width = ANCHO - 2 + "px";
   cabecera.height = "118px";
   cabecera.thickness = 0;
   cabecera.background = "transparent";
 
-  const titulo = new TextBlock("tituloMenu", TITULO.toUpperCase());
+  const titulo = new TextBlock("tituloMenu", encabezado.titulo.toUpperCase());
   titulo.color = C.titulo;
   titulo.fontSize = 38;
   titulo.fontWeight = "600";
@@ -455,7 +475,7 @@ function crearCabecera(usuario?: string): Rectangle {
     cabecera.addControl(identidad);
   }
 
-  const bajada = new TextBlock("bajadaMenu", BAJADA);
+  const bajada = new TextBlock("bajadaMenu", encabezado.bajada);
   bajada.color = C.secundario;
   bajada.fontSize = 14;
   bajada.height = "20px";
@@ -558,9 +578,20 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
   numero.isHitTestVisible = false;
   zona.addControl(numero);
 
-  const termino = new TextBlock("terminoFila_" + nivel.numero, separado.termino.toUpperCase());
+  const texto = separado.termino.toUpperCase();
+  const termino = new TextBlock("terminoFila_" + nivel.numero, texto);
   termino.color = colorTermino;
-  termino.fontSize = 23;
+  // El cuerpo se ajusta al largo del nombre.
+  //
+  // La columna mide 190 px porque la siguiente empieza en 272, y a cuerpo 23
+  // ahí caben unas nueve letras. Con los términos japoneses del 5S sobraba
+  // —SEIKETSU son ocho—, pero SUPERMERCADO son doce y salía cortado por la
+  // mitad, pisando su propia descripción.
+  //
+  // Encogerlo es mejor que ensanchar la columna: ensanchándola habría que
+  // correr la descripción y el estado para todos los cursos, y los nombres
+  // cortos —que son la mayoría— perderían la presencia que tienen ahora.
+  termino.fontSize = texto.length <= 9 ? 23 : texto.length <= 11 ? 20 : 17;
   termino.fontWeight = estado === "bloqueado" ? "400" : "600";
   termino.width = "190px";
   termino.left = "70px";
@@ -693,7 +724,7 @@ function crearProgreso(completadas: number, totalFases: number): {
 // Barra inferior: ranking + certificado
 // ---------------------------------------------------------------------------
 
-function crearPie(certificadoListo: boolean, conSesion: boolean): {
+function crearPie(certificadoListo: boolean, conSesion: boolean, totalFases: number): {
   barra: Rectangle;
   ranking: Button;
   certificado: Button | null;
@@ -728,7 +759,12 @@ function crearPie(certificadoListo: boolean, conSesion: boolean): {
     certificado.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     barra.addControl(certificado);
   } else {
-    const nota = new TextBlock("notaCertificado", "El certificado se habilita al completar las 5 fases");
+    // Cuántas fases hay lo dice el curso, no esta pantalla: guardias tiene
+    // tres y el cinco venía escrito a mano de cuando solo existía el 5S.
+    const nota = new TextBlock(
+      "notaCertificado",
+      `El certificado se habilita al completar las ${totalFases} fases`
+    );
     nota.color = C.terciario;
     nota.fontSize = 13;
     nota.width = "400px";

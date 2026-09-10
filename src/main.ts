@@ -38,7 +38,10 @@ const engine = new Engine(canvas, true, undefined, false);
 // Tiene que quedar en 1. Fijo. Sin ratio de pantalla, sin topes, sin
 // condiciones.
 //
-// QUÉ PASA SI SE CAMBIA. Con cualquier valor distinto de 1, el buffer de
+// REVISADO Y LEVANTADO. Lo que sigue explica por qué estuvo clavado en 1
+// durante tres intentos, y por qué en Babylon 9 ya no hace falta.
+//
+// EL MIEDO ERA REAL. Con cualquier valor distinto de 1, el buffer de
 // render deja de medir lo mismo que el canvas, y la conversión de coordenadas
 // del puntero hacia la interfaz deja de coincidir: el menú se DIBUJA en un
 // sitio y RESPONDE en otro. El desfase crece hacia abajo de la pantalla, así
@@ -54,14 +57,42 @@ const engine = new Engine(canvas, true, undefined, false);
 //   3. Volvió otra vez para ganar nitidez en pantallas con escala de Windows,
 //      y falló de nuevo de forma idéntica.
 //
-// EL COSTO ACEPTADO. En monitores con escala al 125 % o 150 % la imagen se ve
-// algo blanda, porque el canvas se muestra sobre más píxeles físicos de los
-// que tiene. Es un costo real y conocido — y es preferible: nítido con los
-// clics corridos deja el juego inservible, blando no.
+// POR QUÉ YA NO PASA. El desfase venía de que la conversión de coordenadas no
+// compensaba la escala. En @babylonjs 9 las TRES rutas de picking sí la
+// compensan, y está comprobado leyendo la librería instalada:
 //
-// La nitidez de la interfaz se trabaja por otro lado (tamaños de letra y
-// resolución de los carteles), no desde acá.
-engine.setHardwareScalingLevel(1);
+//   gui/2D/advancedDynamicTexture.js:945  (_translateToPicking)
+//       transformedX = x / engine.getHardwareScalingLevel() - viewport.x
+//
+//   gui/2D/advancedDynamicTexture.js:848  (_doPicking, pantalla completa)
+//       x = x * (textureSize.width / (engine.getRenderWidth() * vp.width))
+//
+//   core/Culling/ray.core.js:606          (rayo de picking en 3D)
+//       const levelInv = 1 / engine.getHardwareScalingLevel(); x = x * levelInv
+//
+// Las dos primeras cubren los menús y todos los paneles; la tercera, los
+// clics sobre objetos de la escena (el libro, el monitor).
+//
+// ANTES DE VOLVER A BAJARLO A 1: comprobar si el desfase sigue existiendo
+// de verdad, y en qué ruta. Bajarlo devuelve el texto blando en toda
+// pantalla con escala de Windows, que es el motivo por el que se levantó.
+/**
+ * Escala de hardware según la densidad de la pantalla, con tope en 2.
+ *
+ * 1 / devicePixelRatio hace que el buffer de render mida lo que mide el
+ * lienzo en píxeles FÍSICOS y no en píxeles CSS. Es lo que da la nitidez del
+ * texto en un portátil con la escala de Windows al 125 % o al 150 %, donde
+ * antes el navegador estaba agrandando una imagen con menos píxeles de los
+ * que la pantalla puede mostrar.
+ *
+ * El tope en 2 acota el costo: por encima se cuadruplican los píxeles a
+ * sombrear sin ganancia que se aprecie.
+ */
+function escalaDeHardware(): number {
+  return 1 / Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+}
+
+engine.setHardwareScalingLevel(escalaDeHardware());
 let sceneManager = new SceneManager(engine);
 
 // Quién está jugando. El progreso se guarda a su nombre, no al del equipo.
@@ -600,4 +631,10 @@ try {
 }
 
 engine.runRenderLoop(() => sceneManager.scene.render());
-window.addEventListener("resize", () => engine.resize());
+// Al redimensionar se recalcula también la escala: arrastrar la ventana a un
+// monitor con otra densidad cambia devicePixelRatio, y sin esto el buffer se
+// quedaría dimensionado para la pantalla anterior.
+window.addEventListener("resize", () => {
+  engine.setHardwareScalingLevel(escalaDeHardware());
+  engine.resize();
+});

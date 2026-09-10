@@ -58,9 +58,21 @@ const ZANCADA = 1.5;
 const MUSLO = 0.44;
 /** De la rodilla a la suela. */
 const CAIDA_PIE = 0.48;
-/** Punta y talón del zapato respecto al eje de la pierna. */
-const PUNTA = 0.07;
-const TALON = -0.17;
+/**
+ * Punta y talón del zapato respecto al eje de la pierna.
+ *
+ * Estaban al revés: 0,07 de punta y -0,17 de talón dejaban el zapato con
+ * diecisiete centímetros por DETRÁS del tobillo y siete por delante. Como la
+ * figura avanza hacia su +Z local —ver rumboDeseado, que usa atan2(dx, dz)—,
+ * el resultado era una persona caminando de frente con los pies puestos al
+ * revés.
+ *
+ * El largo total del zapato no cambia; lo que cambia es de qué lado del tobillo
+ * está. El cálculo del apoyo sigue valiendo igual: solo necesita que PUNTA sea
+ * el extremo delantero y TALON el trasero, y eso se mantiene.
+ */
+const PUNTA = 0.17;
+const TALON = -0.07;
 
 /** De la cadera a la suela, con la pierna recta. */
 const LARGO_PIERNA = MUSLO + CAIDA_PIE;

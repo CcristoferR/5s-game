@@ -86,15 +86,34 @@ import {
 const ANCHO_TARJETA = 820;
 const ANCHO_CONTENIDO = ANCHO_TARJETA - MARGEN * 2;
 
-// Columnas del rayado del manual: HORA | ACTIVIDAD | OBSERVACIONES, más una
-// franja al final para anular y borrar.
-const COL_HORA = 56;
-const COL_ACTIVIDAD = 128;
-const COL_OBS = 430;
+/**
+ * Ancho del botón de una acción de registro.
+ *
+ * De las medidas de columna que había aquí ya no queda ninguna: los
+ * registros dejaron de ser filas de una tabla y se apilan, así que cada uno
+ * mide lo que mide su texto. Ver filaEntrada.
+ */
 const COL_ACCIONES = 100;
-const X_ACTIVIDAD = COL_HORA + 6;
-const X_OBS = X_ACTIVIDAD + COL_ACTIVIDAD + 6;
-const X_ACCIONES = X_OBS + COL_OBS + 20;
+
+/**
+ * Medidas de un registro del turno.
+ *
+ * Van en el módulo y no dentro de mostrarPantallaLibro por un motivo que
+ * cuesta ver y se paga caro: los ayudantes de esa función se declaran
+ * DESPUÉS de su `return`. Con `function` da igual, porque se eleva entera y
+ * queda disponible; con `const` no — la línea nunca llega a ejecutarse, la
+ * constante se queda en la zona muerta temporal para siempre, y el primero
+ * que la lee se lleva un ReferenceError en tiempo de ejecución.
+ *
+ * TypeScript no lo avisa: no sigue la zona muerta a través de un return
+ * dentro de un cierre. Compilaba limpio y reventaba al abrir el libro.
+ */
+/** Ancho útil de un registro, ya descontada la barra del visor. */
+const ANCHO_REGISTRO = ANCHO_CONTENIDO - 18;
+/** Grosor del raíl de estado, a la izquierda del registro. */
+const RAIL = 2;
+/** Aire entre el raíl y el contenido. */
+const SANGRIA = 16;
 
 /**
  * El libro abierto, como algo que dura todo el turno.
@@ -147,12 +166,38 @@ export interface EnlaceEscena {
   alAvanzarMinuto(minuto: number): void;
 }
 
+/**
+ * Lo que el libro necesita del mesón.
+ *
+ * El libro dejó de ser un panel que se abre encima de la escena: ahora es el
+ * cuaderno que hay sobre la mesa. Abrirlo inclina la cámara sobre él, y lo
+ * que se escribe aparece en sus hojas. Nada de eso lo hace este archivo —solo
+ * avisa— porque la escritura del turno es la misma tenga o no un mesón
+ * detrás: un escenario sin libro modelado pasa un enlace vacío y todo sigue
+ * funcionando.
+ */
+export interface EnlaceMeson {
+  /** Se abrió el libro: acercarse a él. */
+  seAbre(): void;
+  /**
+   * Se cerró: volver a la silla.
+   *
+   * `devolverControl` va en falso cuando el cierre es parte de una secuencia
+   * guionada —la llegada del supervisor—, porque ahí la cámara la lleva la
+   * escena y el jugador no debe poder girarla hasta que termine.
+   */
+  seCierra(devolverControl: boolean): void;
+  /** Cambió lo escrito: repintar las hojas. */
+  seEscribe(estado: EstadoLibro): void;
+}
+
 export function mostrarPantallaLibro(
   scene: Scene,
   onCompletado: () => void,
   monitor: EnlaceMonitor,
   escena: EnlaceEscena,
-  usuario: string
+  usuario: string,
+  meson: EnlaceMeson
 ): SesionLibro {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("pantallaLibro", true, scene);
 
@@ -185,6 +230,16 @@ export function mostrarPantallaLibro(
    */
   let enSecuencia = false;
 
+  /**
+   * El reloj de la cabecera del libro, mientras esté en pantalla.
+   *
+   * Se guarda para poder actualizarlo minuto a minuto sin rehacer la
+   * pantalla: reconstruir la tarjeta entera sesenta veces por turno perdería
+   * la posición del visor en cada latido, que es justo lo que hace ilegible
+   * una lista que crece.
+   */
+  let relojEnPantalla: TextBlock | null = null;
+
   let capaActual: Rectangle | null = null;
 
   function reemplazarCapa(nueva: Rectangle): void {
@@ -214,8 +269,26 @@ export function mostrarPantallaLibro(
    * suceso puede dispararse encima de otra pantalla. Toda una familia de
    * errores desaparece por construcción.
    */
-  function verPantalla(cual: "libro" | "otra" | "cerrado"): void {
+  /**
+   * Cambia de pantalla, y con ella la postura.
+   *
+   * La pose va aparte de la pantalla porque no se deduce de ella: escribir
+   * la apertura y elegir la redacción de una novedad son paneles distintos y
+   * los dos ocurren con la nariz metida en el libro, mientras que atender al
+   * supervisor y leer el informe final ocurren sentado. Deducirlo del tipo de
+   * pantalla obligaría a mirar quién llama; decirlo en cada sitio se lee solo.
+   */
+  function verPantalla(
+    cual: "libro" | "otra" | "cerrado",
+    pose: "libro" | "silla" = "libro"
+  ): void {
     pantallaActual = cual;
+    if (cual === "cerrado" || pose === "silla") meson.seCierra(!enSecuencia);
+    else meson.seAbre();
+    // Las hojas se repintan en cada cambio de pantalla. Toda escritura
+    // termina en uno, así que con esto no hace falta acordarse de repintar
+    // detrás de cada constancia.
+    meson.seEscribe(estado);
     ajustarReloj();
   }
 
@@ -227,8 +300,31 @@ export function mostrarPantallaLibro(
     reloj.correr(pantallaActual === "libro" || pantallaActual === "cerrado");
   }
 
+  /**
+   * Retira YA la capa que esté al frente, sin desvanecerla.
+   *
+   * Sin ceremonia y de forma síncrona, porque se usa justo antes de montar
+   * otra: lo que importa es que no lleguen a existir dos a la vez, no que la
+   * saliente se vaya con gracia.
+   */
+  function retirarCapaYa(): void {
+    const velo = capaActual;
+    capaActual = null;
+    relojEnPantalla = null;
+    if (!velo) return;
+    velo.isPointerBlocker = false;
+    try {
+      velo.dispose();
+    } catch {
+      /* ya se había ido */
+    }
+  }
+
   /** Quita de pantalla lo que esté al frente, sin tocar el estado. */
   function desmontarCapa(): void {
+    // La cabecera se va con la capa: dejar la referencia viva haría que el
+    // reloj siguiera escribiendo sobre un control ya desechado.
+    relojEnPantalla = null;
     const velo = capaActual;
     capaActual = null;
     if (!velo) return;
@@ -286,13 +382,57 @@ export function mostrarPantallaLibro(
   }
 
   /** Armazón común: velo, tarjeta, filete y columna de contenido. */
+  /**
+   * Monta una pantalla del libro.
+   *
+   * `apoyada` es la diferencia entre un panel y una mesa. Los paneles de
+   * decisión —la apertura, la redacción de una novedad, los reparos del
+   * supervisor— van centrados sobre un velo opaco, porque exigen una
+   * respuesta y lo de detrás sobra mientras tanto.
+   *
+   * La pantalla del libro no. Ahora que la cámara se inclina sobre el mesón y
+   * lo escrito aparece en las hojas de verdad, taparlo con un velo opaco
+   * anularía justo lo que se acaba de ganar: se apoya abajo, sin oscurecer,
+   * y el libro se lee por encima de ella.
+   */
   function armarCapa(
     nombre: string,
     alto: number,
-    colorFilete: string
+    colorFilete: string,
+    apoyada = false
   ): { velo: Rectangle; tarjeta: Rectangle; columna: StackPanel } {
+    // SOLO PUEDE HABER UNA CAPA, y se garantiza aquí.
+    //
+    // Antes cada pantalla retiraba la anterior al final de sí misma, con
+    // reemplazarCapa. Bastaba con que un camino no llegara a llamarla —o la
+    // llamara con capaActual ya en nulo— para que quedaran dos vivas, una
+    // encima de la otra, y la de arriba bloqueaba el puntero de la de abajo:
+    // el jugador se quedaba mirando un botón que no respondía.
+    //
+    // Eso llevaba tiempo pudiendo pasar sin que se notara, porque el velo era
+    // opaco y tapaba entera la capa sobrante. En cuanto el del libro se hizo
+    // transparente para dejar ver el mesón, quedó a la vista.
+    //
+    // Retirándola al MONTAR en vez de al reemplazar, la invariante deja de
+    // depender de que cada pantalla se acuerde de cumplirla.
+    retirarCapaYa();
+
     const velo = crearVelo(gui, `velo${nombre}`);
+    if (apoyada) {
+      // Sigue bloqueando el puntero —el mesón no se manosea con el libro
+      // abierto— pero deja ver. Un velo transparente que bloquea es
+      // exactamente lo que hace falta: mirar sí, tocar no.
+      velo.background = "transparent";
+    }
     const tarjeta = crearTarjeta(velo, `tarjeta${nombre}`, ANCHO_TARJETA, alto);
+    if (apoyada) {
+      tarjeta.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+      tarjeta.top = "-26px";
+      // Algo translúcida: se sigue viendo el mesón por debajo del papel de
+      // la tarjeta, y eso es lo que la ata a la escena en vez de dejarla
+      // flotando delante.
+      tarjeta.alpha = 0.96;
+    }
     crearFilete(tarjeta, `filete${nombre}`, ANCHO_TARJETA, colorFilete);
 
     const columna = new StackPanel(`columna${nombre}`);
@@ -305,6 +445,42 @@ export function mostrarPantallaLibro(
     tarjeta.addControl(columna);
 
     return { velo, tarjeta, columna };
+  }
+
+  /**
+   * Una lista que puede crecer más que su tarjeta.
+   *
+   * Los reparos del supervisor y las faltas del informe salen de contar
+   * errores, así que su número no se sabe al escribir el panel: un turno
+   * limpio trae cero y uno desastroso puede traer ocho. Las tarjetas topan su
+   * alto para no salirse de la pantalla, y sin un scroll lo que pasa del tope
+   * se dibuja igual, por debajo del borde y encima del botón.
+   *
+   * Devuelve la pila donde meter el contenido; el scroll se encarga del resto.
+   */
+  function listaDesplazable(
+    tarjeta: Rectangle,
+    nombre: string,
+    arriba: number,
+    alto: number
+  ): StackPanel {
+    const scroll = new ScrollViewer(`scroll${nombre}`);
+    scroll.width = ANCHO_CONTENIDO + 14 + "px";
+    scroll.height = Math.max(80, alto) + "px";
+    scroll.thickness = 0;
+    scroll.barColor = PALETA.tenue;
+    scroll.barBackground = "rgba(255,255,255,0.05)";
+    scroll.left = MARGEN + "px";
+    scroll.top = arriba + "px";
+    scroll.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    tarjeta.addControl(scroll);
+
+    const pila = new StackPanel(`pila${nombre}`);
+    pila.isVertical = true;
+    pila.width = ANCHO_CONTENIDO + "px";
+    scroll.addControl(pila);
+    return pila;
   }
 
   function botonAbajo(tarjeta: Rectangle, nombre: string, texto: string, ancho: number): Button {
@@ -441,124 +617,144 @@ export function mostrarPantallaLibro(
   function mostrarLibro(): void {
     verPantalla("libro");
 
-    const ALTO = 640;
-    const { velo, tarjeta } = armarCapa("Libro", ALTO, PALETA.aviso);
+    // La tarjeta se apoya abajo y deja el libro a la vista por encima, así que
+    // su alto es un compromiso: lo bastante para trabajar, lo justo para no
+    // tapar la plana. Las tres medidas se declaran juntas porque el scroll de
+    // en medio se calcula restando las otras dos — que es lo que evita volver
+    // a tener bloques peleándose por el mismo sitio.
+    const ALTO = 470;
+    const ALTO_ENCABEZADO = 128;
+    const ALTO_BOTONERA = 110;
 
-    const encabezado = new StackPanel("encabezadoLibro");
-    encabezado.isVertical = true;
-    encabezado.width = ANCHO_CONTENIDO + "px";
-    encabezado.left = MARGEN + "px";
-    encabezado.top = "28px";
-    encabezado.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    encabezado.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    tarjeta.addControl(encabezado);
+    const { velo, tarjeta } = armarCapa("Libro", ALTO, PALETA.aviso, true);
 
-    encabezado.addControl(crearRotulo("rotuloLibro", "LIBRO DE NOVEDADES"));
-    encabezado.addControl(crearEspacio("aireRotuloLibro", 8));
-    encabezado.addControl(
-      crearParrafo(
-        "tituloLibro",
-        `${APERTURA.instalacion} · turno ${APERTURA.turno}`,
-        ANCHO_CONTENIDO,
-        TEXTO.destacado,
-        PALETA.titulo,
-        "600"
-      )
+    // ── Cabecera ────────────────────────────────────────────────────────────
+    //
+    // Rótulo, instalación y RELOJ DEL TURNO. Lo último es lo que faltaba: el
+    // turno corre solo desde que empieza, y con el libro abierto no había forma
+    // de saber qué hora era. Se pedía trabajar contra un reloj invisible.
+    const cabecera = new Rectangle("cabeceraLibro");
+    cabecera.width = ANCHO_CONTENIDO + "px";
+    cabecera.height = ALTO_ENCABEZADO - 22 + "px";
+    cabecera.thickness = 0;
+    cabecera.left = MARGEN + "px";
+    cabecera.top = "26px";
+    cabecera.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    cabecera.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    tarjeta.addControl(cabecera);
+
+    const rotulo = etiqueta("rotuloLibro", "LIBRO DE NOVEDADES", PALETA.rotulo, 320);
+    rotulo.fontSize = 11;
+    cabecera.addControl(rotulo);
+
+    const titulo = crearParrafo(
+      "tituloLibro",
+      APERTURA.instalacion,
+      ANCHO_CONTENIDO - 200,
+      TEXTO.destacado,
+      PALETA.titulo,
+      "600"
     );
-    encabezado.addControl(crearEspacio("aireRayadoLibro", 16));
+    titulo.top = "22px";
+    titulo.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    titulo.isHitTestVisible = false;
+    cabecera.addControl(titulo);
 
-    // Encabezado del rayado. Es el formato del manual y conviene tenerlo a la
-    // vista todo el rato: es lo primero que se aprende del libro.
-    const rayado = new Rectangle("rayadoLibro");
-    rayado.width = ANCHO_CONTENIDO + "px";
-    rayado.height = "26px";
-    rayado.thickness = 0;
-    rayado.isHitTestVisible = false;
-    [
-      ["HORA", 0, COL_HORA],
-      ["ACTIVIDAD", X_ACTIVIDAD, COL_ACTIVIDAD],
-      ["OBSERVACIONES", X_OBS, COL_OBS],
-    ].forEach(([texto, x, ancho]) => {
-      const celda = crearParrafo(
-        `rayado_${texto}`,
-        texto as string,
-        ancho as number,
-        TEXTO.rotulo,
-        PALETA.rotulo,
-        "600"
-      );
-      celda.left = x + "px";
-      celda.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      rayado.addControl(celda);
-    });
-    encabezado.addControl(rayado);
-    encabezado.addControl(crearDivisor("divisorLibro", ANCHO_CONTENIDO));
+    // El reloj, a la derecha y en monoespaciado: es un dato de instrumento, no
+    // prosa. Se guarda la referencia porque tiene que latir cada minuto sin
+    // rehacer la pantalla entera.
+    relojEnPantalla = new TextBlock("relojLibro", horaDe(reloj.minuto()));
+    relojEnPantalla.width = "180px";
+    relojEnPantalla.height = "34px";
+    relojEnPantalla.color = PALETA.titulo;
+    relojEnPantalla.fontSize = 30;
+    relojEnPantalla.fontWeight = "700";
+    relojEnPantalla.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    relojEnPantalla.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    relojEnPantalla.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    relojEnPantalla.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    relojEnPantalla.top = "6px";
+    relojEnPantalla.isHitTestVisible = false;
+    cabecera.addControl(relojEnPantalla);
+
+    const pieTurno = etiqueta("pieTurnoLibro", `TURNO ${APERTURA.turno}`, PALETA.tenue, 220);
+    pieTurno.fontSize = 11;
+    pieTurno.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    pieTurno.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    pieTurno.top = "42px";
+    cabecera.addControl(pieTurno);
+
+    // Filete de un píxel en vez de divisor: separa sin dibujar una raya.
+    const filete = new Rectangle("fileteLibro");
+    filete.width = ANCHO_CONTENIDO + "px";
+    filete.height = "1px";
+    filete.thickness = 0;
+    filete.background = PALETA.linea;
+    filete.left = MARGEN + "px";
+    filete.top = ALTO_ENCABEZADO - 14 + "px";
+    filete.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    filete.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    filete.isHitTestVisible = false;
+    tarjeta.addControl(filete);
 
     // Las novedades que ya ocurrieron y siguen sin anotar.
     const pendientes = SUCESOS_CONDOMINIO.slice(0, sucesosLlegados).filter(
       (s) => !escritos.has(s.id)
     );
-    const altoPendientes = pendientes.length === 0 ? 0 : 34 + pendientes.length * 52;
 
+    // ── El visor ────────────────────────────────────────────────────────────
+    //
+    // Todo el contenido va en UN solo visor: los pendientes primero y lo escrito
+    // debajo. Antes eran dos bloques anclados a bordes opuestos, cada uno con su
+    // alto calculado para terminar justo donde empezaba el otro; en cuanto la
+    // tarjeta cambió de tamaño la cuenta dejó de cuadrar y se dibujaron encima.
+    // Apilados, el solapamiento no es que esté corregido: no se puede dar.
     const scroll = new ScrollViewer("scrollLibro");
-    scroll.width = ANCHO_CONTENIDO + 14 + "px";
-    // 172 arriba (encabezado + rayado) y 110 abajo (el botón), menos lo que
-    // ocupen los pendientes, que se meten entre medio.
-    scroll.height = Math.max(120, ALTO - 282 - altoPendientes) + "px";
+    scroll.width = ANCHO_CONTENIDO + "px";
+    scroll.height = ALTO - ALTO_ENCABEZADO - ALTO_BOTONERA + "px";
     scroll.thickness = 0;
-    scroll.barColor = PALETA.tenue;
-    scroll.barBackground = "rgba(255,255,255,0.05)";
+    // Barra de tres píxeles, sin fondo y sin flechas. Una barra de sistema en
+    // una tarjeta oscura canta muchísimo, y aquí no hace falta agarrarla: se
+    // desplaza con la rueda.
+    scroll.barSize = 3;
+    scroll.barColor = "rgba(255,255,255,0.22)";
+    scroll.barBackground = "transparent";
+    scroll.wheelPrecision = 0.02;
     scroll.left = MARGEN + "px";
-    scroll.top = "172px";
+    scroll.top = ALTO_ENCABEZADO + "px";
     scroll.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     tarjeta.addControl(scroll);
 
     const lista = new StackPanel("listaLibro");
     lista.isVertical = true;
-    lista.width = ANCHO_CONTENIDO + "px";
+    // Más estrecho que el visor a propósito: es lo que garantiza que la barra
+    // horizontal —que en una lista de texto no pinta nada— no aparezca nunca.
+    lista.width = ANCHO_REGISTRO + "px";
     scroll.addControl(lista);
-    estado.entradas.forEach((entrada) => lista.addControl(filaEntrada(entrada)));
 
     if (pendientes.length > 0) {
-      const zona = new StackPanel("zonaPendientes");
-      zona.isVertical = true;
-      zona.width = ANCHO_CONTENIDO + "px";
-      zona.left = MARGEN + "px";
-      zona.top = "-110px";
-      zona.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      zona.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-      tarjeta.addControl(zona);
-
-      zona.addControl(
-        crearRotulo(
-          "rotuloPendientes",
-          pendientes.length === 1 ? "SIN ANOTAR" : `SIN ANOTAR (${pendientes.length})`,
-          PALETA.aviso
-        )
-      );
-      zona.addControl(crearEspacio("airePendientes", 8));
-
-      pendientes.forEach((suceso) => {
-        // Si el suceso se ve por cámara se dice cuál. Es la pista que conecta
-        // el libro con el monitor: sin ella el jugador no tiene por qué
-        // sospechar que ahí fuera hay algo que mirar.
-        const toma = CAMARAS_POR_SUCESO[suceso.id];
-        const pista = toma ? `  ·  CAM 0${toma.indice + 1}` : "";
-        const boton = crearBotonSecundario(
-          `btnPendiente_${suceso.id}`,
-          `${horaDe(suceso.minuto)}  ·  ${suceso.actividad}${pista}`,
-          ANCHO_CONTENIDO
-        );
-        if (boton.textBlock) {
-          boton.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-          boton.textBlock.paddingLeft = "16px";
-        }
-        boton.onPointerUpObservable.add(() => mostrarSuceso(suceso));
-        zona.addControl(boton);
-        zona.addControl(crearEspacio(`airePendiente_${suceso.id}`, 6));
-      });
+      pendientes.forEach((suceso) => lista.addControl(filaPendiente(suceso)));
+      lista.addControl(crearEspacio("aireTrasPendientes", 12));
     }
+
+    if (estado.entradas.length > 0) {
+      const rotuloEscrito = etiqueta(
+        "rotuloEscrito",
+        `ESCRITO   ${estado.entradas.length}`,
+        PALETA.tenue,
+        ANCHO_REGISTRO
+      );
+      rotuloEscrito.fontSize = 11;
+      rotuloEscrito.height = "24px";
+      rotuloEscrito.paddingLeft = SANGRIA + "px";
+      lista.addControl(rotuloEscrito);
+    }
+
+    // Lo ya escrito sigue aquí —además de en las hojas— porque es desde donde se
+    // anula una constancia, que es la única corrección que el manual permite.
+    estado.entradas.forEach((entrada) => lista.addControl(filaEntrada(entrada)));
 
     // Adelantar. Ya no hace avanzar el turno —eso lo hace el reloj, corra el
     // jugador o no—: solo acelera las horas muertas. Se apaga solo en cuanto
@@ -603,6 +799,7 @@ export function mostrarPantallaLibro(
    */
   function alPasarMinuto(minuto: number): void {
     escena.alAvanzarMinuto(minuto);
+    if (relojEnPantalla) relojEnPantalla.text = horaDe(minuto);
 
     // --- ¿Ocurre alguna novedad a esta hora? --------------------------------
     //
@@ -643,7 +840,7 @@ export function mostrarPantallaLibro(
       desmontarCapa();
       escena.llegaSupervisor(() => {
         enSecuencia = false;
-        verPantalla("otra");
+        verPantalla("otra", "silla");
         mostrarFiscalizacion();
       });
       return;
@@ -673,99 +870,121 @@ export function mostrarPantallaLibro(
   }
 
   /** Un renglón del libro, con sus dos acciones al costado. */
-  function filaEntrada(entrada: EntradaLibro): Rectangle {
-    const texto = entrada.anulada ? `(${entrada.observaciones})` : entrada.observaciones;
-    const altoTexto = altoDeTexto(texto, COL_OBS, TEXTO.menor);
-    const alto = Math.max(altoTexto, 54) + 26;
+  // -------------------------------------------------------------------------
+  // Los registros del turno
+  // -------------------------------------------------------------------------
+  //
+  // Antes cada constancia era una fila de cuatro columnas —hora, actividad,
+  // observaciones, acciones— con los botones colgando a la derecha. Esa forma
+  // traía dos problemas, y ninguno era de gusto.
+  //
+  // El primero: la última columna empujaba el ancho hasta pasarse del visor, y
+  // de ahí salía la barra horizontal. En una lista de texto esa barra no
+  // debería existir nunca.
+  //
+  // El segundo: una tabla de cuatro columnas necesita mucho ancho para respirar
+  // y aquí no hay. Apilado —hora y actividad arriba, observación debajo a todo
+  // lo ancho, acciones al pie— cabe de sobra, se lee mejor, y de paso se parece
+  // más a lo que es: un asiento de libro, no una hoja de cálculo.
+  //
+  // El estado va en un RAÍL de dos píxeles a la izquierda en vez de en el color
+  // del texto. Se ve de reojo sin leer la fila, y deja el texto en su color
+  // legible en lugar de apagarlo para que signifique algo.
 
-    const marco = new Rectangle(`filaLibro_${entrada.numero}`);
-    marco.width = ANCHO_CONTENIDO + "px";
+
+  /** El armazón de un registro: fondo, raíl de estado y esquinas suaves. */
+  function registro(nombre: string, alto: number, colorRail: string, fondo: string): Rectangle {
+    const marco = new Rectangle(nombre);
+    marco.width = ANCHO_REGISTRO + "px";
     marco.height = alto + "px";
     marco.thickness = 0;
-    marco.paddingBottom = "6px";
+    marco.cornerRadius = 8;
+    marco.background = fondo;
+    marco.paddingBottom = "8px";
 
-    const color = entrada.anulada ? PALETA.tenue : PALETA.cuerpo;
+    const rail = new Rectangle(`${nombre}_rail`);
+    rail.width = RAIL + "px";
+    rail.height = "100%";
+    rail.thickness = 0;
+    rail.background = colorRail;
+    rail.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    rail.isHitTestVisible = false;
+    marco.addControl(rail);
 
-    const hora = crearParrafo(
-      `horaLibro_${entrada.numero}`,
-      entrada.hora,
-      COL_HORA,
-      TEXTO.menor,
-      entrada.anulada ? PALETA.tenue : PALETA.titulo,
-      "600"
+    return marco;
+  }
+
+  /** Texto monoespaciado para horas, correlativos y etiquetas de estado. */
+  function etiqueta(nombre: string, texto: string, color: string, ancho: number): TextBlock {
+    const bloque = new TextBlock(nombre, texto);
+    bloque.width = ancho + "px";
+    bloque.height = "18px";
+    bloque.color = color;
+    bloque.fontSize = TEXTO.rotulo;
+    bloque.fontWeight = "700";
+    bloque.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    bloque.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    bloque.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    bloque.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    bloque.isHitTestVisible = false;
+    return bloque;
+  }
+
+  function filaEntrada(entrada: EntradaLibro): Rectangle {
+    const texto = entrada.anulada ? `(${entrada.observaciones})` : entrada.observaciones;
+    const anchoTexto = ANCHO_REGISTRO - SANGRIA * 2;
+    const altoTexto = altoDeTexto(texto, anchoTexto, TEXTO.menor);
+    const alto = 44 + altoTexto + (entrada.anulada ? 14 : 42);
+
+    const marco = registro(
+      `filaLibro_${entrada.numero}`,
+      alto,
+      entrada.anulada ? "rgba(255,255,255,0.13)" : PALETA.dato,
+      "rgba(255,255,255,0.028)"
     );
-    hora.left = "0px";
-    hora.top = "2px";
-    hora.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    hora.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    hora.isHitTestVisible = false;
-    marco.addControl(hora);
 
-    const actividad = crearParrafo(
-      `actividadLibro_${entrada.numero}`,
-      entrada.actividad,
-      COL_ACTIVIDAD,
-      TEXTO.rotulo,
+    // Correlativo, hora y actividad en una sola línea de datos.
+    const cabecera = etiqueta(
+      `cabLibro_${entrada.numero}`,
+      `${String(entrada.numero).padStart(2, "0")}   ${entrada.hora}   ${entrada.actividad}`,
       entrada.anulada ? PALETA.tenue : PALETA.rotulo,
-      "600"
+      anchoTexto - 100
     );
-    actividad.left = X_ACTIVIDAD + "px";
-    actividad.top = "4px";
-    actividad.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    actividad.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    actividad.isHitTestVisible = false;
-    marco.addControl(actividad);
+    cabecera.left = SANGRIA + "px";
+    cabecera.top = "12px";
+    marco.addControl(cabecera);
 
-    const obs = crearParrafo(`obsLibro_${entrada.numero}`, texto, COL_OBS, TEXTO.menor, color);
-    obs.left = X_OBS + "px";
-    obs.top = "0px";
+    if (entrada.anulada) {
+      const sello = etiqueta(`selloLibro_${entrada.numero}`, "ANULADA", PALETA.aviso, 96);
+      sello.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      sello.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      sello.left = -SANGRIA + "px";
+      sello.top = "12px";
+      marco.addControl(sello);
+    }
+
+    const obs = crearParrafo(
+      `obsLibro_${entrada.numero}`,
+      texto,
+      anchoTexto,
+      TEXTO.menor,
+      entrada.anulada ? PALETA.tenue : PALETA.cuerpo
+    );
+    obs.left = SANGRIA + "px";
+    obs.top = "38px";
     obs.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     obs.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     obs.isHitTestVisible = false;
     marco.addControl(obs);
 
-    // El separador de párrafos del manual: ===== 3 =====
-    const correlativo = crearParrafo(
-      `numeroLibro_${entrada.numero}`,
-      `=====  ${entrada.numero}  =====`,
-      COL_OBS,
-      TEXTO.rotulo,
-      PALETA.tenue,
-      "600"
-    );
-    correlativo.left = X_OBS + "px";
-    correlativo.top = "-4px";
-    correlativo.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    correlativo.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    correlativo.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    correlativo.isHitTestVisible = false;
-    marco.addControl(correlativo);
-
     if (!entrada.anulada) {
-      const borrar = botonMinimo(`btnBorrar_${entrada.numero}`, "Borrar", PALETA.tenue);
-      borrar.left = X_ACCIONES + "px";
-      borrar.top = "0px";
-      borrar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      borrar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-      borrar.onPointerUpObservable.add(() => {
-        // No borra. Anota la falta y avisa por qué — este control SÍ es duro.
-        estado = intentarBorrar(estado);
-        mostrarNota(
-          "EN EL LIBRO NO SE BORRA",
-          "No está permitido extraer hojas, usar corrector ni rayar escrituras. Lo escrito " +
-            "queda: si hay un error, se anula entre paréntesis y la línea sigue a la vista. " +
-            "El intento también queda registrado.",
-          PALETA.error,
-          () => mostrarLibro()
-        );
-      });
-      marco.addControl(borrar);
-
+      // Las acciones al pie del propio registro: donde no estorban a la lectura
+      // y, sobre todo, donde no empujan el ancho de la lista.
       const anularBoton = botonMinimo(`btnAnular_${entrada.numero}`, "Anular", PALETA.aviso);
-      anularBoton.left = X_ACCIONES + "px";
-      anularBoton.top = "28px";
-      anularBoton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      anularBoton.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+      anularBoton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      anularBoton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+      anularBoton.left = -SANGRIA + "px";
+      anularBoton.top = "-14px";
       anularBoton.onPointerUpObservable.add(() => {
         estado = anular(estado, entrada.numero);
 
@@ -790,7 +1009,78 @@ export function mostrarPantallaLibro(
         mostrarLibro();
       });
       marco.addControl(anularBoton);
+
+      const borrar = botonMinimo(`btnBorrar_${entrada.numero}`, "Borrar", PALETA.tenue);
+      borrar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      borrar.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+      borrar.left = -SANGRIA - COL_ACCIONES - 8 + "px";
+      borrar.top = "-14px";
+      borrar.onPointerUpObservable.add(() => {
+        // No borra. Anota la falta y avisa por qué — este control SÍ es duro.
+        estado = intentarBorrar(estado);
+        mostrarNota(
+          "EN EL LIBRO NO SE BORRA",
+          "No está permitido extraer hojas, usar corrector ni rayar escrituras. Lo escrito " +
+            "queda: si hay un error, se anula entre paréntesis y la línea sigue a la vista. " +
+            "El intento también queda registrado.",
+          PALETA.error,
+          () => mostrarLibro()
+        );
+      });
+      marco.addControl(borrar);
     }
+
+    return marco;
+  }
+
+  /**
+   * Una novedad ocurrida y todavía sin anotar.
+   *
+   * Raíl ámbar y algo más de cuerpo que un registro escrito: es lo único de
+   * esta pantalla que pide una acción, y el turno no la espera. La fila entera
+   * es el botón — un objetivo de sesenta píxeles de alto, no una línea de texto.
+   */
+  function filaPendiente(suceso: SucesoTurno): Rectangle {
+    const REPOSO = "rgba(189, 160, 121, 0.10)";
+    const ENCIMA = "rgba(189, 160, 121, 0.18)";
+
+    const marco = registro(`pendiente_${suceso.id}`, 66, PALETA.aviso, REPOSO);
+    marco.isPointerBlocker = true;
+    marco.hoverCursor = "pointer";
+
+    const titulo = etiqueta(
+      `pendienteTitulo_${suceso.id}`,
+      `${horaDe(suceso.minuto)}   ${suceso.actividad}`,
+      PALETA.titulo,
+      320
+    );
+    titulo.fontSize = TEXTO.menor;
+    titulo.left = SANGRIA + "px";
+    titulo.top = "13px";
+    marco.addControl(titulo);
+
+    const toma = CAMARAS_POR_SUCESO[suceso.id];
+    const pie = etiqueta(
+      `pendientePie_${suceso.id}`,
+      toma ? `SIN ANOTAR · SE VE EN CAM 0${toma.indice + 1}` : "SIN ANOTAR",
+      PALETA.aviso,
+      360
+    );
+    pie.fontSize = 11;
+    pie.left = SANGRIA + "px";
+    pie.top = "37px";
+    marco.addControl(pie);
+
+    const flecha = etiqueta(`pendienteFlecha_${suceso.id}`, "ANOTAR  ›", PALETA.aviso, 120);
+    flecha.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    flecha.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    flecha.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    flecha.left = -SANGRIA + "px";
+    marco.addControl(flecha);
+
+    marco.onPointerEnterObservable.add(() => (marco.background = ENCIMA));
+    marco.onPointerOutObservable.add(() => (marco.background = REPOSO));
+    marco.onPointerUpObservable.add(() => mostrarSuceso(suceso));
 
     return marco;
   }
@@ -883,7 +1173,9 @@ export function mostrarPantallaLibro(
   // Aquí sale todo lo que entró en silencio. El párrafo ya quedó escrito en el
   // libro antes de mostrar esta pantalla; lo que se ve acá son los reparos.
   function mostrarFiscalizacion(): void {
-    verPantalla("otra");
+    // Sentado: el supervisor está de pie al otro lado del mesón y hay que
+    // mirarlo a él, no al papel.
+    verPantalla("otra", "silla");
     const faltas = revisionDelSupervisor(estado);
     const alto = Math.min(620, 320 + faltas.length * 96);
     const { velo, tarjeta, columna } = armarCapa(
@@ -906,10 +1198,13 @@ export function mostrarPantallaLibro(
     );
     columna.addControl(crearEspacio("aireDivisorFiscalizacion", 16));
     columna.addControl(crearDivisor("divisorFiscalizacion", ANCHO_CONTENIDO));
-    columna.addControl(crearEspacio("airePostDivisorFiscalizacion", 16));
+
+    // Los reparos, en un scroll: son tantos como errores se hayan cometido y
+    // el alto de la tarjeta está topado. Ver listaDesplazable.
+    const reparos = listaDesplazable(tarjeta, "Fiscalizacion", 152, alto - 152 - 128);
 
     if (faltas.length === 0) {
-      columna.addControl(
+      reparos.addControl(
         crearParrafo(
           "sinReparosFiscalizacion",
           "Sin reparos. Lo escrito hasta ahora se sostiene: cronológico, sin apreciaciones " +
@@ -921,7 +1216,7 @@ export function mostrarPantallaLibro(
       );
     } else {
       faltas.forEach((falta, i) => {
-        columna.addControl(
+        reparos.addControl(
           crearParrafo(
             `faltaFiscalizacion_${i}`,
             falta.descripcion,
@@ -931,8 +1226,8 @@ export function mostrarPantallaLibro(
             "500"
           )
         );
-        columna.addControl(crearEspacio(`aireFundamento_${i}`, 4));
-        columna.addControl(
+        reparos.addControl(crearEspacio(`aireFundamento_${i}`, 4));
+        reparos.addControl(
           crearParrafo(
             `fundamentoFiscalizacion_${i}`,
             falta.fundamento,
@@ -941,12 +1236,12 @@ export function mostrarPantallaLibro(
             PALETA.tenue
           )
         );
-        columna.addControl(crearEspacio(`aireFaltaFiscalizacion_${i}`, 14));
+        reparos.addControl(crearEspacio(`aireFaltaFiscalizacion_${i}`, 14));
       });
     }
 
-    columna.addControl(crearEspacio("aireCierreFiscalizacion", 6));
-    columna.addControl(
+    reparos.addControl(crearEspacio("aireCierreFiscalizacion", 12));
+    reparos.addControl(
       crearParrafo(
         "cierreFiscalizacion",
         "La visita queda anotada como constancia, con sus instrucciones y la firma del " +
@@ -1130,7 +1425,8 @@ export function mostrarPantallaLibro(
 
   // ─── El informe del turno ───────────────────────────────────────────────
   function mostrarInformeFinal(): void {
-    verPantalla("otra");
+    // El turno terminó: el libro ya se entregó y no hay nada más que escribir.
+    verPantalla("otra", "silla");
     const { nota, faltas } = calificar(estado);
     const aprobado = nota >= NOTA_APROBACION;
 
@@ -1181,10 +1477,13 @@ export function mostrarPantallaLibro(
     );
     columna.addControl(crearEspacio("aireDivisorInforme", 16));
     columna.addControl(crearDivisor("divisorInforme", ANCHO_CONTENIDO));
-    columna.addControl(crearEspacio("airePostDivisorInforme", 16));
+
+    // Mismo caso que la fiscalización: las faltas son tantas como errores
+    // haya, y la tarjeta tiene el alto topado.
+    const detalle = listaDesplazable(tarjeta, "Informe", 226, alto - 226 - 118);
 
     if (faltas.length === 0) {
-      columna.addControl(
+      detalle.addControl(
         crearParrafo(
           "sinFaltasInforme",
           "El libro quedó sin faltas: en orden cronológico, sin apreciaciones personales ni " +
@@ -1196,7 +1495,7 @@ export function mostrarPantallaLibro(
       );
     } else {
       faltas.forEach((falta, i) => {
-        columna.addControl(
+        detalle.addControl(
           crearParrafo(
             `faltaInforme_${i}`,
             falta.subsanada ? `${falta.descripcion}  —  anulada` : falta.descripcion,
@@ -1206,8 +1505,8 @@ export function mostrarPantallaLibro(
             "500"
           )
         );
-        columna.addControl(crearEspacio(`aireFundInforme_${i}`, 4));
-        columna.addControl(
+        detalle.addControl(crearEspacio(`aireFundInforme_${i}`, 4));
+        detalle.addControl(
           crearParrafo(
             `fundInforme_${i}`,
             falta.fundamento,
@@ -1216,7 +1515,7 @@ export function mostrarPantallaLibro(
             PALETA.tenue
           )
         );
-        columna.addControl(crearEspacio(`aireFaltaInforme_${i}`, 14));
+        detalle.addControl(crearEspacio(`aireFaltaInforme_${i}`, 14));
       });
     }
 

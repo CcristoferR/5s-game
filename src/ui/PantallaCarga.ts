@@ -72,6 +72,41 @@ function esperarDosCuadros(): Promise<void> {
   );
 }
 
+/**
+ * Lo que se enseña mientras carga.
+ *
+ * El 5S lo saca de briefingsNiveles por número de fase. Un curso que no sea
+ * ese —guardias, y los que vengan— no tiene por qué existir en esa tabla, así
+ * que puede entregar el suyo hecho. La pantalla no cambia: cambia de dónde
+ * salen las cuatro líneas.
+ */
+export interface BriefingCarga {
+  /** Lo pequeño de arriba: "Fase 01", "Escenario 01". */
+  rotulo: string;
+  /** El titular. */
+  fase: string;
+  /** La línea bajo el titular. */
+  traduccion: string;
+  /** El párrafo: de qué va lo que viene. */
+  contexto: string;
+  /** Color de acento. Sin él, el de por defecto de la hoja de estilo. */
+  color?: string;
+}
+
+function contenidoDe(briefing: BriefingCarga): string {
+  const estilo = briefing.color ? ` style="--fase-color: ${briefing.color}"` : "";
+  return `
+    <div class="cargaNivel__caja"${estilo}>
+      <p class="cargaNivel__rotulo">${escapar(briefing.rotulo)}</p>
+      <h1 class="cargaNivel__fase">${escapar(briefing.fase)}</h1>
+      <p class="cargaNivel__traduccion">${escapar(briefing.traduccion)}</p>
+      <p class="cargaNivel__contexto">${escapar(briefing.contexto)}</p>
+      <div class="cargaNivel__pulso" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </div>`;
+}
+
 function contenido(numeroNivel: number): string {
   const briefing = briefingsNiveles[numeroNivel];
 
@@ -112,11 +147,13 @@ function contenido(numeroNivel: number): string {
  */
 export async function cargarConPantalla(
   numeroNivel: number,
-  construir: () => void | Promise<void>
+  construir: () => void | Promise<void>,
+  /** Para cursos que no son el 5S. Sin esto, el briefing de la fase. */
+  briefing?: BriefingCarga
 ): Promise<void> {
   const pantalla = obtenerCapa();
 
-  pantalla.innerHTML = contenido(numeroNivel);
+  pantalla.innerHTML = briefing ? contenidoDe(briefing) : contenido(numeroNivel);
   pantalla.classList.remove("cargaNivel--saliendo");
   // Bloquea el puntero mientras tapa: un clic sobre un nivel a medio armar
   // llega a controles que todavía no existen.

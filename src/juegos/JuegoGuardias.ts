@@ -2,6 +2,7 @@ import { Scene } from "@babylonjs/core";
 import { mostrarMenuPrincipal, type NivelMenuInfo } from "../ui/MainMenu";
 import { GameManager } from "../core/GameManager";
 import { estaAprobado } from "./guardias/HistorialTurnos";
+import { cargarConPantalla, type BriefingCarga } from "../ui/PantallaCarga";
 import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
 
 // ===========================================================================
@@ -25,17 +26,32 @@ import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
 // el jugador que termina el 5S y entra a guardias se encuentra la misma
 // pantalla que ya sabe usar, que es lo que se quería.
 
+/**
+ * Lo que se lee mientras carga cada escenario.
+ *
+ * Va aquí y no en briefingsNiveles porque esa tabla es del 5S: sus entradas
+ * están indexadas por fase y hablan de clasificar, ordenar y limpiar. Este
+ * curso tiene sus propios escenarios y su propio vocabulario.
+ */
+const BRIEFINGS: Record<number, BriefingCarga> = {
+  1: {
+    rotulo: "Escenario 01",
+    fase: "Condominio",
+    traduccion: "Libro de novedades",
+    contexto:
+      "Turno de 00:00 a 08:00 en la conserjería de Las Araucarias. Todo lo que " +
+      "ocurra queda escrito, en orden y con hechos: el libro no admite " +
+      "opiniones, no admite borrones, y lo que no se anota es como si no " +
+      "hubiera pasado. A las 03:20 pasa el supervisor a revisarlo.",
+    color: "#bda079",
+  },
+};
+
 /** Título y bajada de este curso. */
-// Encabezado propio del curso, pendiente de conectar.
-//
-// mostrarMenuPrincipal todavía no acepta un título/bajada por parámetro: hoy
-// muestra los del 5S fijos. Cuando el menú los reciba —es un cambio pequeño en
-// MainMenu— este es el texto que va. Se deja anotado para no perderlo.
-//
-// const ENCABEZADO = {
-//   titulo: "Guardias de Seguridad",
-//   bajada: "Formación y perfeccionamiento · manual de apoyo OS10",
-// };
+const ENCABEZADO = {
+  titulo: "Guardias de Seguridad",
+  bajada: "Formación y perfeccionamiento · manual de apoyo OS10",
+};
 
 /**
  * Los escenarios del curso.
@@ -139,11 +155,52 @@ export function abrirMenuGuardias(
       // haciendo clic sobre él, se recorre el turno de 00:00 a 08:00 y se
       // cierra con el informe del supervisor.
       if (numero === 1) {
-        crearPuestoConserjeria(scene, quienJuega, () => {
-          // No se marca nada acá: el turno ya quedó registrado al entregarlo,
-          // con su nota y sus faltas. Al volver, el menú lo lee del historial.
-          abrirMenuGuardias(scene, onVolverAlPortal, usuario);
-        });
+        // Se arma DETRÁS de la pantalla de carga.
+        //
+        // Montar el puesto —el hall, el mesón, las seis luminarias, las
+        // sombras, los reflejos y el post-proceso— bloquea el hilo principal
+        // un buen rato, y hasta ahora eso se veía: la escena aparecía a
+        // trozos, con las luces entrando después de la geometría.
+        //
+        // Es la misma pantalla que usa el 5S entre fases. Y como la espera
+        // existe igual, se aprovecha para decir de qué va el turno, que es lo
+        // que le hace falta a alguien que entra por primera vez a un puesto de
+        // conserjería sin saber qué se espera de él.
+        void cargarConPantalla(
+          numero,
+          async () => {
+            crearPuestoConserjeria(scene, quienJuega, () => {
+              // No se marca nada acá: el turno ya quedó registrado al
+              // entregarlo, con su nota y sus faltas. Al volver, el menú lo
+              // lee del historial.
+              abrirMenuGuardias(scene, onVolverAlPortal, usuario);
+            });
+
+            // ESPERAR A QUE LA ESCENA ESTÉ LISTA DE VERDAD.
+            //
+            // crearPuestoConserjeria vuelve en cuanto ha declarado la
+            // geometría, pero en ese momento el trabajo pesado no ha
+            // ocurrido todavía: quedan por compilar los sombreadores de
+            // cada material, por subir las texturas y por resolver el
+            // primer pase de sombras y reflejos.
+            //
+            // Sin esta espera la pantalla de carga se quitaba justo ahí, y
+            // lo que se veía era el puesto apareciendo por partes —como una
+            // segunda carga después de la carga—, que es exactamente lo que
+            // la pantalla existe para tapar. El 5S ya lo hacía así en
+            // construirYEsperar; esto es lo mismo.
+            //
+            // El tope de ocho segundos es un seguro: si un material se
+            // atasca, es preferible entrar con algo sin terminar que dejar
+            // al jugador mirando una pantalla de carga para siempre.
+            const TOPE_MS = 8000;
+            await Promise.race([
+              scene.whenReadyAsync(true),
+              new Promise<void>((listo) => setTimeout(listo, TOPE_MS)),
+            ]);
+          },
+          BRIEFINGS[numero]
+        );
         return;
       }
 
@@ -158,6 +215,7 @@ export function abrirMenuGuardias(
     () => onVolverAlPortal(),
     () => onVolverAlPortal(),
     usuario,
-    onVolverAlPortal
+    onVolverAlPortal,
+    ENCABEZADO
   );
 }

@@ -88,7 +88,19 @@ interface TomaActiva {
   escena: EscenaCamara;
   /** Segundo real en que se encendió. Manda la animación de entrada. */
   desde: number;
+  /** Minuto del turno en que ocurrió. Rotula la toma cuando hay más de una. */
+  minuto: number;
 }
+
+/** Un minuto del turno como hh:mm. El turno arranca a las 00:00. */
+function horaDeMinuto(minuto: number): string {
+  const h = Math.floor(minuto / 60) % 24;
+  const m = Math.floor(minuto) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** Cada cuántos segundos rota el cuadrante que tiene más de una toma. */
+const CICLO_MULTIPLEXOR = 4.5;
 
 export interface MonitorCamaras {
   material: PBRMaterial;
@@ -145,12 +157,26 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     ctx.fillRect(0, 0, ANCHO_BASE, ALTO_BASE);
 
     for (let i = 0; i < 4; i++) {
-      // De haber dos tomas sobre la misma cámara gana la última encendida.
-      let toma: TomaActiva | undefined;
-      for (const t of activas.values()) {
-        if (t.indice !== i) continue;
-        if (!toma || t.desde > toma.desde) toma = t;
-      }
+      // DOS TOMAS EN LA MISMA CÁMARA SE TURNAN, no se pisan.
+      //
+      // El ingreso y la salida ocurren los dos en la reja, así que comparten
+      // la CAM 01. Antes ganaba la última encendida: si la salida llegaba con
+      // el ingreso todavía sin anotar, la toma del ingreso desaparecía de la
+      // pantalla aunque siguiera pendiente, y el jugador se quedaba con una
+      // fila en el libro que ya no podía comprobar en ningún sitio.
+      //
+      // Ahora el cuadrante las rota, que es justo lo que hace un multiplexor
+      // de verdad cuando tiene más señales que ventanas. Se ordenan por hora
+      // para que el turno se vea en el orden en que pasó.
+      const enEstaCamara = [...activas.values()]
+        .filter((t) => t.indice === i)
+        .sort((a, b) => a.minuto - b.minuto);
+
+      const cual =
+        enEstaCamara.length > 1
+          ? Math.floor(segundos / CICLO_MULTIPLEXOR) % enEstaCamara.length
+          : 0;
+      const toma: TomaActiva | undefined = enEstaCamara[cual];
 
       ctx.save();
       ctx.translate((i % 2) * CW + 2, Math.floor(i / 2) * CH + 2);
@@ -163,7 +189,7 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
         const avance = Math.min(1, (segundos - toma.desde) / ENTRADA);
         dibujarEvento(ctx, toma.escena, avance, segundos);
       }
-      dibujarSenal(ctx, i, toma !== undefined);
+      dibujarSenal(ctx, i, toma, cual, enEstaCamara.length);
 
       ctx.restore();
     }
@@ -242,7 +268,14 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
   }
 
-  function dibujarSenal(ctx: CanvasRenderingContext2D, indice: number, activa: boolean): void {
+  function dibujarSenal(
+    ctx: CanvasRenderingContext2D,
+    indice: number,
+    toma: TomaActiva | undefined,
+    cual: number,
+    cuantas: number
+  ): void {
+    const activa = toma !== undefined;
     // Líneas de barrido. El paso va en coordenadas de dibujo, así que con la
     // densidad al triple salen tres píxeles reales por línea en vez de dos:
     // más finas y más juntas, que es como se ven de verdad al acercarse.
@@ -292,6 +325,16 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     ctx.textAlign = "right";
     ctx.fillText(marcaDeHora(), QW - 12, QH - 8);
 
+    // Con más de una toma pendiente se dice cuál se está viendo y cuántas
+    // hay. Sin esto la cámara cambiaría sola cada pocos segundos y parecería
+    // un fallo en vez de un reparto; y el jugador no tendría forma de saber
+    // que le falta anotar dos cosas del mismo sitio.
+    if (toma && cuantas > 1) {
+      ctx.textAlign = "left";
+      ctx.font = "bold 12px monospace";
+      ctx.fillText(`${horaDeMinuto(toma.minuto)}  ${cual + 1}/${cuantas}`, 12, QH - 8);
+    }
+
     // Testigo de grabación. Parpadea solo donde hay algo ocurriendo, así el
     // cuadrante que importa se distingue de un vistazo.
     if (activa && Math.floor(segundos * 1.6) % 2 === 0) {
@@ -314,7 +357,7 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     encender(id, indice, escena, minuto) {
       minutoBase = minuto;
       segundosEnBase = 0;
-      activas.set(id, { indice, escena, desde: segundos });
+      activas.set(id, { indice, escena, desde: segundos, minuto });
       // Sin esto el cuadrante tarda hasta un quinto de segundo en encenderse.
       // Se nota cuando el suceso llega con el monitor a la vista.
       repintar();
@@ -504,43 +547,196 @@ function dibujarPasillo(ctx: CanvasRenderingContext2D): void {
   });
 }
 
-/** CAM 04 — la bodega. No pasa nada acá, y eso también es información. */
+/**
+ * CAM 04 — la bodega.
+ *
+ * Mira desde el fondo hacia la puerta, no al revés. Es la orientación que tiene
+ * sentido en una bodega vigilada: lo que importa es quién entra, así que la
+ * cámara se cuelga en la pared del fondo apuntando a la única abertura.
+ *
+ * Y es también lo que permite que el suceso del candado se LEA. Con la cámara
+ * mirando a los estantes, una puerta entornada a la espalda no se vería.
+ */
 function dibujarBodega(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = "#161c23";
-  ctx.fillRect(0, 0, QW, QH);
+  const suelo = QH * 0.62;
 
-  ctx.fillStyle = "#252d36";
-  ctx.fillRect(0, QH * 0.68, QW, QH * 0.32);
+  // Muro del fondo: hormigón, más claro arriba porque es donde pega el tubo.
+  const pared = ctx.createLinearGradient(0, 0, 0, suelo);
+  pared.addColorStop(0, "#3a4450");
+  pared.addColorStop(1, "#242c35");
+  ctx.fillStyle = pared;
+  ctx.fillRect(0, 0, QW, suelo);
 
-  // Estanterías: tres niveles con sus cajas. Formas simples, pero la silueta
-  // de una estantería cargada se reconoce al instante.
-  ctx.strokeStyle = "#414b56";
-  ctx.lineWidth = 3;
-  [0.28, 0.48, 0.68].forEach((t) => {
+  // Juntas del bloque de hormigón. Dos líneas bastan para dar la escala del
+  // muro; más convierten la pared en un dibujo de ladrillos.
+  ctx.strokeStyle = "rgba(0,0,0,0.16)";
+  ctx.lineWidth = 1;
+  [0.2, 0.42].forEach((t) => {
     ctx.beginPath();
-    ctx.moveTo(QW * 0.08, QH * t);
-    ctx.lineTo(QW * 0.92, QH * t);
+    ctx.moveTo(0, suelo * t);
+    ctx.lineTo(QW, suelo * t);
     ctx.stroke();
   });
+
+  // Radier: liso, con su junta de dilatación en fuga y algo más oscuro al
+  // fondo. La fuga es lo que separa un suelo de una franja de color.
+  const radier = ctx.createLinearGradient(0, suelo, 0, QH);
+  radier.addColorStop(0, "#2a323b");
+  radier.addColorStop(1, "#434d59");
+  ctx.fillStyle = radier;
+  ctx.fillRect(0, suelo, QW, QH - suelo);
+  ctx.fillStyle = "#1a212a";
+  ctx.fillRect(0, suelo - 2, QW, 3);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1.5;
+  [[0.34, 0.12], [0.72, 0.95]].forEach(([arriba, abajo]) => {
+    ctx.beginPath();
+    ctx.moveTo(QW * arriba, suelo);
+    ctx.lineTo(QW * abajo, QH);
+    ctx.stroke();
+  });
+
+  // --- Estantería de la izquierda, en fuga ---------------------------------
+  //
+  // Los montantes se acortan y se juntan hacia el fondo. Con eso solo, una
+  // estantería plana pasa a tener profundidad sin dibujar una sola diagonal
+  // más de las imprescindibles.
+  const montantes = [
+    { x: 0.02, alto: 0.52, y: 0.1 },
+    { x: 0.17, alto: 0.44, y: 0.16 },
+    { x: 0.29, alto: 0.38, y: 0.2 },
+  ];
+  ctx.fillStyle = "#4a5561";
+  montantes.forEach((m) => ctx.fillRect(QW * m.x, QH * m.y, 5, QH * m.alto));
+
+  // Baldas y su carga.
+  [0.3, 0.45].forEach((fila, nivel) => {
+    ctx.fillStyle = "#525d6a";
+    ctx.beginPath();
+    ctx.moveTo(QW * 0.02, QH * (fila + 0.06));
+    ctx.lineTo(QW * 0.31, QH * fila);
+    ctx.lineTo(QW * 0.31, QH * fila + 4);
+    ctx.lineTo(QW * 0.02, QH * (fila + 0.06) + 5);
+    ctx.closePath();
+    ctx.fill();
+
+    const cajas: [number, number, string][] = nivel === 0
+      ? [[0.04, 0.1, "#6b7ембр".length ? "#6b7480" : "#6b7480"], [0.16, 0.08, "#57616d"], [0.25, 0.055, "#727c88"]]
+      : [[0.05, 0.09, "#5d6773"], [0.15, 0.07, "#6e7884"], [0.23, 0.065, "#525c68"]];
+    cajas.forEach(([x, ancho, color], i) => {
+      const escala = 1 - x * 0.5;
+      const alto = QH * 0.09 * escala;
+      const py = QH * (fila + 0.055 - x * 0.19) - alto;
+      ctx.fillStyle = color;
+      ctx.fillRect(QW * x, py, QW * ancho, alto);
+      // Tapa y cinta: dos trazos que convierten un rectángulo en una caja.
+      ctx.fillStyle = "rgba(255,255,255,0.09)";
+      ctx.fillRect(QW * x, py, QW * ancho, 2.5);
+      ctx.fillStyle = "rgba(0,0,0,0.24)";
+      ctx.fillRect(QW * x + QW * ancho * 0.45, py, 2, alto);
+      // Etiqueta pegada, solo en las de delante: al fondo sería un punto.
+      if (i === 0) {
+        ctx.fillStyle = "rgba(232,236,228,0.5)";
+        ctx.fillRect(QW * x + 3, py + alto * 0.4, QW * ancho * 0.42, alto * 0.28);
+      }
+    });
+  });
+
+  // --- La puerta, a la derecha ---------------------------------------------
+  //
+  // Cerrada por defecto: hoja de acero en su marco, con la argolla y el candado
+  // enganchado. Es la pieza que el suceso del candado modifica, así que se
+  // dibuja completa aunque no esté pasando nada — si solo apareciera cuando
+  // ocurre algo, el cambio no se leería como un cambio.
+  const px = QW * 0.62;
+  const pw = QW * 0.3;
+  const py = QH * 0.14;
+  const ph = suelo - py;
+
+  ctx.fillStyle = "#39424d";
+  ctx.fillRect(px - 5, py - 5, pw + 10, ph + 5);
+  const hoja = ctx.createLinearGradient(px, 0, px + pw, 0);
+  hoja.addColorStop(0, "#5a6470");
+  hoja.addColorStop(0.6, "#4a535f");
+  hoja.addColorStop(1, "#3d4650");
+  ctx.fillStyle = hoja;
+  ctx.fillRect(px, py, pw, ph);
+
+  // Refuerzos horizontales de la hoja.
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  [0.28, 0.64].forEach((t) => ctx.fillRect(px, py + ph * t, pw, 3));
+
+  // Argolla y candado cerrado: el arco baja y cierra sobre la hembrilla.
+  ctx.fillStyle = "#2c343d";
+  ctx.fillRect(px - 3, py + ph * 0.46, 12, 16);
+  candado(ctx, px + 2, py + ph * 0.5, false);
+
+  // --- Techo y equipamiento -------------------------------------------------
+  // Tubo fluorescente encendido, con su chorro sobre el radier.
+  ctx.fillStyle = "#2f3842";
+  ctx.fillRect(QW * 0.24, QH * 0.03, QW * 0.34, 7);
+  ctx.fillStyle = "rgba(226, 240, 255, 0.8)";
+  ctx.fillRect(QW * 0.25, QH * 0.03 + 2, QW * 0.32, 3.5);
+  const chorro = ctx.createRadialGradient(
+    QW * 0.41, QH * 0.55, 4,
+    QW * 0.41, QH * 0.55, QW * 0.5
+  );
+  chorro.addColorStop(0, "rgba(214, 232, 255, 0.11)");
+  chorro.addColorStop(1, "rgba(214, 232, 255, 0)");
+  ctx.fillStyle = chorro;
+  ctx.fillRect(0, 0, QW, QH);
+
+  // Extintor colgado: lo pide el manual en cada recinto, y una mancha roja en
+  // una escena de grises la ancla como sitio real.
+  ctx.fillStyle = "#8f2b22";
+  ctx.fillRect(QW * 0.5, QH * 0.3, 9, QH * 0.16);
+  ctx.fillStyle = "#b8382c";
+  ctx.fillRect(QW * 0.5, QH * 0.3, 4, QH * 0.16);
+  ctx.fillStyle = "#2a323b";
+  ctx.fillRect(QW * 0.5 + 1, QH * 0.27, 7, QH * 0.035);
+
+  // Pallet con carga envuelta, en el suelo.
+  ctx.fillStyle = "#4a4034";
+  ctx.fillRect(QW * 0.08, QH * 0.78, QW * 0.26, QH * 0.05);
+  ctx.fillStyle = "#2f281f";
+  for (let i = 0; i < 4; i++) ctx.fillRect(QW * (0.1 + i * 0.065), QH * 0.83, 5, QH * 0.05);
+  ctx.fillStyle = "rgba(180, 196, 210, 0.32)";
+  ctx.fillRect(QW * 0.1, QH * 0.66, QW * 0.22, QH * 0.12);
+  ctx.fillStyle = "rgba(255,255,255,0.09)";
+  ctx.fillRect(QW * 0.1, QH * 0.66, QW * 0.22, 3);
+}
+
+/**
+ * Un candado colgando de su argolla.
+ *
+ * `abierto` levanta el arco y lo saca de la hembrilla. Es un detalle de seis
+ * píxeles, pero es LA diferencia que el jugador tiene que ver para escribir la
+ * constancia correcta, así que se dibuja con el arco completo en las dos
+ * posiciones en vez de sugerirlo con un color.
+ */
+function candado(ctx: CanvasRenderingContext2D, x: number, y: number, abierto: boolean): void {
+  const cuerpoAlto = 11;
+  const cuerpoAncho = 9;
+
+  ctx.strokeStyle = "#aab4c0";
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.moveTo(QW * 0.08, QH * 0.24);
-  ctx.lineTo(QW * 0.08, QH * 0.72);
-  ctx.moveTo(QW * 0.92, QH * 0.24);
-  ctx.lineTo(QW * 0.92, QH * 0.72);
+  if (abierto) {
+    // Arco girado sobre su eje: sale de la hembrilla y queda ladeado.
+    ctx.arc(x + cuerpoAncho * 0.9, y - 1, 4.6, Math.PI * 0.9, Math.PI * 2.05);
+  } else {
+    ctx.arc(x + cuerpoAncho / 2, y, 4.2, Math.PI, 0);
+  }
   ctx.stroke();
 
-  ctx.fillStyle = "#4b5560";
-  [
-    [0.13, 0.16, 0.28],
-    [0.32, 0.14, 0.28],
-    [0.58, 0.2, 0.28],
-    [0.16, 0.22, 0.48],
-    [0.46, 0.15, 0.48],
-    [0.68, 0.18, 0.48],
-  ].forEach(([x, ancho, fila]) => {
-    const alto = QH * 0.08;
-    ctx.fillRect(QW * x, QH * fila - alto - 2, QW * ancho, alto);
-  });
+  const cuerpo = ctx.createLinearGradient(x, y, x + cuerpoAncho, y);
+  cuerpo.addColorStop(0, "#8e99a6");
+  cuerpo.addColorStop(1, "#5f6874");
+  ctx.fillStyle = cuerpo;
+  ctx.fillRect(x, y, cuerpoAncho, cuerpoAlto);
+  ctx.fillStyle = "#2b333c";
+  ctx.fillRect(x + cuerpoAncho / 2 - 1, y + cuerpoAlto * 0.55, 2, 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -562,6 +758,7 @@ function dibujarEvento(
   else if (escena === "vehiculo-saliendo") vehiculoSaliendo(ctx, avance);
   else if (escena === "vehiculo-detenido") vehiculoDetenido(ctx, segundos);
   else if (escena === "pasillo-abierto") pasilloAbierto(ctx, avance);
+  else if (escena === "bodega-abierta") bodegaAbierta(ctx, avance);
 }
 
 /** Suavizado de entrada. Un vehículo que frena no lo hace linealmente. */
@@ -995,4 +1192,75 @@ function pasilloAbierto(ctx: CanvasRenderingContext2D, avance: number): void {
   ctx.moveTo(hx1 - QW * 0.085, hy1 + QH * 0.09);
   ctx.lineTo(hx2 - QW * 0.05, hy2 - QH * 0.03);
   ctx.stroke();
+}
+
+/**
+ * 02:10 — la bodega con la puerta entornada y el candado abierto.
+ *
+ * A diferencia de las otras cuatro, aquí no llega ni se va nada: la escena es
+ * un ESTADO que ya estaba cuando la cámara lo enseña. Por eso `avance` no
+ * mueve un vehículo sino que abre la hoja, y solo un poco — una puerta de par
+ * en par contaría otra cosa, y lo que hay que redactar es exactamente esto:
+ * entornada, no abierta; el candado suelto, no roto.
+ *
+ * La hoja se dibuja ENCIMA de la cerrada que ya pintó dibujarBodega, tapándola
+ * con el hueco negro del marco: así el retranqueo queda a la vista y se lee
+ * como una puerta que gira, no como un rectángulo que cambia de color.
+ */
+function bodegaAbierta(ctx: CanvasRenderingContext2D, avance: number): void {
+  const suelo = QH * 0.62;
+  const px = QW * 0.62;
+  const pw = QW * 0.3;
+  const py = QH * 0.14;
+  const ph = suelo - py;
+
+  // Entreabre hasta poco más de un tercio y se queda ahí.
+  const hueco = pw * (0.14 + suave(avance) * 0.24);
+
+  // El vano: negro, porque detrás de la puerta no hay luz.
+  ctx.fillStyle = "#05070a";
+  ctx.fillRect(px, py, pw, ph);
+
+  // Luz del pasillo colándose por la rendija, sobre el radier. Es lo que hace
+  // que la puerta se lea abierta de un vistazo, incluso antes de distinguir el
+  // candado: un rectángulo negro no llama la atención, un reguero de luz sí.
+  const rendija = ctx.createLinearGradient(px, suelo, px + hueco * 2.4, QH);
+  rendija.addColorStop(0, "rgba(255, 244, 214, 0.2)");
+  rendija.addColorStop(1, "rgba(255, 244, 214, 0)");
+  ctx.fillStyle = rendija;
+  ctx.beginPath();
+  ctx.moveTo(px, suelo);
+  ctx.lineTo(px + hueco, suelo);
+  ctx.lineTo(px + hueco * 2.6, QH);
+  ctx.lineTo(px - hueco * 0.4, QH);
+  ctx.closePath();
+  ctx.fill();
+
+  // La hoja, corrida y en escorzo: se estrecha al girar hacia dentro.
+  const anchoHoja = pw - hueco;
+  const hoja = ctx.createLinearGradient(px + hueco, 0, px + pw, 0);
+  hoja.addColorStop(0, "#6e7885");
+  hoja.addColorStop(0.5, "#4a535f");
+  hoja.addColorStop(1, "#39424d");
+  ctx.fillStyle = hoja;
+  ctx.beginPath();
+  ctx.moveTo(px + hueco, py + ph * 0.03);
+  ctx.lineTo(px + pw, py);
+  ctx.lineTo(px + pw, py + ph);
+  ctx.lineTo(px + hueco, py + ph * 0.97);
+  ctx.closePath();
+  ctx.fill();
+
+  // Canto de la hoja: el grosor de la chapa, que es lo que remata el escorzo.
+  ctx.fillStyle = "#8e99a6";
+  ctx.fillRect(px + hueco - 2.5, py + ph * 0.03, 2.5, ph * 0.94);
+
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  [0.28, 0.64].forEach((t) => ctx.fillRect(px + hueco, py + ph * t, anchoHoja, 3));
+
+  // Argolla vacía y candado colgando abierto. Es el detalle que decide la
+  // redacción: abierto, no forzado.
+  ctx.fillStyle = "#2c343d";
+  ctx.fillRect(px - 3, py + ph * 0.46, 12, 16);
+  candado(ctx, px - 1, py + ph * 0.53, true);
 }

@@ -18,6 +18,7 @@ import {
   SSAO2RenderingPipeline,
   ShadowGenerator,
   Texture,
+  DynamicTexture,
   ActionManager,
   ExecuteCodeAction,
   PointerEventTypes,
@@ -26,6 +27,7 @@ import {
 import { mostrarPantallaLibro, type SesionLibro } from "./PantallaLibro";
 import { crearFigura, UNIFORME_SUPERVISOR, ROPA_RESIDENTE } from "./Figura";
 import { crearMonitorCamaras, type MonitorCamaras } from "./MonitorCamaras";
+import { crearPaginasLibro, type PaginasLibro } from "./PaginasLibro";
 import { CAMARAS_POR_SUCESO } from "./SucesosCondominio";
 import { materialPintado, materialPintadoNitido } from "../../entities/ObjetosComunes";
 import { texturaGrano, texturaMetalCepillado } from "../../entities/TexturasSuperficie";
@@ -122,6 +124,68 @@ function orientar(mat: PBRMaterial, o: { horizontal: number; vertical: number })
 /** Altura del ojo del guardia, sentado. */
 const ALTURA_OJO = 1.3;
 
+/**
+ * Las dos poses de la cámara.
+ *
+ * Sentado en la silla, y echado sobre el libro para escribir en él. El libro
+ * está en (-0,12 · 0,06) sobre el mesón, así que la pose de escritura se
+ * planta encima suyo y algo por detrás, mirando hacia abajo: es el ángulo en
+ * el que uno mira un libro que tiene delante, y deja la plana entera dentro
+ * del cuadro sin que la cabeza se coma el borde.
+ */
+const POSE_SILLA = new Vector3(0, ALTURA_OJO, -0.62);
+const MIRA_SILLA = new Vector3(0, ALTURA_OJO - 0.22, 0.6);
+const POSE_LIBRO = new Vector3(-0.12, 1.2, -0.34);
+const MIRA_LIBRO = new Vector3(-0.12, 0.78, 0.07);
+
+/** Cuánto de lo que falta se recorre por segundo al inclinarse. */
+const VELOCIDAD_INCLINARSE = 3.4;
+
+/** Campo de visión sentado en la silla. */
+const FOV_SILLA = 0.95;
+/**
+ * Campo de visión inclinado sobre el libro.
+ *
+ * ─── POR QUÉ TAMBIÉN SE ESTRECHA EL CAMPO ─────────────────────────────────
+ *
+ * Acercar la cámara no basta. Con el campo del puesto, desde 59 cm el libro
+ * abierto ocupa poco más de la mitad del ancho de la pantalla, y con la
+ * tarjeta de trabajo apoyada abajo le queda menos de media altura: el texto
+ * de las páginas sale demasiado chico para leerse, que es exactamente lo que
+ * el libro en la mesa venía a resolver.
+ *
+ * Con 0,62 la plana llena el encuadre casi de lado a lado. Y hay un motivo
+ * más: al inclinarse sobre algo, la atención se estrecha de verdad. El campo
+ * cerrado no es un truco para agrandar el papel, es lo que hace el cuerpo.
+ */
+const FOV_LIBRO = 0.62;
+
+/**
+ * Poder mirar el libro de cerca.
+ *
+ * La escritura del turno ocurre sobre el mesón, no en un panel flotando en el
+ * aire: para leer lo escrito hay que acercarse, y para mirar el monitor hay
+ * que volver a enderezarse. Es la misma economía de atención que el resto del
+ * nivel —no se puede tener todo delante a la vez— pero contada con el cuerpo.
+ */
+export interface VistaPuesto {
+  inclinarseAlLibro(): void;
+  /**
+   * Vuelve a la silla.
+   *
+   * `devolverControl` en falso deja la cámara enderezada pero SIN devolverle
+   * el ratón al jugador. Hace falta para la llegada del supervisor: esa
+   * secuencia toma la cámara para seguirle mientras cruza el hall, y si al
+   * terminar de enderezarse se reenganchara el control, el jugador podría
+   * girar en mitad de la escena peleando contra el giro asistido.
+   */
+  volverALaSilla(devolverControl?: boolean): void;
+  /** Si ya está lo bastante cerca como para que la interfaz del libro aparezca. */
+  sobreElLibro(): boolean;
+  /** Quieta en la silla, sin inclinación en curso. */
+  enLaSilla(): boolean;
+}
+
 /** Altura de la superficie del mesón. */
 const ALTO_MESON = 0.76;
 
@@ -146,13 +210,15 @@ export function crearPuestoConserjeria(
   onLibroCompletado?: () => void
 ): PuestoResult {
   configurarEscenaNocturna(scene);
-  const camara = montarCamara(scene);
+  const { camara, vista } = montarCamara(scene);
 
   const monitor = crearMonitorCamaras(scene);
+  // Las hojas del libro, que ahora muestran lo escrito de verdad.
+  const paginas = crearPaginasLibro(scene);
 
   const meson = construirMeson(scene);
   const { pantalla } = construirMonitor(scene, monitor);
-  montarZoomMonitor(scene, camara);
+  montarZoomMonitor(scene, camara, vista);
   const { radio, avisarRadio } = construirRadio(scene);
 
   // El libro se abre y se cierra las veces que haga falta: la sesión se crea
@@ -165,11 +231,19 @@ export function crearPuestoConserjeria(
   let supervisor: Supervisor | null = null;
   let residentes: Residentes | null = null;
 
-  construirLibro(scene, () => {
+  // El clic va sobre la tapa Y sobre cada hoja, así que hay tres mallas que
+  // pueden abrir el libro. Este cerrojo evita que dos avisos seguidos monten
+  // dos sesiones, cada una con su apertura y su capa.
+  let abriendo = false;
+
+  construirLibro(scene, paginas, () => {
     if (libro) {
       libro.abrir();
       return;
     }
+    if (abriendo) return;
+    abriendo = true;
+
     libro = mostrarPantallaLibro(
       scene,
       () => onLibroCompletado?.(),
@@ -207,7 +281,21 @@ export function crearPuestoConserjeria(
           monitor.ajustarHora(minuto);
         },
       },
-      usuario
+      usuario,
+      {
+        // El libro no mueve la cámara ni dibuja papel: avisa qué está
+        // pasando y el puesto decide cómo se ve. Un escenario sin mesón
+        // pasaría un enlace vacío y el turno seguiría jugándose igual.
+        seAbre() {
+          vista.inclinarseAlLibro();
+        },
+        seCierra(devolverControl) {
+          vista.volverALaSilla(devolverControl);
+        },
+        seEscribe(estado) {
+          paginas.pintar(estado);
+        },
+      }
     );
   });
   construirTablaDeClaves(scene);
@@ -305,6 +393,27 @@ function montarSombras(scene: Scene, flexo: SpotLight): void {
  * Lo que sí se hereda es la escena ya creada, así que lo primero es retirar lo
  * que trae puesto.
  */
+/**
+ * Retira el post-proceso que este escenario haya dejado puesto.
+ *
+ * La escena la comparten los dos cursos y el menú, y estas tuberías se montan
+ * sobre las cámaras de la escena: si no se quitan, siguen ahí después de
+ * salir del turno.
+ */
+function retirarPostProceso(scene: Scene): void {
+  ["postProcesoPuesto", "oclusionPuesto"].forEach((nombre) => {
+    const tuberia = scene.postProcessRenderPipelineManager.supportedPipelines.find(
+      (p) => p.name === nombre
+    );
+    if (!tuberia) return;
+    scene.postProcessRenderPipelineManager.detachCamerasFromRenderPipeline(
+      nombre,
+      scene.cameras
+    );
+    tuberia.dispose();
+  });
+}
+
 function configurarEscenaNocturna(scene: Scene): void {
   // Fuera el amanecer del galpón.
   scene.lights.slice().forEach((luz) => luz.dispose());
@@ -322,10 +431,21 @@ function configurarEscenaNocturna(scene: Scene): void {
   // ilumina el hall entero y este relleno solo tiene que evitar que los
   // rincones se cierren del todo. Dejarlo alto aplanaría los reflejos del
   // piso, que es lo que ahora hace el trabajo.
+  // Sube de 0,07 a 0,16 y se entibia. A 0,07 los rincones no es que
+  // quedaran oscuros: quedaban NEGROS, sin información ninguna, y un negro
+  // plano no se lee como penumbra sino como un agujero. Con algo de rebote
+  // los muros conservan su forma en las zonas donde el techo no llega, que
+  // es exactamente lo que hace la luz indirecta en un sitio real.
+  //
+  // El groundColor sigue siendo frío a propósito: lo que rebota del piso de
+  // porcelanato es la luz de la calle, no la de las luminarias.
   const relleno = new HemisphericLight("luzRellenoNoche", new Vector3(0, 1, 0), scene);
-  relleno.intensity = 0.07;
-  relleno.diffuse = new Color3(0.42, 0.5, 0.68);
-  relleno.groundColor = new Color3(0.06, 0.06, 0.09);
+  // 0,20. El rebote sube otro poco para que las zonas donde no llega ninguna
+  // luminaria conserven su forma, que es lo que hace falta para que en un
+  // vídeo se distinga qué hay ahí.
+  relleno.intensity = 0.2;
+  relleno.diffuse = new Color3(0.56, 0.56, 0.62);
+  relleno.groundColor = new Color3(0.1, 0.11, 0.16);
 
   // Postproceso.
   //
@@ -333,8 +453,45 @@ function configurarEscenaNocturna(scene: Scene): void {
   // la sala iluminada, el grano de antes se veía como suciedad sobre una
   // superficie clara en vez de como ruido de sensor, y la viñeta cerraba tanto
   // que se comía los muros laterales justo ahora que existen.
+  // Fuera cualquier tubería de un turno anterior.
+  //
+  // Entrar al escenario, volver al menú y entrar otra vez montaba una
+  // segunda tubería encima de la primera: grano sobre grano, viñeta sobre
+  // viñeta y una oclusión ambiental de más, cada una con su buffer. La
+  // imagen se ensuciaba un poco más en cada vuelta y parecía que había
+  // bajado la resolución. Como llevan nombre propio, se pueden buscar y
+  // retirar antes de montar las nuevas.
+  retirarPostProceso(scene);
+
   const tuberia = new DefaultRenderingPipeline("postProcesoPuesto", true, scene, scene.cameras);
+  // MSAA de la tarjeta. Se deja puesto, pero NO basta acá: ver justo abajo.
   tuberia.samples = 4;
+
+  // ─── ANTIALIASING DE PANTALLA ────────────────────────────────────────
+  //
+  // Esto es lo que quita el hormigueo de los bordes al girar la cámara.
+  //
+  // El multimuestreo de arriba suaviza los bordes cuando la escena se
+  // dibuja directamente sobre el lienzo. Pero acá no se dibuja así: con la
+  // oclusión ambiental enganchada a la misma cámara, la imagen pasa por
+  // objetivos de render intermedios que no llevan multimuestreo, y el
+  // suavizado se pierde por el camino. El resultado es que las aristas
+  // quedan en escalones de píxel.
+  //
+  // Quieto no se nota casi. Girando sí, y muchísimo: los escalones saltan
+  // de un píxel al de al lado en cada fotograma, y eso se ve como una línea
+  // que hormiguea. Se ceba justo donde hay más contraste —la puerta casi
+  // negra contra el muro claro, el zócalo oscuro entre la pared y el suelo—
+  // que son exactamente las líneas donde aparece.
+  //
+  // FXAA trabaja sobre la imagen ya terminada, al final de toda la cadena,
+  // así que da igual por cuántos objetivos intermedios haya pasado antes.
+  //
+  // El 5S lo tiene apagado y allí está bien: su escena es un galpón de día,
+  // sin contrastes extremos, y el multimuestreo le alcanza. Un puesto de
+  // noche es el caso contrario — casi todo el cuadro es una arista entre
+  // algo iluminado y algo negro.
+  tuberia.fxaaEnabled = true;
 
   tuberia.bloomEnabled = true;
   // Umbral alto: florecen las luminarias, la pantalla y los pilotos, no el
@@ -344,12 +501,35 @@ function configurarEscenaNocturna(scene: Scene): void {
   tuberia.bloomKernel = 46;
 
   tuberia.grainEnabled = true;
-  tuberia.grain.intensity = 3.5;
-  tuberia.grain.animated = true;
+  // Baja de 3,5: el grano estaba calibrado para una sala a oscuras. Sobre
+  // superficies claras y bien iluminadas deja de leerse como ruido de sensor
+  // y empieza a leerse como suciedad en la pantalla.
+  tuberia.grain.intensity = 1.1;
+
+  // Y SIN ANIMAR, que era de donde venía el hormigueo de las paredes.
+  //
+  // Animado, el grano se resiembra entero en cada fotograma. Sobre una
+  // superficie grande, plana y en penumbra —la esquina de un muro, el
+  // encuentro del suelo con la pared— no hay ningún detalle que lo
+  // disimule, así que es lo único que se mueve en esa parte del cuadro.
+  //
+  // Y se nota sobre todo AL GIRAR, que es lo que despistaba del origen: la
+  // vista sigue la pared mientras el grano se queda clavado a la pantalla,
+  // y esa diferencia entre lo que se mueve y lo que no es justo lo que el
+  // ojo caza. Quieto pasa desapercibido; girando parece que la pared
+  // parpadea.
+  //
+  // Fijo conserva lo que el grano aporta —quitarle a la imagen ese acabado
+  // demasiado limpio de render— sin nada que hormiguee.
+  tuberia.grain.animated = false;
 
   tuberia.imageProcessingEnabled = true;
   tuberia.imageProcessing.vignetteEnabled = true;
-  tuberia.imageProcessing.vignetteWeight = 1.5;
+  // Y la viñeta afloja: a 1,5 se comía los muros laterales y el hueco del
+  // ascensor, que son justo las paredes que dan sensación de sala.
+  // Y la viñeta afloja otro poco, hasta 0,75: es la que se comía las esquinas
+  // del cuadro, y en una grabación las esquinas son donde está el hall.
+  tuberia.imageProcessing.vignetteWeight = 0.75;
   tuberia.imageProcessing.vignetteColor = new Color4(0, 0, 0.02, 1);
   tuberia.imageProcessing.contrast = 1.12;
   tuberia.imageProcessing.exposure = 0.95;
@@ -366,12 +546,28 @@ function configurarEscenaNocturna(scene: Scene): void {
   // Es lo que más aporta en una escena cerrada y vista de cerca como esta, y
   // por eso vale su coste — aquí no hay un galpón entero que procesar, solo un
   // mesón.
+  // ssaoRatio a 1, y esa es la corrección importante.
+  //
+  // Estaba en 0,75: la oclusión se calculaba a tres cuartos de resolución y
+  // después se estiraba hasta el tamaño del cuadro. Como el patrón de
+  // muestreo no cae en los mismos píxeles de un fotograma al siguiente, al
+  // girar la cámara el sombreado REPTABA por las aristas — y las aristas es
+  // justo donde la oclusión trabaja, así que el efecto se concentraba en las
+  // líneas del encuentro entre muros y en la del suelo con la pared. Se veía
+  // como un parpadeo en las juntas.
+  //
+  // Calculada a resolución completa no hay estirado y no hay reptado. Cuesta
+  // más, pero es una sala fija con la cámara en una silla: no hay presupuesto
+  // de dibujo que defender aquí.
   const oclusion = new SSAO2RenderingPipeline("oclusionPuesto", scene, {
-    ssaoRatio: 0.75,
+    ssaoRatio: 1,
     blurRatio: 1,
   });
-  oclusion.radius = 0.55;
-  oclusion.totalStrength = 1.15;
+  // Radio algo más corto y fuerza algo menor: con la sala más iluminada, una
+  // oclusión larga y fuerte deja de leerse como sombra de rincón y empieza a
+  // leerse como suciedad en las esquinas.
+  oclusion.radius = 0.45;
+  oclusion.totalStrength = 0.95;
   // Alcance corto: interesa el rincón de dos centímetros, no oscurecer la sala.
   oclusion.maxZ = 6;
   oclusion.samples = 16;
@@ -401,9 +597,9 @@ function configurarEscenaNocturna(scene: Scene): void {
  * Una cámara completamente inmóvil lo daría todo servido en un solo cuadro y
  * el turno dejaría de tener atención que administrar.
  */
-function montarCamara(scene: Scene): FreeCamera {
-  const camara = new FreeCamera("camaraPuesto", new Vector3(0, ALTURA_OJO, -0.62), scene);
-  camara.setTarget(new Vector3(0, ALTURA_OJO - 0.22, 0.6));
+function montarCamara(scene: Scene): { camara: FreeCamera; vista: VistaPuesto } {
+  const camara = new FreeCamera("camaraPuesto", POSE_SILLA.clone(), scene);
+  camara.setTarget(MIRA_SILLA.clone());
 
   camara.minZ = 0.05;
   camara.fov = 0.95;
@@ -420,23 +616,95 @@ function montarCamara(scene: Scene): FreeCamera {
   const giroBase = camara.rotation.y;
   const cabeceoBase = camara.rotation.x;
 
-  // El tope se aplica DESPUÉS de que el control mueva la cámara, en cada
-  // cuadro. Intentar limitarlo dentro del propio control obligaría a escribir
-  // uno nuevo entero.
+  // --- Inclinarse sobre el libro -------------------------------------------
+  //
+  // `destino` es a dónde se quiere estar (0 sentado, 1 sobre el libro) y
+  // `avance` dónde se está de verdad. La distancia entre los dos es lo que se
+  // recorre cada cuadro, así que un cambio de idea a mitad de camino no da un
+  // salto: la cámara se da la vuelta desde donde iba.
+  let destino = 0;
+  let avance = 0;
+  let controlSuelto = false;
+  let devolverControl = true;
+
+  const posicionViva = new Vector3();
+  const miraViva = new Vector3();
+
   scene.onBeforeRenderObservable.add(() => {
-    camara.rotation.y = Math.min(
-      giroBase + GIRO_MAXIMO,
-      Math.max(giroBase - GIRO_MAXIMO, camara.rotation.y)
-    );
-    camara.rotation.x = Math.min(
-      cabeceoBase + CABECEO_MAXIMO,
-      Math.max(cabeceoBase - CABECEO_MAXIMO, camara.rotation.x)
-    );
-    // La posición no se toca nunca: si algún control la moviera, vuelve.
-    camara.position.set(0, ALTURA_OJO, -0.62);
+    const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
+    avance += (destino - avance) * Math.min(1, dt * VELOCIDAD_INCLINARSE);
+    if (Math.abs(destino - avance) < 0.0015) avance = destino;
+
+    if (avance <= 0) {
+      // Sentado. Manda el jugador, con los topes de giro de siempre.
+      if (controlSuelto && devolverControl) {
+        camara.attachControl(true);
+        controlSuelto = false;
+      }
+      // Con el control cedido a una secuencia, la posición se fija igual
+      // pero el giro lo lleva ella: tocarlo aquí sería quitárselo.
+      if (controlSuelto) {
+        camara.position.copyFrom(POSE_SILLA);
+        return;
+      }
+      camara.rotation.y = Math.min(
+        giroBase + GIRO_MAXIMO,
+        Math.max(giroBase - GIRO_MAXIMO, camara.rotation.y)
+      );
+      camara.rotation.x = Math.min(
+        cabeceoBase + CABECEO_MAXIMO,
+        Math.max(cabeceoBase - CABECEO_MAXIMO, camara.rotation.x)
+      );
+      camara.position.copyFrom(POSE_SILLA);
+      return;
+    }
+
+    // Inclinándose o ya inclinado: manda la animación. Se suelta el control
+    // del ratón porque si no el jugador pelea contra la interpolación y la
+    // cámara tiembla entre las dos.
+    if (!controlSuelto) {
+      camara.detachControl();
+      controlSuelto = true;
+    }
+
+    const k = suavizarInclinacion(avance);
+    Vector3.LerpToRef(POSE_SILLA, POSE_LIBRO, k, posicionViva);
+    Vector3.LerpToRef(MIRA_SILLA, MIRA_LIBRO, k, miraViva);
+    camara.position.copyFrom(posicionViva);
+    camara.setTarget(miraViva);
+    camara.fov = FOV_SILLA + (FOV_LIBRO - FOV_SILLA) * k;
   });
 
-  return camara;
+  return {
+    camara,
+    vista: {
+      inclinarseAlLibro() {
+        destino = 1;
+        devolverControl = true;
+      },
+      volverALaSilla(devolver = true) {
+        destino = 0;
+        devolverControl = devolver;
+      },
+      sobreElLibro: () => avance > 0.5,
+      // La rueda solo manda con la cámara quieta en la silla. Durante el
+      // recorrido y sobre el libro el campo lo lleva la inclinación, y si los
+      // dos escribieran en él cada cuadro se pelearían y la imagen temblaría.
+      enLaSilla: () => avance <= 0,
+    },
+  };
+}
+
+/**
+ * Suavizado de la inclinación.
+ *
+ * Arranca y frena despacio, y de paso corrige un detalle que se nota mucho:
+ * con interpolación recta el tramo final —el que se ve de cerca, con el libro
+ * llenando el cuadro— es el que más rápido pasa. Así el movimiento se asienta
+ * sobre el papel en vez de clavarse.
+ */
+function suavizarInclinacion(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -625,8 +893,8 @@ function construirMonitor(scene: Scene, monitor: MonitorCamaras): { pantalla: Me
  * con paso fijo, las últimas muescas al acercarse darían saltos enormes
  * porque el campo que queda ya es muy chico.
  */
-function montarZoomMonitor(scene: Scene, camara: FreeCamera): void {
-  const FOV_LEJOS = camara.fov;
+function montarZoomMonitor(scene: Scene, camara: FreeCamera, vista: VistaPuesto): void {
+  const FOV_LEJOS = FOV_SILLA;
   /** Con este campo, la patente de la camioneta se lee. */
   const FOV_CERCA = 0.3;
   /** Cuánto cambia el campo por muesca, en tanto por uno. */
@@ -638,6 +906,10 @@ function montarZoomMonitor(scene: Scene, camara: FreeCamera): void {
 
   scene.onPointerObservable.add((info) => {
     if (info.type !== PointerEventTypes.POINTERWHEEL) return;
+    // Inclinado sobre el libro la rueda no hace nada: ahí el campo lo lleva la
+    // inclinación. Sin esto, girar la rueda con el libro abierto dejaba un
+    // destino guardado que daba un tirón al volver a la silla.
+    if (!vista.enLaSilla()) return;
     const evento = info.event as IWheelEvent;
 
     // deltaY es positivo al girar hacia el usuario, que es alejarse.
@@ -651,6 +923,7 @@ function montarZoomMonitor(scene: Scene, camara: FreeCamera): void {
   });
 
   scene.onBeforeRenderObservable.add(() => {
+    if (!vista.enLaSilla()) return;
     const resto = destino - camara.fov;
     // Por debajo de una milésima ya no se ve moverse: se asienta y se deja de
     // calcular una interpolación que nunca termina de llegar.
@@ -760,7 +1033,7 @@ function construirRadio(scene: Scene): { radio: Mesh; avisarRadio: (encendido: b
  * Escribir en él vendrá después, sobre una interfaz aparte; esto es lo que se
  * ve en la escena.
  */
-function construirLibro(scene: Scene, onAbrir: () => void): Mesh {
+function construirLibro(scene: Scene, paginas: PaginasLibro, onAbrir: () => void): Mesh {
   const X = -0.12;
   const Z = 0.06;
   const GIRO = 0.06;
@@ -794,7 +1067,7 @@ function construirLibro(scene: Scene, onAbrir: () => void): Mesh {
     const dz = -Math.sin(GIRO) * lado * 0.152;
     pagina.position.set(X + dx, ALTO_MESON + 0.018, Z + dz);
     pagina.rotation.y = GIRO;
-    const matPagina = orientar(materialPagina(scene, lado), ORIENTACION_APOYADA);
+    const matPagina = orientar(paginas.material(lado), ORIENTACION_APOYADA);
     // Fibra de papel. Muy sutil, pero es lo que impide que la hoja devuelva la
     // luz del flexo como un brillo plano de plástico.
     matPagina.bumpTexture = relievePapel(scene, `relievePapel_${lado}`);
@@ -818,53 +1091,6 @@ function construirLibro(scene: Scene, onAbrir: () => void): Mesh {
   return tapa;
 }
 
-/** Rayado de una página. Tres columnas, como manda el manual. */
-function materialPagina(scene: Scene, lado: number): PBRMaterial {
-  return materialPintadoNitido(scene, `matPaginaLibro_${lado}`, 380, 490, 2.5, (ctx, w, h) => {
-    // Papel envejecido, no blanco. Un blanco puro bajo la luz azul del monitor
-    // se ve como un rectángulo de plástico.
-    ctx.fillStyle = "#e6e0cf";
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.fillStyle = "rgba(120, 96, 60, 0.05)";
-    for (let i = 0; i < 60; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      ctx.fillRect(x, y, 2 + Math.random() * 5, 1 + Math.random() * 2);
-    }
-
-    // Encabezado de las tres columnas.
-    const COL1 = 62;
-    const COL2 = 148;
-
-    ctx.strokeStyle = "#3f4a58";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, w - 20, 34);
-
-    ctx.fillStyle = "#2b3440";
-    ctx.font = "bold 15px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("HORA", 10 + COL1 / 2, 33);
-    ctx.fillText("ACTIVIDAD", 10 + COL1 + (COL2 - COL1) / 2 + 24, 33);
-    ctx.fillText("OBSERVACIONES", 10 + COL2 + (w - 20 - COL2) / 2, 33);
-
-    // Rayado horizontal y las dos verticales.
-    ctx.strokeStyle = "rgba(63, 74, 88, 0.45)";
-    ctx.lineWidth = 1;
-    for (let y = 44; y < h - 10; y += 26) {
-      ctx.beginPath();
-      ctx.moveTo(10, y);
-      ctx.lineTo(w - 10, y);
-      ctx.stroke();
-    }
-    [10 + COL1, 10 + COL2 + 24].forEach((x) => {
-      ctx.beginPath();
-      ctx.moveTo(x, 10);
-      ctx.lineTo(x, h - 10);
-      ctx.stroke();
-    });
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Tabla de claves
@@ -1051,7 +1277,11 @@ function construirSala(scene: Scene): void {
   // Rugosidad muy baja: es la que convierte la luminaria en una franja larga
   // sobre el suelo. Por encima de 0,15 el reflejo se disuelve y el piso vuelve
   // a parecer hormigón pintado.
-  matPiso.roughness = 0.09;
+  // 0,16 y no 0,09. A 0,09 el piso devolvía la sala como un espejo de baño y
+  // el reflejo competía con lo reflejado. El porcelanato pulido difumina algo
+  // lo que devuelve: se sigue viendo el hall en el suelo, pero desenfocado,
+  // que es lo que lo hace leer como piedra y no como agua.
+  matPiso.roughness = 0.16;
   matPiso.metallic = 0;
 
   const piso = MeshBuilder.CreateGround(
@@ -1223,15 +1453,31 @@ function construirLuminarias(scene: Scene): void {
     panel.material = matPanel;
   });
 
-  // Las dos que sí alumbran: una sobre el mesón, otra sobre el fondo del hall.
-  [
-    { z: 0.9, intensidad: 5.2 },
-    { z: 3.6, intensidad: 4.2 },
-  ].forEach((l, i) => {
-    const luz = new PointLight(`luzTechoHall_${i}`, new Vector3(0, ALTO_SALA - 0.12, l.z), scene);
+  // Las que sí alumbran.
+  //
+  // Antes eran dos, y ninguna coincidía con las seis luminarias del techo:
+  // los paneles se veían encendidos en unas coordenadas y la luz salía de
+  // otras. El ojo no lo razona, pero lo nota — la sala parecía iluminada por
+  // algo que no estaba a la vista.
+  //
+  // Ahora son tres, una por cada FILA de luminarias, en su misma z. Siguen
+  // siendo menos que los paneles porque seis luces reales pasarían del tope
+  // de ocho por material y empezarían a caerse de los cálculos; con una por
+  // fila el reparto ya se corresponde con lo que se ve encendido.
+  [0.4, 2.2, 4.0].forEach((z, i) => {
+    const luz = new PointLight(`luzTechoHall_${i}`, new Vector3(0, ALTO_SALA - 0.12, z), scene);
     luz.diffuse = new Color3(1, 0.95, 0.86);
     luz.specular = new Color3(1, 0.97, 0.92);
-    luz.intensity = l.intensidad;
+    // Repartida entre tres en vez de concentrada en dos: el total sube algo,
+    // pero sobre todo se reparte, que es lo que quita el efecto de foco.
+    //
+    // Sube a 5,4 para que la sala se lea bien en una grabación. La noche NO
+    // se pierde subiendo las luminarias: se perdería subiendo el rebote o la
+    // exposición, que aclaran también lo que no está iluminado. Alimentando
+    // las lámparas, lo que crece son los charcos de luz y el contraste entre
+    // ellos y el resto — que es precisamente el aspecto de un sitio de noche
+    // con las luces encendidas.
+    luz.intensity = 5.4;
     luz.range = 9;
   });
 }
@@ -1302,7 +1548,18 @@ function montarReflejos(scene: Scene): void {
   });
 
   // --- 2. Espejo del suelo --------------------------------------------------
-  const espejo = new MirrorTexture("espejoPiso", 512, scene, true);
+  // 1024 y no 512.
+  //
+  // El reflejo del piso se dibuja en su propia textura, y a 512 píxeles esa
+  // textura tiene bastante menos resolución que la pantalla: al mover la
+  // cámara, lo reflejado va saltando de píxel en píxel y tiembla justo donde
+  // el suelo se junta con la pared, que es donde el reflejo se ve más
+  // comprimido por el ángulo rasante.
+  //
+  // Es la segunda causa del parpadeo en esa línea, aparte del reptado de la
+  // oclusión: las dos se notan en el mismo sitio porque las dos fallan por
+  // lo mismo, calcular a menos resolución de la que se muestra.
+  const espejo = new MirrorTexture("espejoPiso", 1024, scene, true);
   // El plano del suelo, mirando hacia arriba. La distancia es 0 porque el
   // suelo está exactamente en y = 0.
   espejo.mirrorPlane = new Plane(0, -1, 0, 0);
@@ -1470,6 +1727,59 @@ function construirHallYVentanal(scene: Scene): void {
   calle.position.set(0, 2, 8.4);
   calle.material = materialCalleNocturna(scene);
 
+  montarLluviaEnCristal(scene, cristal);
+
+  // Poste de la farola.
+  //
+  // Es el objeto que hace que el ventanal deje de ser un fondo pintado. Un
+  // plano lejano, por bien pintado que esté, no da profundidad: hace falta
+  // algo SÓLIDO entre el cristal y ese fondo, y a seis metros el poste cruza
+  // justo la parte del hueco que se ve desde la silla.
+  const matFarola = new PBRMaterial("matPosteFarola", scene);
+  matFarola.albedoColor = new Color3(0.08, 0.085, 0.095);
+  matFarola.roughness = 0.55;
+  matFarola.metallic = 0.6;
+
+  const poste = MeshBuilder.CreateCylinder(
+    "posteFarola",
+    { diameterTop: 0.09, diameterBottom: 0.13, height: 3.4, tessellation: 12 },
+    scene
+  );
+  poste.position.set(1.6, 1.7, 6.4);
+  poste.material = matFarola;
+
+  const brazo = MeshBuilder.CreateBox(
+    "brazoFarola",
+    { width: 0.46, height: 0.07, depth: 0.07 },
+    scene
+  );
+  brazo.position.set(1.4, 3.38, 6.4);
+  brazo.material = matFarola;
+
+  // La luminaria: una caja oscura con la cara de abajo encendida. El bulbo
+  // emisivo importa más que el poste — es lo que dice de dónde sale el halo.
+  const matBulbo = new PBRMaterial("matBulboFarola", scene);
+  matBulbo.albedoColor = new Color3(0, 0, 0);
+  matBulbo.emissiveColor = new Color3(1, 0.86, 0.6);
+  matBulbo.roughness = 1;
+
+  const carcasa = MeshBuilder.CreateBox(
+    "carcasaFarola",
+    { width: 0.42, height: 0.09, depth: 0.24 },
+    scene
+  );
+  carcasa.position.set(1.2, 3.32, 6.4);
+  carcasa.material = matFarola;
+
+  const bulbo = MeshBuilder.CreateGround(
+    "bulboFarola",
+    { width: 0.36, height: 0.19 },
+    scene
+  );
+  bulbo.position.set(1.2, 3.27, 6.4);
+  bulbo.rotation.z = Math.PI;
+  bulbo.material = matBulbo;
+
   // Farola: la luz que entra por el ventanal y recorta las siluetas del hall.
   const farola = new SpotLight(
     "luzFarola",
@@ -1573,7 +1883,9 @@ function construirAscensor(scene: Scene): Ascensor {
   // Indicador de piso: la flecha que se enciende cuando el ascensor llega.
   const matIndicador = new PBRMaterial("matIndicadorAscensor", scene);
   matIndicador.albedoColor = new Color3(0, 0, 0);
-  matIndicador.emissiveColor = new Color3(0.12, 0.12, 0.14);
+  // Enciende tenue en reposo en lugar de quedarse apagado del todo: un panel
+  // negro no se lee como indicador, se lee como un rectángulo pintado.
+  matIndicador.emissiveColor = new Color3(0.3, 0.34, 0.42);
   matIndicador.roughness = 1;
   const indicador = MeshBuilder.CreatePlane(
     "indicadorAscensorHall",
@@ -1584,6 +1896,36 @@ function construirAscensor(scene: Scene): Ascensor {
   indicador.rotation.y = Math.PI;
   indicador.material = matIndicador;
 
+  // --- La luz del hueco -----------------------------------------------------
+  //
+  // El ascensor está en x = -3,1 y las luminarias del techo van por el centro
+  // de la sala: el hueco quedaba en el borde del reparto, apagado y plano,
+  // justo el sitio por el que entran y salen todos los residentes del turno.
+  // Con foco propio deja de ser un hueco en la pared y pasa a ser un sitio.
+  //
+  // Va apuntando a la pared, no al suelo: un bañador rasante saca el relieve
+  // del marco de acero y del retranqueo de las hojas, que es lo que da
+  // volumen. Apuntándolo al piso solo se conseguiría una mancha redonda.
+  const bañador = new SpotLight(
+    "luzAscensorHall",
+    new Vector3(X, ALTO_SALA - 0.25, 4.05),
+    new Vector3(0, -0.55, 1),
+    1.5,
+    3,
+    scene
+  );
+  bañador.diffuse = new Color3(1, 0.96, 0.89);
+  bañador.specular = new Color3(1, 0.98, 0.94);
+  bañador.intensity = 5.4;
+  bañador.range = 3.4;
+
+  // Solo ilumina lo suyo.
+  //
+  // Cada material admite ocho luces a la vez y la sala ya va justa. Acotando
+  // este foco a las mallas del ascensor, el resto de la escena ni siquiera lo
+  // cuenta: no le quita el sitio a ninguna de las que sí tienen que llegar al
+  // mesón. Y de paso no derrama luz sobre el muro del ventanal, que está al
+  // lado y debe seguir en penumbra.
   // --- Hojas ----------------------------------------------------------------
   //
   // Van detrás de la cara del muro. Al abrirse se meten por detrás de los
@@ -1599,6 +1941,17 @@ function construirAscensor(scene: Scene): Ascensor {
     hoja.material = matAcero;
     return { malla: hoja, lado, cerrada: X + (lado * ANCHO) / 4 };
   });
+
+  // El foco se acota AQUÍ y no al crearlo, porque las hojas se construyen
+  // justo arriba: filtrando antes, las dos piezas que más se miran del
+  // ascensor —las que se abren— habrían quedado fuera de su propia luz.
+  bañador.includedOnlyMeshes = scene.meshes.filter(
+    (m) =>
+      m.name.includes("Ascensor") ||
+      m.name.includes("ascensor") ||
+      m.name.startsWith("cabina") ||
+      m.name.startsWith("marcoAsc")
+  );
 
   const RECORRIDO = ANCHO / 2 + 0.04;
   let abierto = 0;
@@ -1678,15 +2031,51 @@ function construirPuertaHall(scene: Scene): PuertaHall {
   matVidrio.metallic = 0.55;
   matVidrio.alpha = 0.3;
 
-  // El cristal, colgando del eje desplazado media hoja hacia dentro.
-  const cristal = MeshBuilder.CreateBox(
-    "cristalPuertaHall",
-    { width: ANCHO - 0.1, height: ALTO - 0.12, depth: 0.012 },
-    scene
-  );
-  cristal.position.set(-ANCHO / 2, ALTO / 2, 0);
-  cristal.material = matVidrio;
-  cristal.parent = eje;
+  // DOS PAÑOS DE CRISTAL, uno a cada lado del travesaño.
+  //
+  // Antes era un solo paño de lado a lado, y ahí estaba el parpadeo. Los
+  // perfiles tienen cinco centímetros de canto y el cristal poco más de uno,
+  // así que el cristal quedaba METIDO dentro del volumen de los perfiles: el
+  // travesaño del medio lo atravesaba entero y los montantes se le solapaban
+  // un centímetro por cada lado.
+  //
+  // Dos superficies ocupando el mismo sitio no tienen un orden estable de
+  // dibujado, y al girar la cámara la tarjeta gráfica va cambiando cuál
+  // queda delante. Con el cristal translúcido encima, eso se ve como un
+  // parpadeo en la hoja de la puerta.
+  //
+  // Partirlo en dos paños es además cómo está hecha una puerta de verdad:
+  // el travesaño no cruza por delante del vidrio, separa dos vidrios.
+  const HUECO = 0.07;
+  const Y_TRAVESANO = 0.98;
+  const CANTO_TRAVESANO = 0.09;
+
+  // Cada paño se queda dentro del hueco del marco, sin llegar a tocarlo.
+  const panos: [number, number][] = [
+    // [centro en Y, alto]
+    [
+      (HUECO + (Y_TRAVESANO - CANTO_TRAVESANO / 2)) / 2,
+      Y_TRAVESANO - CANTO_TRAVESANO / 2 - HUECO - 0.01,
+    ],
+    [
+      (Y_TRAVESANO + CANTO_TRAVESANO / 2 + (ALTO - HUECO)) / 2,
+      ALTO - HUECO - (Y_TRAVESANO + CANTO_TRAVESANO / 2) - 0.01,
+    ],
+  ];
+
+  panos.forEach(([y, alto], i) => {
+    const pano = MeshBuilder.CreateBox(
+      `cristalPuertaHall_${i}`,
+      { width: ANCHO - 0.14, height: alto, depth: 0.012 },
+      scene
+    );
+    // Un centímetro hacia la calle: el marco queda resaltado por dentro,
+    // como en una puerta real, y de paso ninguna cara del cristal comparte
+    // plano con ninguna cara del perfil.
+    pano.position.set(-ANCHO / 2, y, 0.01);
+    pano.material = matVidrio;
+    pano.parent = eje;
+  });
 
   // Marco: cuatro perfiles y un travesaño. El travesaño importa más de lo que
   // parece — es lo que impide que la hoja se lea como una lámina de vidrio
@@ -2061,29 +2450,282 @@ function montarSupervisor(scene: Scene, camara: FreeCamera, puerta: PuertaHall):
   };
 }
 
+/**
+ * Lo que se ve por el ventanal.
+ *
+ * ─── DÓNDE HAY QUE PINTAR, Y POR QUÉ IMPORTA TANTO ────────────────────────
+ *
+ * Un ventanal no enseña todo lo que hay detrás: enseña el cono que dejan pasar
+ * su hueco y la posición de quien mira. Desde la silla, por este ventanal, del
+ * plano de la calle solo se ve la franja u 0,23–0,77 · v 0,29–0,78. Todo lo
+ * que se pinte fuera de ahí no lo verá nadie nunca.
+ *
+ * En la versión anterior las cinco ventanas encendidas del edificio de
+ * enfrente estaban en u 0,12 · 0,18 · 0,31 · 0,84 · 0,90 — LAS CINCO fuera del
+ * cono. Lo único que caía dentro era el halo de la farola, y por eso el
+ * ventanal se veía como un rectángulo negro con una mancha caliente: no era
+ * que faltara contenido, es que estaba pintado donde no se mira.
+ *
+ * Así que la composición se hace al revés de lo normal: primero se marca la
+ * franja visible y dentro de ella se coloca lo que tiene que leerse —el
+ * edificio de enfrente, la vereda, el asfalto mojado—. Lo de los bordes es
+ * relleno para que no se corte, no contenido.
+ */
+/**
+ * Lluvia corriendo por el cristal del ventanal.
+ *
+ * ─── POR QUÉ LLUEVE ───────────────────────────────────────────────────────
+ *
+ * Porque el turno es del 14 de septiembre en Puerto Montt, y en Puerto Montt
+ * en septiembre llueve. No es un efecto puesto por bonito: es la respuesta a
+ * dónde y cuándo pasa esto.
+ *
+ * Y hace por el ventanal lo que ningún fondo pintado consigue. Un cristal
+ * limpio es invisible —lo que se ve es lo de detrás— así que el hueco se lee
+ * como un agujero. Con agua encima el cristal EXISTE: hay algo entre el hall y
+ * la calle, y esa capa es la que convierte el rectángulo en una ventana.
+ *
+ * ─── CÓMO ESTÁ HECHA ──────────────────────────────────────────────────────
+ *
+ * Una textura sobre el vidrio con gotas que resbalan. No hay física: cada gota
+ * tiene su carril, su velocidad y su tamaño, baja hasta abajo y vuelve a
+ * salir arriba. A través de un cristal en penumbra, la diferencia entre eso y
+ * una simulación no se ve.
+ *
+ * Se redibuja a doce cuadros por segundo y no en cada uno. El agua sobre un
+ * vidrio se mueve despacio, así que a doce ya va fluida — y el resto del
+ * tiempo la GPU se dedica a la escena, que es donde hace falta.
+ */
+function montarLluviaEnCristal(scene: Scene, cristal: Mesh): void {
+  const ANCHO = 512;
+  const ALTO = 256;
+  const CUADROS_POR_SEGUNDO = 12;
+
+  const textura = new DynamicTexture("texLluviaCristal", { width: ANCHO, height: ALTO }, scene, true);
+  const ctx = textura.getContext() as CanvasRenderingContext2D;
+  textura.hasAlpha = true;
+
+  const material = cristal.material as PBRMaterial;
+  // La lluvia va como EMISIVA y no como color: el agua del cristal no tiene
+  // color propio, lo que se ve es la luz de la farola quebrándose en ella. En
+  // albedo quedaría como suciedad gris pegada al vidrio.
+  material.emissiveTexture = textura;
+  material.emissiveColor = new Color3(0.34, 0.39, 0.48);
+
+  interface Gota {
+    x: number;
+    y: number;
+    velocidad: number;
+    largo: number;
+    grosor: number;
+    /** Cuánto se desvía de la vertical mientras baja. */
+    deriva: number;
+  }
+
+  const nueva = (arriba: boolean): Gota => ({
+    x: Math.random() * ANCHO,
+    y: arriba ? -Math.random() * ALTO : Math.random() * ALTO,
+    velocidad: 14 + Math.random() * 46,
+    largo: 8 + Math.random() * 34,
+    grosor: 0.8 + Math.random() * 1.8,
+    // Ninguna gota baja recta. Sobre un vidrio el agua tantea, se desvía hacia
+    // donde encuentra menos resistencia; cuarenta y seis regueros perfectamente
+    // verticales se leen como rayas dibujadas, no como agua.
+    deriva: (Math.random() - 0.5) * 9,
+  });
+
+  // Pocas y espaciadas. Con noventa el cristal se cubría entero y competía con
+  // lo que hay detrás, que es justo lo que la ventana tiene que dejar ver.
+  const gotas: Gota[] = Array.from({ length: 46 }, () => nueva(false));
+
+  /**
+   * Salpicaduras quietas: las que no resbalan y se quedan pegadas.
+   *
+   * Muy pequeñas y muy tenues. Grandes y numerosas —como estaban— no se leían
+   * como agua sino como polvo sobre el vidrio, que es el efecto contrario.
+   */
+  const quietas = Array.from({ length: 90 }, () => ({
+    x: Math.random() * ANCHO,
+    y: Math.random() * ALTO,
+    r: 0.5 + Math.random() * 1.1,
+  }));
+
+  let desdeUltimo = 0;
+
+  scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+    desdeUltimo += dt;
+    if (desdeUltimo < 1 / CUADROS_POR_SEGUNDO) return;
+    const paso = desdeUltimo;
+    desdeUltimo = 0;
+
+    ctx.clearRect(0, 0, ANCHO, ALTO);
+
+    ctx.fillStyle = "rgba(186, 202, 224, 0.3)";
+    quietas.forEach((q) => {
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    gotas.forEach((gota, i) => {
+      gota.y += gota.velocidad * paso;
+      gota.x += gota.deriva * paso;
+      if (gota.y - gota.largo > ALTO) gotas[i] = nueva(true);
+
+      // El reguero: más tenue arriba y más marcado en la cabeza de la gota,
+      // que es donde se junta el agua.
+      const rastro = ctx.createLinearGradient(
+        gota.x - gota.deriva * 0.4,
+        gota.y - gota.largo,
+        gota.x,
+        gota.y
+      );
+      rastro.addColorStop(0, "rgba(190, 205, 225, 0)");
+      rastro.addColorStop(1, "rgba(214, 228, 245, 0.72)");
+      ctx.strokeStyle = rastro;
+      ctx.lineWidth = gota.grosor;
+      ctx.beginPath();
+      ctx.moveTo(gota.x - gota.deriva * 0.4, gota.y - gota.largo);
+      ctx.lineTo(gota.x, gota.y);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(224, 236, 250, 0.85)";
+      ctx.beginPath();
+      ctx.arc(gota.x, gota.y, gota.grosor * 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    textura.update();
+  });
+}
+
 function materialCalleNocturna(scene: Scene): PBRMaterial {
-  const mat = materialPintado(scene, "matCalleNocturna", 900, 500, (ctx, w, h) => {
-    const cielo = ctx.createLinearGradient(0, 0, 0, h);
-    cielo.addColorStop(0, "#080b14");
-    cielo.addColorStop(0.62, "#101728");
-    cielo.addColorStop(1, "#1a1f28");
+  // La franja que de verdad se ve por el hueco: u 0,23–0,77 · v 0,29–0,78.
+  // Solo hacen falta las verticales para componer, porque la fachada y el
+  // suelo cruzan el ancho entero; las horizontales quedan de referencia en el
+  // comentario de arriba.
+  const V0 = 0.29;
+  const V1 = 0.78;
+
+  const mat = materialPintado(scene, "matCalleNocturna", 1400, 780, (ctx, w, h) => {
+    // --- Cielo ---------------------------------------------------------------
+    const cielo = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+    cielo.addColorStop(0, "#070a12");
+    cielo.addColorStop(1, "#131a2b");
     ctx.fillStyle = cielo;
     ctx.fillRect(0, 0, w, h);
 
-    // Halo de la farola.
-    const halo = ctx.createRadialGradient(w * 0.66, h * 0.34, 6, w * 0.66, h * 0.34, 210);
-    halo.addColorStop(0, "rgba(255, 226, 168, 0.85)");
-    halo.addColorStop(0.35, "rgba(255, 214, 140, 0.18)");
+    // --- Edificio de enfrente -------------------------------------------------
+    //
+    // Ocupa la mitad alta de la franja visible. Es la pieza que da la escala:
+    // sin algo construido al otro lado, el ventanal podría dar a cualquier
+    // parte, y un condominio da a otro edificio.
+    const yEdificio = h * (V0 - 0.06);
+    const altoEdificio = h * (V1 - V0) * 0.62;
+    ctx.fillStyle = "#191d29";
+    ctx.fillRect(0, yEdificio, w, altoEdificio);
+
+    // Cornisa: una línea clara arriba que lo despega del cielo.
+    ctx.fillStyle = "rgba(90, 100, 120, 0.35)";
+    ctx.fillRect(0, yEdificio, w, 4);
+
+    // Retícula de ventanas. Cinco filas por doce columnas, repartidas por todo
+    // el ancho —el cono visible se lleva las de en medio y el resto rellena—.
+    const COLS = 12;
+    const FILAS = 5;
+    const anchoV = (w / COLS) * 0.46;
+    const altoV = (altoEdificio / FILAS) * 0.5;
+    /** Cuáles están encendidas. Fijo y no al azar: la fachada no parpadea. */
+    const encendidas = new Set(["1,3", "2,6", "2,7", "3,4", "0,8", "3,9", "4,5"]);
+
+    for (let f = 0; f < FILAS; f += 1) {
+      for (let c = 0; c < COLS; c += 1) {
+        const x = (c + 0.5) * (w / COLS) - anchoV / 2;
+        const y = yEdificio + 26 + f * (altoEdificio / FILAS);
+        const viva = encendidas.has(`${f},${c}`);
+
+        ctx.fillStyle = viva ? "#ffd58e" : "#0d1119";
+        ctx.fillRect(x, y, anchoV, altoV);
+
+        if (viva) {
+          // Derrame de la luz sobre la fachada. Es lo que hace que la ventana
+          // parezca encendida y no un rectángulo amarillo pegado.
+          const g = ctx.createRadialGradient(
+            x + anchoV / 2,
+            y + altoV / 2,
+            2,
+            x + anchoV / 2,
+            y + altoV / 2,
+            anchoV * 2.4
+          );
+          g.addColorStop(0, "rgba(255, 208, 136, 0.4)");
+          g.addColorStop(1, "rgba(255, 208, 136, 0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(x + anchoV / 2, y + altoV / 2, anchoV * 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // --- Vereda y calzada ------------------------------------------------------
+    const ySuelo = yEdificio + altoEdificio;
+    const suelo = ctx.createLinearGradient(0, ySuelo, 0, h);
+    suelo.addColorStop(0, "#0f1119");
+    suelo.addColorStop(0.3, "#15171f");
+    suelo.addColorStop(1, "#0a0c11");
+    ctx.fillStyle = suelo;
+    ctx.fillRect(0, ySuelo, w, h - ySuelo);
+
+    // Bordillo: la línea que separa vereda de calzada.
+    ctx.fillStyle = "rgba(120, 128, 142, 0.22)";
+    ctx.fillRect(0, ySuelo + (h - ySuelo) * 0.34, w, 3);
+
+    // --- Farola ----------------------------------------------------------------
+    //
+    // Cae en u 0,66 · v 0,34, dentro del cono. Se conserva porque era lo único
+    // que se veía antes y porque el poste está modelado justo delante: el halo
+    // pintado es el resplandor de esa misma lámpara sobre el fondo.
+    const halo = ctx.createRadialGradient(w * 0.66, h * 0.34, 8, w * 0.66, h * 0.34, 260);
+    halo.addColorStop(0, "rgba(255, 226, 168, 0.8)");
+    halo.addColorStop(0.35, "rgba(255, 214, 140, 0.17)");
     halo.addColorStop(1, "rgba(255, 214, 140, 0)");
     ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, w, h);
+    ctx.beginPath();
+    ctx.arc(w * 0.66, h * 0.34, 260, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Ventanas encendidas del edificio de enfrente. Muy pocas y muy tenues: a
-    // las tres de la mañana casi todas están apagadas, y ese "casi" es lo que
-    // da la hora sin necesidad de decirla.
-    ctx.fillStyle = "rgba(255, 216, 150, 0.5)";
-    [[0.12, 0.2], [0.18, 0.44], [0.31, 0.16], [0.84, 0.52], [0.9, 0.26]].forEach(([x, y]) => {
-      ctx.fillRect(x * w, y * h, 16, 22);
+    // --- Asfalto mojado --------------------------------------------------------
+    //
+    // Septiembre en Puerto Montt. Cada luz encendida se estira hacia abajo
+    // sobre el suelo, que es lo que hace que una calle de noche se lea como
+    // mojada. Cuesta cuatro degradados y cambia la escena entera.
+    // El reflejo se apaga en el primer tercio del suelo. Llegando abajo del
+    // todo, los rastros dejaban de leerse como reflejos y se veían como
+    // columnas de luz plantadas en la calzada.
+    const reflejar = (x: number, color: string, ancho: number, fuerza: number): void => {
+      const largo = (h - ySuelo) * 0.62;
+      const g = ctx.createLinearGradient(0, ySuelo, 0, ySuelo + largo);
+      g.addColorStop(0, color.replace("ALPHA", String(fuerza)));
+      g.addColorStop(0.35, color.replace("ALPHA", String(fuerza * 0.34)));
+      g.addColorStop(1, color.replace("ALPHA", "0"));
+      ctx.fillStyle = g;
+      // Más estrecho abajo que arriba: un reflejo sobre mojado se afila con la
+      // distancia, no baja con el mismo ancho.
+      ctx.beginPath();
+      ctx.moveTo(x - ancho / 2, ySuelo);
+      ctx.lineTo(x + ancho / 2, ySuelo);
+      ctx.lineTo(x + ancho * 0.18, ySuelo + largo);
+      ctx.lineTo(x - ancho * 0.18, ySuelo + largo);
+      ctx.closePath();
+      ctx.fill();
+    };
+
+    reflejar(w * 0.66, "rgba(255, 214, 140, ALPHA)", 150, 0.26);
+    encendidas.forEach((clave) => {
+      const c = Number(clave.split(",")[1]);
+      reflejar((c + 0.5) * (w / COLS), "rgba(255, 208, 136, ALPHA)", 58, 0.1);
     });
   });
 

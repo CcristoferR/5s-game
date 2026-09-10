@@ -44,11 +44,40 @@ import { Scene, Observer } from "@babylonjs/core";
 // velocidad normal en ese mismo instante. Así nadie se salta un suceso por
 // tener el dedo apoyado.
 
-/** Minutos del turno que pasan por cada segundo real, a velocidad normal. */
-const MINUTOS_POR_SEGUNDO = 4;
+/**
+ * Minutos del turno que pasan por cada segundo real, a velocidad normal.
+ *
+ * ─── POR QUÉ TAN LENTO ────────────────────────────────────────────────────
+ *
+ * Estuvo en 4, y a esa velocidad el principio del turno era ingobernable.
+ * Las novedades del condominio caen en los minutos 30, 45, 60 y 90 —una hora
+ * larga de servicio, que es un ritmo razonable para un puesto de noche—, pero
+ * a cuatro minutos por segundo eso son menos de cuatro segundos reales entre
+ * una y otra. El jugador veía las luces encendidas en la cámara del pasillo y
+ * antes de poder abrir el libro ya tenía la camioneta en el estacionamiento y
+ * el ingreso en la reja encima.
+ *
+ * Y no se arreglaba solo con que el reloj se pare en los paneles, que ya se
+ * paraba: el problema no era escribir una novedad, era que al volver al libro
+ * la siguiente ya estaba entrando.
+ *
+ * A minuto y medio por segundo esos mismos huecos pasan a ser diez y veinte
+ * segundos: da tiempo a leer el aviso, mirar la cámara que lo delata y
+ * redactarlo sin que se amontone lo siguiente. El turno sigue corriendo solo
+ * —que es lo que hace que esto sea un turno y no una lista de tareas—, pero a
+ * un ritmo que se puede atender.
+ */
+const MINUTOS_POR_SEGUNDO = 1.5;
 
-/** Cuánto multiplica el adelanto. */
-const FACTOR_ADELANTO = 6;
+/**
+ * Cuánto multiplica el adelanto.
+ *
+ * Sube junto con la bajada de arriba, y por la misma razón: lo que se ganó en
+ * los tramos con novedades no se puede perder en los muertos. Entre la última
+ * novedad y la fiscalización hay casi dos horas de servicio en las que no
+ * pasa nada, y adelantando se despachan en unos seis segundos.
+ */
+const FACTOR_ADELANTO = 12;
 
 export interface RelojTurno {
   /** Minuto del turno, redondeado hacia abajo. 0 es 00:00. */

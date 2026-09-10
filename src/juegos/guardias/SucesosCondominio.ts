@@ -179,6 +179,60 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
       },
     ],
   },
+  // ─── 02:10 · La bodega ──────────────────────────────────────────────────
+  //
+  // Este suceso enseña un patrón distinto a los cuatro de arriba, y por eso
+  // está: en aquellos la cámara muestra algo OCURRIENDO —una camioneta que
+  // llega, una que se va—, y aquí muestra un ESTADO. Nadie vio abrir el
+  // candado. Se encuentra abierto.
+  //
+  // Esa diferencia es la que hace caer en las dos trampas: escribir que hubo
+  // un ingreso no autorizado es inventarse el hecho que falta, y escribir que
+  // la situación es irregular o preocupante es la apreciación personal que el
+  // manual prohíbe expresamente. Lo correcto es lo aburrido: el candado está
+  // abierto, la puerta entornada, se revisó, no se advierten faltantes.
+  //
+  // Va en el minuto 130 a propósito. Los otros cuatro se agolpan entre el 30 y
+  // el 90, y de ahí hasta la fiscalización de las 03:20 no pasaba nada: esto
+  // no aprieta el arranque y le da contenido a la mitad muerta del turno.
+  {
+    id: "bodega-candado",
+    minuto: 130,
+    actividad: "RONDA",
+    aviso:
+      "En el monitor, la cámara 4 (Bodega) muestra la puerta entornada y el candado colgando " +
+      "abierto de la argolla. Al concurrir al lugar se revisa el interior: los estantes están " +
+      "completos y no se advierten faltantes ni desorden. No hay nadie dentro.",
+    opciones: [
+      {
+        texto:
+          "Se observa por cámara 4 la puerta de bodega entornada, con el candado abierto en su " +
+          "argolla. Se concurre al lugar, se revisa el interior sin advertir faltantes ni personas " +
+          "en su interior, y se procede a cerrar la puerta y el candado. Se informa a la " +
+          "administración para su conocimiento.",
+        clase: "factual",
+        explicacion:
+          "Lo que se encontró, lo que se hizo y a quién se informó. El manual pide verificar candados, puertas y ventanas en las rondas, y esta constancia deja escrito que se verificó y cómo quedó.",
+      },
+      {
+        texto:
+          "Se observa por cámara 4 la puerta de bodega abierta con el candado suelto, situación " +
+          "irregular y preocupante que denota descuido del personal de aseo del turno anterior. Se " +
+          "procede a cerrar.",
+        clase: "opinion",
+        explicacion:
+          "La puerta y el candado son hechos. Que la situación sea \"irregular y preocupante\" y que el descuido sea del aseo es lo que le pareció al guardia: no vio a nadie dejarla abierta. Quien lea el libro necesita saber qué se encontró, no a quién culpa el que escribe.",
+      },
+      {
+        texto:
+          "Se constata ingreso no autorizado a bodega mediante violación del candado, sin " +
+          "sustracción de especies. Se cierra el recinto.",
+        clase: "inventada",
+        explicacion:
+          "Nadie vio entrar a nadie ni forzar nada: el candado estaba abierto, no roto. Escribir un ingreso no autorizado y una violación convierte una puerta mal cerrada en un delito, y esa constancia puede terminar en una denuncia por un hecho que no ocurrió.",
+      },
+    ],
+  },
 ];
 
 /** Minuto del turno en el que llega el fiscalizador (03:20). */
@@ -211,7 +265,8 @@ export type EscenaCamara =
   | "vehiculo-en-reja"
   | "vehiculo-saliendo"
   | "vehiculo-detenido"
-  | "pasillo-abierto";
+  | "pasillo-abierto"
+  | "bodega-abierta";
 
 export interface TomaDeCamara {
   /** Cuadrante del monitor: 0 acceso, 1 estacionamiento, 2 pasillo, 3 bodega. */
@@ -227,4 +282,7 @@ export const CAMARAS_POR_SUCESO: Record<string, TomaDeCamara> = {
   "camara-estacionamiento": { indice: 1, escena: "vehiculo-detenido" },
   "ingreso-vehiculo": { indice: 0, escena: "vehiculo-en-reja" },
   "salida-vehiculo": { indice: 0, escena: "vehiculo-saliendo" },
+  // Y con esto la CAM 04 deja de ser la cámara donde nunca pasa nada, que es
+  // lo que enseñaba a no mirarla.
+  "bodega-candado": { indice: 3, escena: "bodega-abierta" },
 };
