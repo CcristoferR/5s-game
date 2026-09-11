@@ -221,6 +221,19 @@ export function crearPuestoConserjeria(
   montarZoomMonitor(scene, camara, vista);
   const { radio, avisarRadio } = construirRadio(scene);
 
+  // La radio se atiende apretando la radio.
+  //
+  // El piloto encendido señala al aparato, así que el aparato tiene que
+  // responder. Si la única forma de contestar fuera abrir el libro y buscar
+  // una fila, el aviso estaría apuntando a un objeto que no hace nada — y
+  // eso enseña a no fiarse de lo que el puesto indica, que es lo contrario
+  // de lo que este nivel quiere enseñar.
+  radio.actionManager = new ActionManager(scene);
+  radio.actionManager.hoverCursor = "pointer";
+  radio.actionManager.registerAction(
+    new ExecuteCodeAction(ActionManager.OnPickTrigger, () => libro?.atenderRadio())
+  );
+
   // El libro se abre y se cierra las veces que haga falta: la sesión se crea
   // en el primer clic y desde ahí se reabre donde quedó. Sin esto el turno
   // sería un viaje de ida —abrir el libro y no poder volver al puesto—, y el
@@ -274,6 +287,12 @@ export function crearPuestoConserjeria(
         seRetiraSupervisor() {
           supervisor?.retirarse();
         },
+        suenaRadio(activa) {
+          // El piloto del equipo. Es el único aviso que se ve ESTANDO EN EL
+          // PUESTO, con el libro cerrado: sin él, una llamada entrante solo
+          // existiría dentro de un menú, y la radio volvería a ser atrezo.
+          avisarRadio(activa);
+        },
         alAvanzarMinuto(minuto) {
           residentes?.enMinuto(minuto);
           // Las cámaras marcan la hora del turno, no una suya. Es el único
@@ -299,6 +318,7 @@ export function crearPuestoConserjeria(
     );
   });
   construirTablaDeClaves(scene);
+  construirDotacionDelPuesto(scene);
   construirSala(scene);
   construirHallYVentanal(scene);
   const puerta = construirPuertaHall(scene);
@@ -357,14 +377,42 @@ function montarSombras(scene: Scene, flexo: SpotLight): void {
   sombras.normalBias = 0.008;
   sombras.darkness = 0.28;
 
-  // Proyecta todo lo que está sobre el mesón; el mesón y el piso las reciben.
+  // QUIÉN RECIBE LA SOMBRA: SOLO EL MESÓN.
+  //
+  // Antes la recibía todo lo que se llamara "Hall" o "Muro", que es el hall
+  // entero: paredes, jambas, piso, ascensor. Y la única luz que genera
+  // sombras es este flexo, con 2,4 m de alcance apuntando al libro. El
+  // ascensor está a cinco metros: nunca hubo sombra suya que recibir.
+  //
+  // Pero pedirla igual NO sale gratis, y ahí estaba el hormigueo de los
+  // bordes. El filtro de contacto que se usa arriba rota su patrón de
+  // muestreo con un ángulo sacado de un hash de la posición del píxel en el
+  // espacio de la luz (ver shadowsFragmentFunctions: getRand sobre
+  // vPositionFromLight). Un hash devuelve valores muy distintos ante
+  // entradas muy parecidas — para eso sirve.
+  //
+  // En una superficie vista de canto, un píxel de movimiento de cámara
+  // desplaza el punto del mundo una barbaridad. Así que el hash salta, el
+  // ángulo cambia por completo, y con él el valor de la sombra. Fotograma a
+  // fotograma eso es un rayado que hierve, y se ceba justo donde la
+  // superficie está más en rasante y más lejos del foco: las jambas de los
+  // huecos y la línea del suelo con la pared.
+  //
+  // Acotándolo al mesón, el filtro solo trabaja donde el mapa de sombras
+  // tiene datos de verdad y la superficie se ve de frente. Que es, además,
+  // el único sitio donde había algo que sombrear.
   scene.meshes.forEach((malla) => {
     const nombre = malla.name;
-    const recibe = nombre.includes("Meson") || nombre.includes("Hall") || nombre.includes("Muro");
-    if (recibe) {
+    if (nombre.includes("Meson")) {
       malla.receiveShadows = true;
       return;
     }
+
+    // Explícito y no por omisión: los muros, el zócalo y el piso se marcan
+    // como receptores al construirse, así que hay que apagarlo aquí.
+    malla.receiveShadows = false;
+
+    if (nombre.includes("Hall") || nombre.includes("Muro")) return;
     // La pantalla y el cristal no proyectan: son planos sin grosor y su sombra
     // saldría como una lámina negra flotando.
     if (nombre.includes("pantalla") || nombre.includes("cristal") || nombre.includes("calle")) return;
@@ -443,7 +491,7 @@ function configurarEscenaNocturna(scene: Scene): void {
   // 0,20. El rebote sube otro poco para que las zonas donde no llega ninguna
   // luminaria conserven su forma, que es lo que hace falta para que en un
   // vídeo se distinga qué hay ahí.
-  relleno.intensity = 0.2;
+  relleno.intensity = 0.26;
   relleno.diffuse = new Color3(0.56, 0.56, 0.62);
   relleno.groundColor = new Color3(0.1, 0.11, 0.16);
 
@@ -532,7 +580,9 @@ function configurarEscenaNocturna(scene: Scene): void {
   tuberia.imageProcessing.vignetteWeight = 0.75;
   tuberia.imageProcessing.vignetteColor = new Color4(0, 0, 0.02, 1);
   tuberia.imageProcessing.contrast = 1.12;
-  tuberia.imageProcessing.exposure = 0.95;
+  // Sube un punto: no aclara los negros —eso mataría la noche— sino que abre
+  // el rango medio, que es donde vive el detalle nuevo de muros y suelo.
+  tuberia.imageProcessing.exposure = 1.05;
   tuberia.imageProcessing.toneMappingEnabled = true;
 
   // OCLUSIÓN AMBIENTAL
@@ -705,6 +755,1030 @@ function montarCamara(scene: Scene): { camara: FreeCamera; vista: VistaPuesto } 
  */
 function suavizarInclinacion(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+
+// ---------------------------------------------------------------------------
+// La dotación del puesto
+// ---------------------------------------------------------------------------
+//
+// Una conserjería no es un mesón en una sala vacía: es un sitio de trabajo con
+// sus cosas. El tablero de llaves, los casilleros del correo, el extintor con
+// su señalética, la papelera, el calendario. Sin eso, el hall se lee como una
+// maqueta de arquitecto y no como un lugar donde alguien pasa ocho horas.
+//
+// ─── LO QUE HACE QUE UN OBJETO NO PAREZCA DE PLÁSTICO ─────────────────────
+//
+// Cuatro cosas, y ninguna es "más polígonos":
+//
+//  1. VARIOS MATERIALES POR OBJETO. Un extintor no es un bloque rojo: es
+//     chapa pintada, una válvula de latón, una maneta cromada, una manguera de
+//     goma y una etiqueta de papel. Cada una devuelve la luz de forma distinta,
+//     y ESO es lo que el ojo lee como "cosa real" frente a "cosa de juguete".
+//
+//  2. NADA PERFECTAMENTE LISO NI PERFECTAMENTE MATE. Un valor de rugosidad
+//     redondo y repetido en todo delata el render. Aquí cada pieza lleva el
+//     suyo: 0,3 en el cromo, 0,45 en la chapa esmaltada, 0,9 en el cartón.
+//
+//  3. PIEZAS REDONDAS DONDE LAS HAY. El cuerpo de un extintor es un cilindro
+//     con casquete, no una caja. Una caja con esquinas vivas siempre se ve
+//     como una caja, por muy bien pintada que esté.
+//
+//  4. NADA ALINEADO DEL TODO. Los llaveros cuelgan cada uno con su ángulo y
+//     el calendario va un poco torcido. La simetría perfecta es de render; una
+//     conserjería de verdad la deshace en una semana.
+
+/** Cuelga una pieza de la pared, orientada hacia dentro de la sala. */
+function enPared(malla: Mesh | TransformNode, lado: -1 | 1): void {
+  // Las paredes laterales miran al eje X, así que todo lo que se cuelga en
+  // ellas gira un cuarto de vuelta. El signo decide cuál de las dos.
+  malla.rotation.y = (lado * Math.PI) / 2;
+}
+
+/**
+ * Tablero de llaves.
+ *
+ * El mueble con el que se reconoce una conserjería antes que por ninguna otra
+ * cosa. Panel con la cuadrícula de ganchos, cada uno con su llave y su etiqueta
+ * numerada, y una placa grabada arriba.
+ *
+ * ─── QUÉ HACE QUE SE LEA COMO UN TABLERO Y NO COMO UN CARTEL ──────────────
+ *
+ * A cuatro metros no se distingue el dentado de una llave, así que lo que
+ * identifica el mueble no es el detalle: es el PATRÓN. Tres filas de seis
+ * etiquetas numeradas, con algo colgando de cada una y unos huecos donde falta.
+ * Eso se reconoce de un vistazo aunque no se vea ninguna llave entera.
+ *
+ * Por eso los números van impresos en el panel —grandes, sobre recuadro claro—
+ * y no confiados a las etiquetas que cuelgan, que a esta distancia son cuatro
+ * píxeles.
+ */
+function construirTableroDeLlaves(scene: Scene): void {
+  const X = -ANCHO_SALA / 2 + 0.07;
+  const Z = 2.55;
+  const Y = 1.52;
+  const ANCHO = 0.95;
+  const ALTO = 0.75;
+  const FONDO = 0.11;
+
+  const raiz = new TransformNode("tableroLlaves", scene);
+  raiz.position.set(X, Y, Z);
+  enPared(raiz, 1);
+
+  // Aluminio del armazón. Rugosidad baja y metalicidad alta: un perfil de
+  // aluminio devuelve la luz del foco y es lo que dibuja el contorno del mueble
+  // contra el muro.
+  const matPerfilLlaves = new PBRMaterial("matPerfilLlaves", scene);
+  matPerfilLlaves.albedoColor = new Color3(0.62, 0.63, 0.65);
+  matPerfilLlaves.roughness = 0.34;
+  matPerfilLlaves.metallic = 0.82;
+
+  // --- Panel de fondo -------------------------------------------------------
+  //
+  // Va como plano y no como caja: de una caja se ve la cara de atrás, y ahí el
+  // rótulo sale escrito al revés. Y aun de frente, la textura de un plano se
+  // muestra espejada según hacia dónde mire, así que se corrige con orientar
+  // —el mismo ayudante que usan la pantalla del monitor y las hojas del libro.
+  const respaldo = MeshBuilder.CreatePlane(
+    "tableroLlavesRespaldo",
+    { width: ANCHO - 0.05, height: ALTO - 0.05 },
+    scene
+  );
+  respaldo.position.z = FONDO / 2 - 0.014;
+  respaldo.material = orientar(
+    materialPintadoNitido(scene, "matFondoLlaves", 460, 360, 2.5, (ctx, w, h) => {
+      // Melamina clara con su veta suave.
+      const base = ctx.createLinearGradient(0, 0, 0, h);
+      base.addColorStop(0, "#ddd6c4");
+      base.addColorStop(1, "#cbc3b0");
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = "rgba(120, 108, 84, 0.05)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 90; i++) {
+        const y = Math.random() * h;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y + (Math.random() - 0.5) * 6);
+        ctx.stroke();
+      }
+
+      // Roces y marcas de uso, concentrados bajo cada gancho: es donde la llave
+      // golpea el panel al colgarla.
+      ctx.fillStyle = "rgba(105, 92, 66, 0.09)";
+      for (let i = 0; i < 50; i++) {
+        ctx.beginPath();
+        ctx.arc(Math.random() * w, Math.random() * h, 3 + Math.random() * 13, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Rayas de separación entre filas.
+      ctx.strokeStyle = "rgba(80, 72, 54, 0.3)";
+      ctx.lineWidth = 1.5;
+      for (let fila = 1; fila < 3; fila++) {
+        ctx.beginPath();
+        ctx.moveTo(26, 74 + fila * 96);
+        ctx.lineTo(w - 26, 74 + fila * 96);
+        ctx.stroke();
+      }
+
+      // Los números, en recuadro claro. Esto es lo que identifica el mueble a
+      // distancia, así que van grandes y con contraste alto.
+      for (let fila = 0; fila < 3; fila++) {
+        for (let col = 0; col < 6; col++) {
+          const x = 52 + col * 72;
+          const y = 120 + fila * 96;
+          ctx.fillStyle = "rgba(252, 250, 244, 0.85)";
+          ctx.fillRect(x - 27, y, 54, 24);
+          ctx.strokeStyle = "rgba(80, 72, 54, 0.45)";
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(x - 27, y, 54, 24);
+          ctx.fillStyle = "#2b2b24";
+          ctx.font = "bold 17px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(String(101 + fila * 6 + col), x, y + 18);
+        }
+      }
+    }),
+    { horizontal: -1, vertical: 1 }
+  );
+  respaldo.parent = raiz;
+
+  // --- Armazón --------------------------------------------------------------
+  [
+    { n: "sup", w: ANCHO, h: 0.026, x: 0, y: ALTO / 2 - 0.013 },
+    { n: "inf", w: ANCHO, h: 0.026, x: 0, y: -ALTO / 2 + 0.013 },
+    { n: "izq", w: 0.026, h: ALTO, x: -ANCHO / 2 + 0.013, y: 0 },
+    { n: "der", w: 0.026, h: ALTO, x: ANCHO / 2 - 0.013, y: 0 },
+  ].forEach((p) => {
+    const m = MeshBuilder.CreateBox(
+      `tableroLlavesCostero_${p.n}`,
+      { width: p.w, height: p.h, depth: FONDO },
+      scene
+    );
+    m.position.set(p.x, p.y, 0);
+    m.material = matPerfilLlaves;
+    m.parent = raiz;
+  });
+
+  // Placa grabada del rótulo, atornillada al costero superior. Va como pieza
+  // aparte y no pintada en el panel: una placa tiene canto y brillo propio, y
+  // eso es lo que la hace leer como metal y no como una pegatina.
+  const placa = MeshBuilder.CreatePlane(
+    "tableroLlavesPlaca",
+    { width: ANCHO * 0.72, height: 0.075 },
+    scene
+  );
+  placa.position.set(0, ALTO / 2 + 0.055, FONDO / 2 - 0.03);
+  placa.material = orientar(
+    materialPintadoNitido(scene, "matPlacaLlaves", 340, 36, 3, (ctx, w, h) => {
+      const al = ctx.createLinearGradient(0, 0, 0, h);
+      al.addColorStop(0, "#9aa0a6");
+      al.addColorStop(0.5, "#c2c7cc");
+      al.addColorStop(1, "#8d9399");
+      ctx.fillStyle = al;
+      ctx.fillRect(0, 0, w, h);
+      // Cepillado del aluminio.
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 0.6;
+      for (let i = 0; i < 70; i++) {
+        const y = Math.random() * h;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+      // Texto grabado: sombra clara debajo y letra oscura encima.
+      ctx.textAlign = "center";
+      ctx.font = "bold 19px system-ui, sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.fillText("LLAVES · DEPARTAMENTOS", w / 2, h / 2 + 8);
+      ctx.fillStyle = "#26262a";
+      ctx.fillText("LLAVES · DEPARTAMENTOS", w / 2, h / 2 + 7);
+    }),
+    { horizontal: -1, vertical: 1 }
+  );
+  placa.parent = raiz;
+
+  // --- Ganchos y llaveros ---------------------------------------------------
+  const matGancho = new PBRMaterial("matGanchoLlaves", scene);
+  matGancho.albedoColor = new Color3(0.68, 0.69, 0.71);
+  matGancho.roughness = 0.28;
+  matGancho.metallic = 0.93;
+
+  const matLlave = new PBRMaterial("matLlaveLlaves", scene);
+  matLlave.albedoColor = new Color3(0.72, 0.63, 0.4);
+  matLlave.roughness = 0.33;
+  matLlave.metallic = 0.88;
+
+  const matEtiqueta = new PBRMaterial("matEtiquetaLlaves", scene);
+  matEtiqueta.albedoColor = new Color3(0.86, 0.83, 0.72);
+  matEtiqueta.roughness = 0.92;
+  matEtiqueta.metallic = 0;
+
+  for (let fila = 0; fila < 3; fila++) {
+    for (let col = 0; col < 6; col++) {
+      const px = -ANCHO / 2 + 0.12 + col * 0.147;
+      const py = ALTO / 2 - 0.13 - fila * 0.196;
+
+      // Gancho en ele: poste y punta. El poste solo se ve como un palito; la
+      // punta hacia arriba es lo que lo convierte en un gancho.
+      const poste = MeshBuilder.CreateCylinder(
+        `llavesPoste_${fila}_${col}`,
+        { diameter: 0.007, height: 0.032, tessellation: 8 },
+        scene
+      );
+      poste.rotation.x = Math.PI / 2;
+      poste.position.set(px, py, FONDO / 2 - 0.032);
+      poste.material = matGancho;
+      poste.parent = raiz;
+
+      const punta = MeshBuilder.CreateCylinder(
+        `llavesPunta_${fila}_${col}`,
+        { diameter: 0.007, height: 0.016, tessellation: 8 },
+        scene
+      );
+      punta.position.set(px, py + 0.007, FONDO / 2 - 0.05);
+      punta.material = matGancho;
+      punta.parent = raiz;
+
+      // Una de cada siete está fuera: hay vecinos con su llave arriba. Un
+      // tablero completo se ve como un patrón impreso, no como un mueble en uso.
+      if ((fila * 6 + col) % 7 === 3) continue;
+
+      const ladeo = (((fila * 7 + col * 3) % 5) - 2) * 0.09;
+      const juego = new TransformNode(`llavesJuego_${fila}_${col}`, scene);
+      juego.position.set(px, py, FONDO / 2 - 0.056);
+      juego.rotation.z = ladeo;
+      juego.parent = raiz;
+
+      const anilla = MeshBuilder.CreateTorus(
+        `llavesAnilla_${fila}_${col}`,
+        { diameter: 0.03, thickness: 0.0045, tessellation: 12 },
+        scene
+      );
+      anilla.rotation.x = Math.PI / 2;
+      anilla.position.y = -0.022;
+      anilla.material = matGancho;
+      anilla.parent = juego;
+
+      // Llave con paletón y dentado. Tres cajitas de un milímetro que a esta
+      // distancia no se distinguen una a una, pero que juntas dan la silueta
+      // irregular que el ojo reconoce como llave y no como palito.
+      const paleton = MeshBuilder.CreateCylinder(
+        `llavesPaleton_${fila}_${col}`,
+        { diameter: 0.019, height: 0.003, tessellation: 12 },
+        scene
+      );
+      paleton.rotation.x = Math.PI / 2;
+      paleton.position.y = -0.042;
+      paleton.material = matLlave;
+      paleton.parent = juego;
+
+      const caña = MeshBuilder.CreateBox(
+        `llavesCana_${fila}_${col}`,
+        { width: 0.0075, height: 0.048, depth: 0.0025 },
+        scene
+      );
+      caña.position.y = -0.072;
+      caña.material = matLlave;
+      caña.parent = juego;
+
+      [0.0, 0.012, 0.024].forEach((dy, i) => {
+        const diente = MeshBuilder.CreateBox(
+          `llavesDiente_${fila}_${col}_${i}`,
+          { width: 0.005, height: 0.006, depth: 0.0025 },
+          scene
+        );
+        diente.position.set(0.006, -0.086 + dy, 0);
+        diente.material = matLlave;
+        diente.parent = juego;
+      });
+
+      const etiqueta = MeshBuilder.CreateBox(
+        `llavesEtiqueta_${fila}_${col}`,
+        { width: 0.03, height: 0.042, depth: 0.002 },
+        scene
+      );
+      etiqueta.position.set(0.026, -0.056, 0.004);
+      etiqueta.rotation.z = ladeo * 0.5;
+      etiqueta.material = matEtiqueta;
+      etiqueta.parent = juego;
+    }
+  }
+}
+
+/**
+ * Extintor con su señalética.
+ *
+ * El manual lo nombra en varios sitios —altura de instalación, estado de la
+ * aguja, métodos de extinción— y el cuestionario pregunta por él. Que esté a
+ * la vista en el puesto no es solo ambientación: es material del curso.
+ *
+ * Se construye por piezas porque un extintor tiene cinco materiales distintos
+ * y ahí está la diferencia entre un objeto y un bloque rojo.
+ */
+function construirExtintor(scene: Scene): void {
+  const X = ANCHO_SALA / 2 - 0.12;
+  const Z = 2.3;
+  // El manual pregunta a qué altura se instala: la maneta sobre 1,20 del suelo.
+  const Y_BASE = 0.78;
+
+  const raiz = new TransformNode("extintorHall", scene);
+  raiz.position.set(X, Y_BASE, Z);
+  enPared(raiz, -1);
+
+  // Chapa esmaltada roja. Rugosidad baja y algo de metal: el esmalte de un
+  // extintor tiene brillo, no es mate como una pared.
+  const matCuerpo = new PBRMaterial("matExtintorCuerpo", scene);
+  matCuerpo.albedoColor = new Color3(0.44, 0.04, 0.03);
+  matCuerpo.roughness = 0.32;
+  matCuerpo.metallic = 0.45;
+
+  const matNegro = new PBRMaterial("matExtintorNegro", scene);
+  matNegro.albedoColor = new Color3(0.035, 0.035, 0.04);
+  matNegro.roughness = 0.68;
+  matNegro.metallic = 0.15;
+
+  const matCromo = new PBRMaterial("matExtintorCromo", scene);
+  matCromo.albedoColor = new Color3(0.72, 0.72, 0.74);
+  matCromo.roughness = 0.18;
+  matCromo.metallic = 0.95;
+
+  const matLaton = new PBRMaterial("matExtintorLaton", scene);
+  matLaton.albedoColor = new Color3(0.62, 0.5, 0.22);
+  matLaton.roughness = 0.34;
+  matLaton.metallic = 0.9;
+
+  // Botella: cilindro con casquete esférico arriba. Un cilindro a secas acaba
+  // en un canto plano que se ve falso al instante.
+  const botella = MeshBuilder.CreateCylinder(
+    "extintorBotella",
+    { diameter: 0.15, height: 0.42, tessellation: 24 },
+    scene
+  );
+  botella.position.y = 0.21;
+  botella.material = matCuerpo;
+  botella.parent = raiz;
+
+  const casquete = MeshBuilder.CreateSphere(
+    "extintorCasquete",
+    { diameter: 0.15, segments: 16 },
+    scene
+  );
+  casquete.scaling.y = 0.55;
+  casquete.position.y = 0.42;
+  casquete.material = matCuerpo;
+  casquete.parent = raiz;
+
+  const base = MeshBuilder.CreateCylinder(
+    "extintorBase",
+    { diameter: 0.155, height: 0.025, tessellation: 24 },
+    scene
+  );
+  base.position.y = 0.012;
+  base.material = matNegro;
+  base.parent = raiz;
+
+  // Cuello, válvula de latón y maneta cromada.
+  const cuello = MeshBuilder.CreateCylinder(
+    "extintorCuello",
+    { diameter: 0.045, height: 0.06, tessellation: 14 },
+    scene
+  );
+  cuello.position.y = 0.47;
+  cuello.material = matLaton;
+  cuello.parent = raiz;
+
+  const maneta = MeshBuilder.CreateBox(
+    "extintorManeta",
+    { width: 0.075, height: 0.014, depth: 0.03 },
+    scene
+  );
+  maneta.position.set(0, 0.505, -0.012);
+  maneta.rotation.z = 0.06;
+  maneta.material = matCromo;
+  maneta.parent = raiz;
+
+  // Manómetro: la esfera que el manual pregunta en qué posición debe estar.
+  const manometro = MeshBuilder.CreateCylinder(
+    "extintorManometro",
+    { diameter: 0.036, height: 0.016, tessellation: 16 },
+    scene
+  );
+  manometro.rotation.x = Math.PI / 2;
+  manometro.position.set(0.032, 0.472, -0.026);
+  manometro.material = materialPintado(scene, "matManometro", 96, 96, (ctx, w, h) => {
+    ctx.fillStyle = "#e8e6de";
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Zona verde de presión correcta, entre dos rojas.
+    ctx.lineWidth = 13;
+    ctx.strokeStyle = "#2e8b45";
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 14, Math.PI * 1.28, Math.PI * 1.72);
+    ctx.stroke();
+    ctx.strokeStyle = "#a82b20";
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 14, Math.PI * 0.9, Math.PI * 1.28);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 14, Math.PI * 1.72, Math.PI * 2.1);
+    ctx.stroke();
+    // Aguja en verde: en servicio.
+    ctx.strokeStyle = "#1b1b1b";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(w / 2, h / 2);
+    ctx.lineTo(w / 2 + 22 * Math.cos(Math.PI * 1.5), h / 2 + 22 * Math.sin(Math.PI * 1.5));
+    ctx.stroke();
+  });
+  manometro.parent = raiz;
+
+  // Pasador de seguridad y su precinto: dos piezas de un centímetro que nadie
+  // mira y sin las cuales el extintor parece de atrezo.
+  const pasador = MeshBuilder.CreateTorus(
+    "extintorPasador",
+    { diameter: 0.03, thickness: 0.004, tessellation: 12 },
+    scene
+  );
+  pasador.rotation.y = Math.PI / 2;
+  pasador.position.set(-0.042, 0.5, -0.005);
+  pasador.material = matCromo;
+  pasador.parent = raiz;
+
+  // Manguera: tubo de goma bajando por el costado hasta la boquilla.
+  const manguera = MeshBuilder.CreateCylinder(
+    "extintorManguera",
+    { diameter: 0.018, height: 0.26, tessellation: 10 },
+    scene
+  );
+  manguera.rotation.z = -0.22;
+  manguera.position.set(0.072, 0.34, -0.03);
+  manguera.material = matNegro;
+  manguera.parent = raiz;
+
+  const boquilla = MeshBuilder.CreateCylinder(
+    "extintorBoquilla",
+    { diameterTop: 0.034, diameterBottom: 0.02, height: 0.07, tessellation: 12 },
+    scene
+  );
+  boquilla.rotation.z = -0.3;
+  boquilla.position.set(0.104, 0.2, -0.032);
+  boquilla.material = matNegro;
+  boquilla.parent = raiz;
+
+  // Etiqueta. Un extintor sin etiqueta es un bombona roja.
+  const etiqueta = MeshBuilder.CreateCylinder(
+    "extintorEtiqueta",
+    { diameter: 0.152, height: 0.17, tessellation: 24 },
+    scene
+  );
+  etiqueta.position.y = 0.23;
+  etiqueta.material = materialPintadoNitido(
+    scene,
+    "matEtiquetaExtintor",
+    300,
+    170,
+    2,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#c9c4b6";
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#8f1a12";
+      ctx.fillRect(0, 0, w, 34);
+      ctx.fillStyle = "#f2efe6";
+      ctx.font = "bold 22px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("POLVO QUÍMICO SECO", w / 2, 25);
+      ctx.fillStyle = "#22221e";
+      ctx.font = "bold 44px system-ui, sans-serif";
+      ctx.fillText("ABC", w / 2, 82);
+      ctx.font = "15px system-ui, sans-serif";
+      ctx.fillText("6 kg  ·  EXTINTOR PORTÁTIL", w / 2, 112);
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText("REVISIÓN: 03 / 2026", w / 2, 140);
+      ctx.strokeStyle = "#22221e";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(6, 40, w - 12, h - 48);
+    }
+  );
+  etiqueta.parent = raiz;
+
+  // Soporte de pared.
+  const soporte = MeshBuilder.CreateBox(
+    "extintorSoporte",
+    { width: 0.1, height: 0.06, depth: 0.09 },
+    scene
+  );
+  soporte.position.set(0, 0.3, 0.055);
+  soporte.material = matNegro;
+  soporte.parent = raiz;
+
+  // Señalética reglamentaria, encima y bien alta para verse de lejos.
+  const senal = MeshBuilder.CreatePlane(
+    "extintorSenal",
+    { width: 0.21, height: 0.21 },
+    scene
+  );
+  senal.position.set(0, 0.92, -0.018);
+  senal.rotation.y = Math.PI;
+  senal.material = materialPintadoNitido(
+    scene,
+    "matSenalExtintor",
+    210,
+    210,
+    2.5,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#b01a12";
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#f4f2ec";
+      ctx.fillRect(8, 8, w - 16, h - 16);
+      ctx.fillStyle = "#b01a12";
+      ctx.fillRect(14, 14, w - 28, h - 28);
+
+      // Pictograma: silueta de extintor con la llama.
+      ctx.fillStyle = "#f4f2ec";
+      ctx.fillRect(w * 0.42, h * 0.34, w * 0.13, h * 0.4);
+      ctx.beginPath();
+      ctx.arc(w * 0.485, h * 0.34, w * 0.065, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(w * 0.465, h * 0.24, w * 0.04, h * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(w * 0.62, h * 0.62);
+      ctx.quadraticCurveTo(w * 0.7, h * 0.46, w * 0.64, h * 0.34);
+      ctx.quadraticCurveTo(w * 0.78, h * 0.46, w * 0.7, h * 0.66);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.font = "bold 19px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("EXTINTOR", w / 2, h - 24);
+    }
+  );
+  senal.parent = raiz;
+}
+
+/**
+ * Papelera de rejilla metálica.
+ *
+ * La de toda la vida: chapa perforada. Se hace con dos cilindros abiertos —uno
+ * exterior de rejilla y otro interior oscuro— porque una papelera opaca a esta
+ * distancia se lee como un cubo de plástico.
+ */
+function construirPapelera(scene: Scene): void {
+  const raiz = new TransformNode("papeleraHall", scene);
+  raiz.position.set(1.64, 0, 0.12);
+  // Un poco girada: nadie deja la papelera alineada con la mesa.
+  raiz.rotation.y = 0.34;
+
+  const matRejilla = new PBRMaterial("matPapeleraRejilla", scene);
+  matRejilla.albedoColor = new Color3(0.2, 0.2, 0.22);
+  matRejilla.roughness = 0.44;
+  matRejilla.metallic = 0.8;
+  matRejilla.backFaceCulling = false;
+  // Perforada de verdad: el alfa recorta los agujeros, y por ellos se ve el
+  // interior. Pintarlos como manchas oscuras nunca engaña.
+  matRejilla.opacityTexture = materialPintado(
+    scene,
+    "matPapeleraAgujeros",
+    128,
+    128,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#000000";
+      for (let fy = 0; fy < 16; fy++) {
+        for (let fx = 0; fx < 16; fx++) {
+          ctx.beginPath();
+          ctx.arc(fx * 8 + (fy % 2) * 4 + 4, fy * 8 + 4, 2.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  ).albedoTexture;
+
+  const cuerpo = MeshBuilder.CreateCylinder(
+    "papeleraCuerpo",
+    { diameterTop: 0.27, diameterBottom: 0.22, height: 0.34, tessellation: 28, sideOrientation: Mesh.DOUBLESIDE },
+    scene
+  );
+  cuerpo.position.y = 0.17;
+  cuerpo.material = matRejilla;
+  cuerpo.parent = raiz;
+
+  const matInterior = new PBRMaterial("matPapeleraInterior", scene);
+  matInterior.albedoColor = new Color3(0.045, 0.045, 0.05);
+  matInterior.roughness = 0.9;
+  matInterior.metallic = 0;
+
+  const fondo = MeshBuilder.CreateCylinder(
+    "papeleraFondo",
+    { diameter: 0.215, height: 0.012, tessellation: 24 },
+    scene
+  );
+  fondo.position.y = 0.008;
+  fondo.material = matInterior;
+  fondo.parent = raiz;
+
+  // Aro del borde: el remate que hace que la chapa no acabe en un canto vivo.
+  const aro = MeshBuilder.CreateTorus(
+    "papeleraAro",
+    { diameter: 0.275, thickness: 0.012, tessellation: 28 },
+    scene
+  );
+  aro.position.y = 0.34;
+  aro.material = matRejilla;
+  aro.parent = raiz;
+
+  // Un par de papeles arrugados dentro.
+  const matPapel = new PBRMaterial("matPapeleraPapel", scene);
+  matPapel.albedoColor = new Color3(0.76, 0.74, 0.68);
+  matPapel.roughness = 0.95;
+  matPapel.metallic = 0;
+  [
+    { x: 0.04, y: 0.24, z: -0.02, s: 0.07 },
+    { x: -0.03, y: 0.22, z: 0.03, s: 0.055 },
+  ].forEach((p, i) => {
+    const bola = MeshBuilder.CreateSphere(
+      `papeleraPapel_${i}`,
+      { diameter: p.s, segments: 5 },
+      scene
+    );
+    bola.position.set(p.x, p.y, p.z);
+    bola.rotation.set(i * 1.1, i * 0.7, i * 0.4);
+    bola.material = matPapel;
+    bola.parent = raiz;
+  });
+}
+
+/**
+ * Calendario de pared.
+ *
+ * Un taco de hoja mensual, de los que regala la administración. Va torcido a
+ * propósito: cuelga de un clavo, y nada que cuelgue de un clavo queda recto.
+ */
+function construirCalendario(scene: Scene): void {
+  const raiz = new TransformNode("calendarioHall", scene);
+  raiz.position.set(-ANCHO_SALA / 2 + 0.05, 1.58, 1.78);
+  enPared(raiz, 1);
+  raiz.rotation.z = 0.028;
+
+  const matCarton = new PBRMaterial("matCalendarioCarton", scene);
+  matCarton.albedoColor = new Color3(0.24, 0.26, 0.3);
+  matCarton.roughness = 0.9;
+  matCarton.metallic = 0;
+
+  const respaldo = MeshBuilder.CreateBox(
+    "calendarioRespaldo",
+    { width: 0.26, height: 0.36, depth: 0.008 },
+    scene
+  );
+  respaldo.material = matCarton;
+  respaldo.parent = raiz;
+
+  const hoja = MeshBuilder.CreatePlane(
+    "calendarioHoja",
+    { width: 0.235, height: 0.3 },
+    scene
+  );
+  hoja.position.set(0, -0.022, -0.006);
+  hoja.rotation.y = Math.PI;
+  hoja.material = materialPintadoNitido(
+    scene,
+    "matCalendarioHoja",
+    235,
+    300,
+    2.5,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#efece2";
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#2c3a4d";
+      ctx.fillRect(0, 0, w, 46);
+      ctx.fillStyle = "#f4f2ea";
+      ctx.font = "bold 25px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("SEPTIEMBRE", w / 2, 31);
+
+      const dias = ["L", "M", "M", "J", "V", "S", "D"];
+      ctx.fillStyle = "#6a6a62";
+      ctx.font = "bold 13px system-ui, sans-serif";
+      dias.forEach((d, i) => ctx.fillText(d, 22 + i * 32, 68));
+
+      // Rejilla del mes. Los domingos en rojo, como los de verdad.
+      let dia = 1;
+      for (let fila = 0; fila < 5; fila++) {
+        for (let col = 0; col < 7; col++) {
+          if (fila === 0 && col < 1) continue;
+          if (dia > 30) break;
+          ctx.fillStyle = col === 6 ? "#a8322a" : "#33332e";
+          ctx.font = "14px system-ui, sans-serif";
+          ctx.fillText(String(dia), 22 + col * 32, 96 + fila * 34);
+          dia += 1;
+        }
+      }
+
+      // El día del turno, marcado a bolígrafo.
+      ctx.strokeStyle = "#2a3d8f";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(22 + 6 * 32, 96 + 1 * 34 - 5, 13, 11, 0.2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  );
+  hoja.parent = raiz;
+
+  // Espiral y clavo.
+  const matAlambre = new PBRMaterial("matCalendarioAlambre", scene);
+  matAlambre.albedoColor = new Color3(0.6, 0.6, 0.62);
+  matAlambre.roughness = 0.3;
+  matAlambre.metallic = 0.92;
+  for (let i = 0; i < 9; i++) {
+    const anilla = MeshBuilder.CreateTorus(
+      `calendarioEspiral_${i}`,
+      { diameter: 0.016, thickness: 0.002, tessellation: 8 },
+      scene
+    );
+    anilla.rotation.y = Math.PI / 2;
+    anilla.position.set(-0.1 + i * 0.025, 0.166, -0.004);
+    anilla.material = matAlambre;
+    anilla.parent = raiz;
+  }
+}
+
+/**
+ * Cartel de aforo y normas.
+ *
+ * La chapa reglamentaria que hay en todo hall. Va junto a la puerta, que es
+ * donde se pone para que la lea quien entra.
+ */
+function construirCartelAforo(scene: Scene): void {
+  const cartel = MeshBuilder.CreatePlane(
+    "cartelAforoHall",
+    { width: 0.3, height: 0.4 },
+    scene
+  );
+  cartel.position.set(ANCHO_SALA / 2 - 0.11, 1.62, 3.5);
+  cartel.rotation.y = -Math.PI / 2;
+  cartel.material = materialPintadoNitido(
+    scene,
+    "matCartelAforo",
+    300,
+    400,
+    2.5,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#e6e3d9";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#3a3a34";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(9, 9, w - 18, h - 18);
+
+      ctx.fillStyle = "#1f2a3a";
+      ctx.fillRect(9, 9, w - 18, 52);
+      ctx.fillStyle = "#f2efe6";
+      ctx.font = "bold 21px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("CONDOMINIO", w / 2, 33);
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText("LAS ARAUCARIAS", w / 2, 51);
+
+      ctx.fillStyle = "#33332e";
+      ctx.font = "bold 15px system-ui, sans-serif";
+      ctx.fillText("AFORO MÁXIMO", w / 2, 92);
+      ctx.font = "bold 52px system-ui, sans-serif";
+      ctx.fillText("48", w / 2, 143);
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText("PERSONAS", w / 2, 163);
+
+      ctx.strokeStyle = "#b9b4a6";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(26, 180);
+      ctx.lineTo(w - 26, 180);
+      ctx.stroke();
+
+      ctx.textAlign = "left";
+      ctx.font = "bold 12px system-ui, sans-serif";
+      ctx.fillStyle = "#33332e";
+      ctx.fillText("NORMAS DE ACCESO", 26, 202);
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.fillStyle = "#4e4e46";
+      [
+        "· Toda visita se registra en conserjería.",
+        "· Prohibido el ingreso sin autorización",
+        "  del residente.",
+        "· El personal de seguridad puede solicitar",
+        "  identificación.",
+        "· Zonas comunes cierran a las 23:00 horas.",
+      ].forEach((linea, i) => ctx.fillText(linea, 26, 224 + i * 16));
+
+      ctx.textAlign = "center";
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.fillStyle = "#7a7a70";
+      ctx.fillText("ADMINISTRACIÓN · PUERTO MONTT", w / 2, h - 24);
+    }
+  );
+}
+
+/**
+ * Silla del puesto.
+ *
+ * No se ve entera nunca —la cámara está sentada en ella— pero sí sus brazos y
+ * el respaldo al girar, y eso basta para que el sitio se lea como ocupado.
+ */
+function construirSillaGuardia(scene: Scene): void {
+  const raiz = new TransformNode("sillaGuardia", scene);
+  raiz.position.set(0, 0, -0.66);
+  raiz.rotation.y = 0.06;
+
+  const matTapiz = new PBRMaterial("matSillaTapiz", scene);
+  matTapiz.albedoColor = new Color3(0.09, 0.1, 0.12);
+  matTapiz.roughness = 0.94;
+  matTapiz.metallic = 0;
+  // Tejido, no plástico. El grano modula el brillo para que la luz no
+  // resbale plana sobre el tapizado: sin esto, la silla se ve de goma.
+  //
+  // Va como microrrelieve y no como mapa de normales porque el tapizado no
+  // tiene volumen que proyecte sombra, solo una trama que cambia cómo brilla.
+  matTapiz.microSurfaceTexture = texturaGrano(scene, 0.22);
+
+  const matEstructura = new PBRMaterial("matSillaEstructura", scene);
+  matEstructura.albedoColor = new Color3(0.16, 0.16, 0.18);
+  matEstructura.roughness = 0.42;
+  matEstructura.metallic = 0.7;
+
+  const asiento = MeshBuilder.CreateBox(
+    "sillaAsiento",
+    { width: 0.46, height: 0.09, depth: 0.44 },
+    scene
+  );
+  asiento.position.y = 0.46;
+  asiento.material = matTapiz;
+  asiento.parent = raiz;
+
+  const respaldo = MeshBuilder.CreateBox(
+    "sillaRespaldo",
+    { width: 0.44, height: 0.5, depth: 0.08 },
+    scene
+  );
+  respaldo.position.set(0, 0.74, -0.2);
+  respaldo.rotation.x = -0.14;
+  respaldo.material = matTapiz;
+  respaldo.parent = raiz;
+
+  [-1, 1].forEach((lado) => {
+    const brazo = MeshBuilder.CreateBox(
+      `sillaBrazo_${lado > 0 ? "d" : "i"}`,
+      { width: 0.05, height: 0.045, depth: 0.3 },
+      scene
+    );
+    brazo.position.set(lado * 0.255, 0.65, -0.02);
+    brazo.material = matEstructura;
+    brazo.parent = raiz;
+
+    const soporte = MeshBuilder.CreateBox(
+      `sillaSoporteBrazo_${lado > 0 ? "d" : "i"}`,
+      { width: 0.03, height: 0.16, depth: 0.05 },
+      scene
+    );
+    soporte.position.set(lado * 0.255, 0.55, -0.1);
+    soporte.material = matEstructura;
+    soporte.parent = raiz;
+  });
+
+  // Columna y cruceta de cinco brazos con sus ruedas.
+  const columna = MeshBuilder.CreateCylinder(
+    "sillaColumna",
+    { diameter: 0.06, height: 0.34, tessellation: 16 },
+    scene
+  );
+  columna.position.y = 0.26;
+  columna.material = matEstructura;
+  columna.parent = raiz;
+
+  for (let i = 0; i < 5; i++) {
+    const ang = (i / 5) * Math.PI * 2;
+    const pata = MeshBuilder.CreateBox(
+      `sillaPata_${i}`,
+      { width: 0.04, height: 0.03, depth: 0.27 },
+      scene
+    );
+    pata.position.set(Math.sin(ang) * 0.13, 0.08, Math.cos(ang) * 0.13);
+    pata.rotation.y = ang;
+    pata.material = matEstructura;
+    pata.parent = raiz;
+
+    const rueda = MeshBuilder.CreateCylinder(
+      `sillaRueda_${i}`,
+      { diameter: 0.055, height: 0.022, tessellation: 12 },
+      scene
+    );
+    rueda.rotation.z = Math.PI / 2;
+    rueda.position.set(Math.sin(ang) * 0.25, 0.028, Math.cos(ang) * 0.25);
+    rueda.material = matEstructura;
+    rueda.parent = raiz;
+  }
+}
+
+/** Monta todo lo que amuebla el puesto. */
+function construirDotacionDelPuesto(scene: Scene): void {
+  construirTableroDeLlaves(scene);
+  construirExtintor(scene);
+  construirPapelera(scene);
+  construirCalendario(scene);
+  construirCartelAforo(scene);
+  construirSillaGuardia(scene);
+  alumbrarPared(scene);
+}
+
+/**
+ * La luz del paño de la conserjería.
+ *
+ * ─── ESTO ES LO QUE FALTABA DE VERDAD ─────────────────────────────────────
+ *
+ * El tablero y los casilleros se veían como dos recortes negros, y no era
+ * por cómo estaban hechos: es que esa pared NO RECIBÍA LUZ DE NADA. Las
+ * luminarias del techo van por el centro de la sala y el muro está a cuatro
+ * metros y medio, así que ahí no llegaba más que el rebote.
+ *
+ * Un objeto sin luz no tiene volumen, y sin volumen no hay modelado que
+ * valga: se ve la silueta y nada más. Por eso parecían dos cuadrados.
+ *
+ * Y tiene sentido que exista: en una conserjería el tablero de llaves está
+ * alumbrado a propósito, porque el guardia tiene que ver de un vistazo qué
+ * llave falta. Aquí hace exactamente lo mismo.
+ *
+ * ─── POR QUÉ NO SE COME EL PRESUPUESTO DE LUCES ───────────────────────────
+ *
+ * Cada material admite ocho luces a la vez y la sala ya va justa. Acotando
+ * el foco a las mallas de este paño, el resto de la escena ni lo cuenta —es
+ * el mismo recurso que usa el bañador del ascensor—. Y de paso no derrama
+ * luz sobre el muro, que debe seguir en penumbra para que el charco se lea
+ * como un foco y no como iluminación general.
+ */
+function alumbrarPared(scene: Scene): void {
+  const foco = new SpotLight(
+    "luzParedConserjeria",
+    new Vector3(-ANCHO_SALA / 2 + 0.75, ALTO_SALA - 0.3, 2.7),
+    // APUNTANDO AL TABLERO, no a la pared en general.
+    //
+    // Estaba en (−1, −0,42, 0,25) y el tablero caía a 44,7° del eje, con el
+    // medio cono en 43: se quedaba JUSTO fuera y solo le llegaba el borde del
+    // haz. Por eso salía apagado por mucho que se subiera la intensidad — el
+    // problema no era cuánta luz daba, era hacia dónde.
+    new Vector3(-0.44, -0.89, -0.1),
+    1.5,
+    3,
+    scene
+  );
+  foco.diffuse = new Color3(1, 0.94, 0.84);
+  foco.specular = new Color3(1, 0.96, 0.9);
+  foco.intensity = 6.2;
+  foco.range = 4.2;
+
+  foco.includedOnlyMeshes = scene.meshes.filter(
+    (m) =>
+      m.name.startsWith("tableroLlaves") ||
+      m.name.startsWith("llaves") ||
+      m.name.startsWith("calendario")
+  );
+
+  // La luminaria que lo justifica: un aplique sobre el paño. Una luz sin
+  // lámpara a la vista se nota, aunque no se sepa decir por qué.
+  const matAplique = new PBRMaterial("matApliqueConserjeria", scene);
+  matAplique.albedoColor = new Color3(0.14, 0.15, 0.17);
+  matAplique.roughness = 0.45;
+  matAplique.metallic = 0.6;
+
+  const brazo = MeshBuilder.CreateBox(
+    "apliqueConserjeriaBrazo",
+    { width: 0.22, height: 0.03, depth: 0.04 },
+    scene
+  );
+  brazo.position.set(-ANCHO_SALA / 2 + 0.13, ALTO_SALA - 0.28, 2.7);
+  brazo.material = matAplique;
+
+  const pantalla = MeshBuilder.CreateCylinder(
+    "apliqueConserjeriaPantalla",
+    { diameterTop: 0.16, diameterBottom: 0.09, height: 0.11, tessellation: 18 },
+    scene
+  );
+  pantalla.rotation.z = -0.5;
+  pantalla.position.set(-ANCHO_SALA / 2 + 0.26, ALTO_SALA - 0.33, 2.7);
+  pantalla.material = matAplique;
+
+  const bombilla = MeshBuilder.CreateSphere(
+    "apliqueConserjeriaBombilla",
+    { diameter: 0.075, segments: 10 },
+    scene
+  );
+  bombilla.position.set(-ANCHO_SALA / 2 + 0.29, ALTO_SALA - 0.37, 2.7);
+  const matBombilla = new PBRMaterial("matBombillaConserjeria", scene);
+  matBombilla.albedoColor = new Color3(0, 0, 0);
+  matBombilla.emissiveColor = new Color3(1, 0.93, 0.79);
+  matBombilla.disableLighting = true;
+  bombilla.material = matBombilla;
 }
 
 // ---------------------------------------------------------------------------
@@ -1219,7 +2293,14 @@ const Z_ESPALDA = -2.8;
  */
 function construirSala(scene: Scene): void {
   // --- Piso: porcelanato pulido, baldosa de 80 cm ---------------------------
-  const matPiso = materialPintado(scene, "matPisoHall", 1024, 1024, (ctx, w, h) => {
+  // 2048 en vez de 1024, y con la JUNTA dibujada dentro.
+  //
+  // Antes la textura era una baldosa suelta que se repetía once por nueve, y
+  // la cuadrícula la daba solo la geometría: el resultado era un suelo
+  // continuo con líneas encima. Dibujando cuatro baldosas con su junta y su
+  // tono propio dentro de la misma textura, cada repetición trae ya cuatro
+  // piezas distintas — y el ojo deja de encontrar el patrón.
+  const matPiso = materialPintado(scene, "matPisoHall", 2048, 2048, (ctx, w, h) => {
     // Base cálida grisácea. El porcelanato de hall casi nunca es blanco puro:
     // tira a hueso o a gris arena, que es lo que le da el aire de sitio usado.
     ctx.fillStyle = "#8d8b86";
@@ -1270,10 +2351,51 @@ function construirSala(scene: Scene): void {
     ctx.strokeRect(0, 0, w, h);
   });
 
+  // Cuatro baldosas por textura: junta, variación de tono y brillo de pulido.
+  {
+    const ctx = (matPiso.albedoTexture as DynamicTexture).getContext() as unknown as CanvasRenderingContext2D;
+    const L = 2048 / 2;
+
+    // Cada baldosa, un pelo distinta de sus vecinas. Es lo que impide que se
+    // vea la cuadrícula repetida: en un suelo real no hay dos iguales.
+    [
+      [0, 0, "rgba(255,255,255,0.028)"],
+      [1, 0, "rgba(0,0,0,0.03)"],
+      [0, 1, "rgba(0,0,0,0.018)"],
+      [1, 1, "rgba(255,255,255,0.016)"],
+    ].forEach(([cx, cy, tinte]) => {
+      ctx.fillStyle = tinte as string;
+      ctx.fillRect((cx as number) * L, (cy as number) * L, L, L);
+    });
+
+    // La junta: una ranura oscura con su reborde claro. Sin el reborde se ve
+    // como una raya pintada; con él, como un canto biselado.
+    ctx.strokeStyle = "rgba(46, 44, 40, 0.55)";
+    ctx.lineWidth = 7;
+    [0, L, 2048].forEach((p) => {
+      ctx.beginPath();
+      ctx.moveTo(p, 0); ctx.lineTo(p, 2048);
+      ctx.moveTo(0, p); ctx.lineTo(2048, p);
+      ctx.stroke();
+    });
+    ctx.strokeStyle = "rgba(255,255,255,0.1)";
+    ctx.lineWidth = 2;
+    [0, L, 2048].forEach((p) => {
+      ctx.beginPath();
+      ctx.moveTo(p - 5, 0); ctx.lineTo(p - 5, 2048);
+      ctx.moveTo(0, p - 5); ctx.lineTo(2048, p - 5);
+      ctx.stroke();
+    });
+
+    (matPiso.albedoTexture as DynamicTexture).update();
+  }
+
   matPiso.albedoTexture!.wrapU = Texture.WRAP_ADDRESSMODE;
   matPiso.albedoTexture!.wrapV = Texture.WRAP_ADDRESSMODE;
-  (matPiso.albedoTexture as Texture).uScale = 11;
-  (matPiso.albedoTexture as Texture).vScale = 9;
+  // Menos repeticiones porque cada una trae ya cuatro baldosas: 6 × 5 sobre
+  // los 8,8 × 7,4 m da baldosas de unos 73 cm, que es la medida comercial.
+  (matPiso.albedoTexture as Texture).uScale = 6;
+  (matPiso.albedoTexture as Texture).vScale = 5;
   // Rugosidad muy baja: es la que convierte la luminaria en una franja larga
   // sobre el suelo. Por encima de 0,15 el reflejo se disuelve y el piso vuelve
   // a parecer hormigón pintado.
@@ -1299,14 +2421,83 @@ function construirSala(scene: Scene): void {
   // porque de noche todo lo blanco recoge el color de la luz que le llega, y
   // la que llega es la de las luminarias y la del monitor.
   const matMuro = new PBRMaterial("matMuroHall", scene);
-  matMuro.albedoColor = new Color3(0.42, 0.42, 0.44);
-  matMuro.roughness = 0.82;
+  // YESO PINTADO, no un color plano.
+  //
+  // Estaba con albedo liso, y un color plano sobre una superficie de ocho
+  // metros es lo que hace que una pared se lea como cartón: no tiene ninguna
+  // información: ni el grano del rodillo, ni la suciedad que se acumula
+  // abajo, ni el roce de los muebles.
+  //
+  // Va SIN repetir (una sola vuelta sobre los 8,8 m) a propósito. Una textura
+  // repetida muchas veces sube la frecuencia y vuelve el hormigueo de las
+  // jambas; a un texel por centímetro no hay nada que pueda hervir.
+  matMuro.albedoTexture = materialPintado(
+    scene,
+    "texYesoMuro",
+    1024,
+    1024,
+    (ctx, w, h) => {
+      // PLANO Y UNIFORME, sin gradiente ni manchas grandes.
+      //
+      // Antes llevaba un degradado vertical —más sucio abajo— y ciento treinta
+      // manchas suaves. Las dos cosas estaban mal, y por el mismo motivo:
+      //
+      // En Babylon CADA CARA de una caja recibe el rango completo de la
+      // textura. Así que el degradado no caía hacia el suelo: caía de arriba
+      // abajo DE CADA CARA, fuera cual fuera su tamaño y su orientación. Un muro
+      // largo lo estiraba a ocho metros, una jamba lo comprimía en dieciocho
+      // centímetros y el techo lo recibía tumbado. Por eso las paredes parecían
+      // de estilos distintos: cada una mostraba un trozo distinto de la misma
+      // imagen.
+      //
+      // Y las manchas, con tan poco contraste entre ellas, no se leían como
+      // pintura sino como humedad.
+      //
+      // Una pared pintada de verdad es CASI uniforme. La variación que se ve en
+      // ella no está en la pintura: la ponen las lámparas. Así que la textura se
+      // limita a dar el grano finísimo del rodillo, que es lo único que impide
+      // que la superficie se vea como plástico, y todo lo demás lo hace la luz.
+      ctx.fillStyle = "#74767a";
+      ctx.fillRect(0, 0, w, h);
+
+      // Grano del rodillo: puntos diminutos y muy tenues, repartidos por igual.
+      // A un texel por centímetro esto no se distingue de cerca; lo que hace es
+      // romper el color plano para que la luz no resbale como sobre un plástico.
+      for (let i = 0; i < 5200; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.035)";
+        ctx.fillRect(Math.random() * w, Math.random() * h, 1.6, 1.6);
+      }
+    }
+  ).albedoTexture;
+  matMuro.roughness = 0.86;
   matMuro.metallic = 0;
-  matMuro.microSurfaceTexture = texturaGrano(scene, 0.16);
+  // SIN TEXTURA DE MICRORRELIEVE. Aquí estaba el hervor de las jambas.
+  //
+  // Llevaba texturaGrano modulando el brillo, y en la cara grande del muro no
+  // molesta: son 256 píxeles de ruido repartidos en ocho metros y medio, o sea
+  // una variación lentísima.
+  //
+  // El problema es que en Babylon CADA CARA de una caja recibe el rango
+  // completo de la textura. Así que en la jamba —la cara de canto, de dieciocho
+  // centímetros— esos mismos 256 píxeles de ruido se comprimen en esos
+  // dieciocho centímetros. Vista casi de perfil, que es como se ve siempre una
+  // jamba, eso son cientos de tejeles por píxel: moiré, y cambia con cada
+  // movimiento de la cámara.
+  //
+  // Explica lo que se veía y lo que no: las paredes grandes nunca hormiguearon
+  // y los bordes de los huecos sí. Y explica que empeorara al retrasar las
+  // hojas del ascensor, porque eso dejó MÁS jamba a la vista.
+  //
+  // Una pared pintada mate no pierde nada con rugosidad constante: el grano no
+  // se apreciaba de todos modos a esta distancia.
 
   const matZocalo = new PBRMaterial("matZocaloHall", scene);
   matZocalo.albedoColor = new Color3(0.13, 0.13, 0.145);
-  matZocalo.roughness = 0.35;
+  // Sube de 0,35. Un zócalo lacado brilla, pero es una tira de doce
+  // centímetros vista casi de canto: el peor caso posible para el brillo
+  // especular. Con algo más de rugosidad el reflejo se reparte en vez de
+  // concentrarse en una línea de un píxel.
+  matZocalo.roughness = 0.52;
   matZocalo.metallic = 0.1;
 
   const largo = Z_FONDO - Z_ESPALDA;
@@ -1413,17 +2604,90 @@ function construirSala(scene: Scene): void {
  * donde ocurre el nivel.
  */
 function construirLuminarias(scene: Scene): void {
+  // ─── LAS LUMINARIAS ───────────────────────────────────────────────────────
+  //
+  // Eran un rectángulo blanco liso dentro de un marco negro, y por eso se veían
+  // como pegatinas: un panel LED real no emite de forma uniforme.
+  //
+  // Lo que le faltaba, por orden de lo que más se nota:
+  //
+  //  1. EL DIFUSOR. La placa de plástico que reparte la luz no es lisa: tiene
+  //     un prismado fino que se ve como una retícula, y se ve MÁS donde más luz
+  //     hay. Sin él, el panel es un rectángulo de color plano.
+  //
+  //  2. LA CAÍDA HACIA LOS BORDES. Los diodos van repartidos por dentro pero el
+  //     marco come luz en el perímetro: un panel siempre está más claro por el
+  //     centro. Un blanco uniforme de borde a borde no lo hace ninguna lámpara.
+  //
+  //  3. EL CANTO DEL MARCO. Un panel de techo está EMPOTRADO: tiene un grosor y
+  //     ese grosor recibe luz por dentro y sombra por fuera.
   const matPanel = new PBRMaterial("matPanelLuminaria", scene);
-  // Blanco neutro tirando a cálido: el LED de 4000 K que se usa en halls.
   matPanel.albedoColor = new Color3(0, 0, 0);
+  // Blanco neutro tirando a cálido: el LED de 4000 K que se usa en halls.
   matPanel.emissiveColor = new Color3(1, 0.94, 0.82);
   matPanel.roughness = 1;
   matPanel.metallic = 0;
+  matPanel.emissiveTexture = materialPintado(
+    scene,
+    "texDifusorLuminaria",
+    512,
+    128,
+    (ctx, w, h) => {
+      // Caída del centro a los bordes, en las dos direcciones.
+      const luz = ctx.createRadialGradient(w / 2, h / 2, h * 0.1, w / 2, h / 2, w * 0.62);
+      luz.addColorStop(0, "#fff6e6");
+      luz.addColorStop(0.55, "#f7ead3");
+      luz.addColorStop(1, "#d8c9ac");
+      ctx.fillStyle = luz;
+      ctx.fillRect(0, 0, w, h);
+
+      // Prismado del difusor: retícula fina, más marcada en el centro, que es
+      // donde la luz que la atraviesa la revela.
+      ctx.strokeStyle = "rgba(120, 108, 86, 0.16)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 7) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += 7) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Las dos filas de diodos, insinuadas por detrás del difusor. No se ven
+      // como puntos —para eso está el difusor— pero sí como dos franjas algo
+      // más claras, que es exactamente lo que se aprecia mirando un panel.
+      [0.33, 0.67].forEach((t) => {
+        const fila = ctx.createLinearGradient(0, h * t - 10, 0, h * t + 10);
+        fila.addColorStop(0, "rgba(255,255,255,0)");
+        fila.addColorStop(0.5, "rgba(255,255,255,0.2)");
+        fila.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = fila;
+        ctx.fillRect(0, h * t - 10, w, 20);
+      });
+
+      // Borde: el canto del marco tapa los diodos de la orilla.
+      ctx.strokeStyle = "rgba(60, 52, 38, 0.45)";
+      ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, w - 6, h - 6);
+    }
+  ).albedoTexture as Texture;
 
   const matMarco = new PBRMaterial("matMarcoLuminaria", scene);
-  matMarco.albedoColor = new Color3(0.16, 0.16, 0.17);
-  matMarco.roughness = 0.4;
-  matMarco.metallic = 0.5;
+  matMarco.albedoColor = new Color3(0.2, 0.2, 0.21);
+  matMarco.roughness = 0.35;
+  matMarco.metallic = 0.55;
+
+  // Cara interior del cajón, que recibe el rebote del difusor. Es lo que hace
+  // que el marco no sea una línea negra alrededor de un rectángulo blanco.
+  const matGarganta = new PBRMaterial("matGargantaLuminaria", scene);
+  matGarganta.albedoColor = new Color3(0.72, 0.7, 0.66);
+  matGarganta.roughness = 0.85;
+  matGarganta.metallic = 0;
 
   const posiciones: [number, number][] = [
     [-1.9, 0.4],
@@ -1435,49 +2699,65 @@ function construirLuminarias(scene: Scene): void {
   ];
 
   posiciones.forEach(([x, z], i) => {
+    // Cajón empotrado: el marco por fuera y la garganta por dentro, algo más
+    // arriba, para que el panel quede retranqueado y tenga canto.
     const marco = MeshBuilder.CreateBox(
       `luminariaMarcoHall_${i}`,
-      { width: 1.24, height: 0.06, depth: 0.34 },
+      { width: 1.28, height: 0.075, depth: 0.38 },
       scene
     );
-    marco.position.set(x, ALTO_SALA - 0.03, z);
+    marco.position.set(x, ALTO_SALA - 0.028, z);
     marco.material = matMarco;
+
+    const garganta = MeshBuilder.CreateBox(
+      `luminariaGargantaHall_${i}`,
+      { width: 1.2, height: 0.05, depth: 0.3 },
+      scene
+    );
+    garganta.position.set(x, ALTO_SALA - 0.022, z);
+    garganta.material = matGarganta;
 
     const panel = MeshBuilder.CreateGround(
       `luminariaPanelHall_${i}`,
-      { width: 1.16, height: 0.26 },
+      { width: 1.16, height: 0.27 },
       scene
     );
-    panel.position.set(x, ALTO_SALA - 0.062, z);
+    panel.position.set(x, ALTO_SALA - 0.05, z);
     panel.rotation.z = Math.PI;
     panel.material = matPanel;
+
   });
 
-  // Las que sí alumbran.
+  // Las que sí alumbran, Y EN EL SITIO DONDE ESTÁN LAS LÁMPARAS.
   //
-  // Antes eran dos, y ninguna coincidía con las seis luminarias del techo:
-  // los paneles se veían encendidos en unas coordenadas y la luz salía de
-  // otras. El ojo no lo razona, pero lo nota — la sala parecía iluminada por
-  // algo que no estaba a la vista.
+  // Estaban las tres en x = 0, o sea en el eje de la sala. Pero las seis
+  // luminarias van en x = ±1,9: la luz salía justo del hueco entre ellas, del
+  // trozo de techo donde no hay nada. Se veía, y con razón — dos manchas de luz
+  // en mitad del plafón con las lámparas a los lados.
   //
-  // Ahora son tres, una por cada FILA de luminarias, en su misma z. Siguen
-  // siendo menos que los paneles porque seis luces reales pasarían del tope
-  // de ocho por material y empezarían a caerse de los cálculos; con una por
-  // fila el reparto ya se corresponde con lo que se ve encendido.
-  [0.4, 2.2, 4.0].forEach((z, i) => {
-    const luz = new PointLight(`luzTechoHall_${i}`, new Vector3(0, ALTO_SALA - 0.12, z), scene);
+  // Ahora son cuatro, una por columna de luminarias a cada lado y repartidas en
+  // profundidad. Cada mancha de luz sale de una lámpara que está ahí.
+  //
+  // Cuatro y no seis por el tope de ocho luces por material: con la de relleno,
+  // el flexo y la de la pantalla, seis dejarían fuera a alguna. Cuatro bien
+  // colocadas alumbran igual que seis, porque el techo es bajo y los conos se
+  // solapan.
+  [
+    { x: -1.9, z: 1.1 },
+    { x: 1.9, z: 1.1 },
+    { x: -1.9, z: 3.4 },
+    { x: 1.9, z: 3.4 },
+  ].forEach((p, i) => {
+    const luz = new PointLight(
+      `luzTechoHall_${i}`,
+      new Vector3(p.x, ALTO_SALA - 0.1, p.z),
+      scene
+    );
     luz.diffuse = new Color3(1, 0.95, 0.86);
     luz.specular = new Color3(1, 0.97, 0.92);
-    // Repartida entre tres en vez de concentrada en dos: el total sube algo,
-    // pero sobre todo se reparte, que es lo que quita el efecto de foco.
-    //
-    // Sube a 5,4 para que la sala se lea bien en una grabación. La noche NO
-    // se pierde subiendo las luminarias: se perdería subiendo el rebote o la
-    // exposición, que aclaran también lo que no está iluminado. Alimentando
-    // las lámparas, lo que crece son los charcos de luz y el contraste entre
-    // ellos y el resto — que es precisamente el aspecto de un sitio de noche
-    // con las luces encendidas.
-    luz.intensity = 5.4;
+    // Repartida entre cuatro: cada una aporta menos, pero el conjunto cubre
+    // mejor y sin el efecto de foco que daban tres muy separadas.
+    luz.intensity = 4.6;
     luz.range = 9;
   });
 }
@@ -1511,7 +2791,12 @@ function montarReflejos(scene: Scene): void {
   if (!piso) return;
 
   // Todo lo que no sea el propio suelo entra en el reflejo.
-  const reflejables = scene.meshes.filter((m) => m !== piso && m.name !== "calleExterior");
+  // startsWith y no comparación exacta: ahora la calle es varias mallas, no
+  // una. Todas empiezan por "calleExterior" justamente para que este filtro y
+  // el de sombras las cacen sin tener que enumerarlas.
+  const reflejables = scene.meshes.filter(
+    (m) => m !== piso && !m.name.startsWith("calleExterior")
+  );
 
   // --- 1. Entorno -----------------------------------------------------------
   const sonda = new ReflectionProbe("sondaPuesto", 256, scene);
@@ -1586,7 +2871,41 @@ function montarReflejos(scene: Scene): void {
  */
 function ampliarLucesPorMaterial(scene: Scene): void {
   scene.materials.forEach((mat) => {
-    if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = 8;
+    if (!(mat instanceof PBRMaterial)) return;
+    mat.maxSimultaneousLights = 8;
+
+    // ─── EL HORMIGUEO DE LAS SUPERFICIES PULIDAS ──────────────────────
+    //
+    // Esto es lo que quita el parpadeo de la puerta del ascensor, del zócalo
+    // y del marco de la puerta del hall.
+    //
+    // Las tres tienen en común que son lisas y metálicas —rugosidad de un
+    // tercio— y el muro, que está a 0,82, no parpadea nunca. Ese contraste es
+    // lo que señala la causa, y descarta las que ya se probaron: no es la
+    // oclusión, ni el reflejo del piso, ni el grano, ni el antialiasing de
+    // bordes. Ninguna de ésas distingue entre pulido y rugoso.
+    //
+    // En una superficie pulida el brillo especular es muy estrecho: puede
+    // caber en menos de un píxel. Al girar la cámara ese brillo cae dentro o
+    // fuera del píxel de un fotograma al siguiente, y el píxel salta entre
+    // encendido y apagado. Sobre una arista larga y fina —el canto de una
+    // hoja de ascensor, una tira de zócalo— se ve como una línea que hierve.
+    //
+    // No lo arregla el antialiasing de bordes porque no es un borde de
+    // geometría: es sombreado por debajo del tamaño del píxel. Lo que hace
+    // esta corrección es ensanchar el brillo según lo deprisa que gire la
+    // normal en pantalla, de modo que nunca sea más estrecho que el píxel que
+    // tiene que mostrarlo. Deja de haber nada que quepa entre dos píxeles.
+    mat.enableSpecularAntiAliasing = true;
+  });
+
+  // Y filtrado alto en TODAS las texturas de la escena, venga de donde venga.
+  //
+  // Los ayudantes que fabrican texturas ya lo ponen, pero este barrido cierra
+  // el caso general: cualquier textura montada a mano en cualquier sitio
+  // queda cubierta sin que haya que acordarse de ponérselo una por una.
+  scene.textures.forEach((tex) => {
+    if (tex instanceof Texture) tex.anisotropicFilteringLevel = 16;
   });
 }
 
@@ -1661,7 +2980,8 @@ function construirHallYVentanal(scene: Scene): void {
   matAcera.albedoColor = new Color3(0.17, 0.17, 0.185);
   matAcera.roughness = 0.88;
   matAcera.metallic = 0;
-  matAcera.microSurfaceTexture = texturaGrano(scene, 0.3);
+  // Sin grano, por lo mismo que el muro: es otra pieza grande y de cantos
+  // estrechos, y encima se ve en rasante desde dentro del hall.
 
   const acera = MeshBuilder.CreateGround(
     "aceraExterior",
@@ -1678,17 +2998,50 @@ function construirHallYVentanal(scene: Scene): void {
   acera.material = matAcera;
   acera.receiveShadows = true;
 
-  // Cristal. Apenas visible, con un reflejo tenue: es lo que separa el adentro
-  // del afuera sin tapar lo que pasa al otro lado.
+  // Cristal.
+  //
+  // ─── DE NOCHE, UNA VENTANA ES SOBRE TODO UN ESPEJO ──────────────────
+  //
+  // Con la sala iluminada y la calle a oscuras, por un cristal casi no se
+  // ve el exterior: lo que se ve es el interior devuelto. Estaba montado al
+  // revés —transparencia alta y reflejo del entorno al mínimo— y por eso el
+  // hueco se leía como un agujero negro en la pared en lugar de como un
+  // vidrio. Es el rasgo que más delata la hora del día, y no costaba nada.
+  //
+  // El reflejo sale de la sonda que ya fotografía la sala para el resto de
+  // materiales, así que subirlo aquí no añade ni un pase de dibujado: es
+  // decirle a ESTE material que use el entorno más que los demás.
   const matCristal = new PBRMaterial("matCristalVentanal", scene);
-  matCristal.albedoColor = new Color3(0.04, 0.05, 0.07);
-  matCristal.roughness = 0.05;
-  matCristal.metallic = 0.65;
-  matCristal.alpha = 0.24;
+  matCristal.albedoColor = new Color3(0.03, 0.04, 0.06);
+  matCristal.roughness = 0.04;
+  matCristal.metallic = 0.9;
+  matCristal.alpha = 0.42;
+  matCristal.environmentIntensity = 1.6;
+  // Sin esto el reflejo se apagaría por los bordes justo donde el cristal
+  // se ve más de canto, que es donde un vidrio real refleja MÁS.
+  matCristal.useHorizonOcclusion = false;
 
-  const cristal = MeshBuilder.CreatePlane("cristalVentanal", { width: 2.8, height: 1.4 }, scene);
-  cristal.position.set(0, 1.6, 4.52);
-  cristal.material = matCristal;
+  // DOS HOJAS, una a cada lado del montante central.
+  //
+  // Era un solo paño de 2,8 m que cruzaba por detrás del montante. Como el
+  // marco tiene nueve centímetros de canto y el cristal es un plano metido
+  // dentro de ese volumen, el montante lo atravesaba: dos superficies en el
+  // mismo sitio, sin orden estable de dibujado, y con transparencia encima.
+  // Es el mismo fallo que tenía la puerta del hall.
+  //
+  // Partido en dos, cada hoja se queda en su hueco y no toca nada. Que es,
+  // además, cómo se acristala una ventana de dos hojas de verdad.
+  const cristales = [-1, 1].map((lado) => {
+    const hoja = MeshBuilder.CreatePlane(
+      `cristalVentanal_${lado > 0 ? "d" : "i"}`,
+      { width: 1.32, height: 1.42 },
+      scene
+    );
+    hoja.position.set(lado * 0.705, 1.6, 4.52);
+    hoja.material = matCristal;
+    return hoja;
+  });
+  const cristal = cristales[0];
 
   // Marco del ventanal.
   //
@@ -1719,6 +3072,64 @@ function construirHallYVentanal(scene: Scene): void {
     );
     m.position.set(p.x, p.y, 4.55);
     m.material = matMarcoVentanal;
+  });
+
+  // --- Alféizar y vierteaguas ----------------------------------------------
+  //
+  // Una ventana no acaba en el marco: por dentro tiene una repisa y por
+  // fuera una pieza inclinada que echa el agua para afuera. Son los dos
+  // detalles que hacen que el hueco se lea como algo CONSTRUIDO —con su
+  // grosor de muro— y no como un dibujo pegado a la pared.
+  //
+  // Y aportan lo que aquí más falta: una superficie horizontal justo bajo el
+  // cristal, que recoge la luz de la farola de la calle y marca el borde
+  // inferior. Sin ella, el ventanal se disuelve en el muro por abajo.
+  const matAlfeizar = new PBRMaterial("matAlfeizarVentanal", scene);
+  matAlfeizar.albedoColor = new Color3(0.3, 0.3, 0.31);
+  matAlfeizar.roughness = 0.62;
+  matAlfeizar.metallic = 0;
+
+  const alfeizar = MeshBuilder.CreateBox(
+    "alfeizarVentanal",
+    { width: 3.02, height: 0.045, depth: 0.26 },
+    scene
+  );
+  alfeizar.position.set(0, 0.845, 4.44);
+  alfeizar.material = matAlfeizar;
+  alfeizar.receiveShadows = true;
+
+  // Por fuera, con caída. La inclinación es poca —cinco grados bastan— pero
+  // es lo que hace que atrape un brillo distinto al del alféizar de dentro.
+  const vierteaguas = MeshBuilder.CreateBox(
+    "vierteaguasVentanal",
+    { width: 3.02, height: 0.04, depth: 0.2 },
+    scene
+  );
+  vierteaguas.position.set(0, 0.83, 4.72);
+  vierteaguas.rotation.x = -0.09;
+  vierteaguas.material = matMarcoVentanal;
+
+  // Junquillo: el listón fino que sujeta el vidrio contra el marco. Es una
+  // pieza de dos centímetros que nadie mira, y sin la cual el cristal parece
+  // flotar dentro del hueco en vez de estar montado en él.
+  const matJunquillo = new PBRMaterial("matJunquilloVentanal", scene);
+  matJunquillo.albedoColor = new Color3(0.15, 0.155, 0.17);
+  matJunquillo.roughness = 0.55;
+  matJunquillo.metallic = 0.4;
+
+  [
+    { w: 2.86, h: 0.022, x: 0, y: 2.295 },
+    { w: 2.86, h: 0.022, x: 0, y: 0.905 },
+    { w: 0.022, h: 1.4, x: -1.418, y: 1.6 },
+    { w: 0.022, h: 1.4, x: 1.418, y: 1.6 },
+  ].forEach((p, i) => {
+    const j = MeshBuilder.CreateBox(
+      `junquilloVentanal_${i}`,
+      { width: p.w, height: p.h, depth: 0.03 },
+      scene
+    );
+    j.position.set(p.x, p.y, 4.495);
+    j.material = matJunquillo;
   });
 
   // Calle: un plano lejano con la luz de una farola. No hay geometría detrás
@@ -1791,6 +3202,17 @@ function construirHallYVentanal(scene: Scene): void {
   );
   farola.diffuse = new Color3(1, 0.86, 0.62);
   farola.intensity = 26;
+
+  // Acotada a lo que hay fuera.
+  //
+  // Es una farola de la calle: alumbra la acera y la fachada de enfrente, y
+  // lo que entre por el ventanal ya lo aporta el resto. Contarla también para
+  // los muros, el suelo y el mobiliario del hall gastaba uno de los ocho
+  // huecos de luz por material sin aportar nada apreciable — y ese hueco hace
+  // falta para la cuarta luminaria del techo.
+  farola.includedOnlyMeshes = scene.meshes.filter(
+    (m) => m.name.startsWith("calle") || m.name.startsWith("acera") || m.name.startsWith("farola")
+  );
 }
 
 /**
@@ -1828,9 +3250,21 @@ function construirAscensor(scene: Scene): Ascensor {
   const FONDO_CABINA = 5.5;
 
   const matAcero = new PBRMaterial("matAceroAscensor", scene);
-  matAcero.albedoColor = new Color3(0.34, 0.35, 0.37);
-  matAcero.roughness = 0.3;
-  matAcero.metallic = 0.85;
+  matAcero.albedoColor = new Color3(0.52, 0.54, 0.57);
+  // EL ASCENSOR SALÍA NEGRO, y la causa es de manual.
+  //
+  // Un material metálico no tiene color difuso: todo lo que muestra es lo que
+  // REFLEJA. Y lo que hay para reflejar aquí es la sonda de entorno de la
+  // sala, que de noche está casi apagada. Metalicidad 0,85 sobre un entorno
+  // oscuro da exactamente lo que se veía: una plancha negra.
+  //
+  // Bajando a 0,55 y subiendo el albedo, parte de la superficie vuelve a ser
+  // difusa y recoge la luz de las lámparas. Sigue leyéndose como acero —el
+  // cepillado y el brillo siguen ahí— pero deja de depender de un entorno que
+  // no existe. Es el compromiso de siempre en interiores nocturnos.
+  matAcero.roughness = 0.4;
+  matAcero.metallic = 0.55;
+  matAcero.environmentIntensity = 1.1;
   matAcero.albedoTexture = texturaMetalCepillado(scene);
 
   const matCabina = new PBRMaterial("matCabinaAscensor", scene);
@@ -1843,8 +3277,18 @@ function construirAscensor(scene: Scene): Ascensor {
   const hondo = FONDO_CABINA - Z_MURO;
   [
     { n: "cabinaFondoHall", w: ANCHO, h: ALTO, d: 0.06, x: X, y: ALTO / 2, z: FONDO_CABINA },
-    { n: "cabinaIzqHall", w: 0.06, h: ALTO, d: hondo, x: X - ANCHO / 2, y: ALTO / 2, z: centroZ },
-    { n: "cabinaDerHall", w: 0.06, h: ALTO, d: hondo, x: X + ANCHO / 2, y: ALTO / 2, z: centroZ },
+    // Las paredes de la cabina, APARTADAS del hueco.
+    //
+    // Estaban centradas en el borde del vano (x = ±0,65 desde el eje), o sea
+    // que la mitad de cada una asomaba DENTRO del hueco y la otra mitad se
+    // enterraba en el muro. Eso metía una tercera pieza en un borde donde ya
+    // competían la jamba y la hoja.
+    //
+    // Nueve centímetros más afuera y arrancando por detrás de las hojas: la
+    // cabina queda donde tiene que estar —al otro lado— y el borde del hueco
+    // deja de tener nada que la dispute.
+    { n: "cabinaIzqHall", w: 0.06, h: ALTO, d: hondo, x: X - ANCHO / 2 - 0.09, y: ALTO / 2, z: centroZ },
+    { n: "cabinaDerHall", w: 0.06, h: ALTO, d: hondo, x: X + ANCHO / 2 + 0.09, y: ALTO / 2, z: centroZ },
     { n: "cabinaTechoHall", w: ANCHO, h: 0.06, d: hondo, x: X, y: ALTO, z: centroZ },
     { n: "cabinaSueloHall", w: ANCHO, h: 0.04, d: hondo, x: X, y: 0.02, z: centroZ },
   ].forEach((p) => {
@@ -1869,18 +3313,114 @@ function construirAscensor(scene: Scene): Ascensor {
   plafon.rotation.z = Math.PI;
   plafon.material = matPlafon;
 
-  // --- Marco ----------------------------------------------------------------
+  // ═══ PORTAL DEL ASCENSOR ══════════════════════════════════════════════════
+  //
+  // Rehecho entero, y con esto se resuelve además el hervor del borde.
+  //
+  // ─── EL PROBLEMA ERA EL CANTO DE OBRA ─────────────────────────────────────
+  //
+  // El muro tiene dieciocho centímetros de espesor y las hojas iban al fondo
+  // del hueco, así que entre la cara del hall y la hoja quedaba a la vista todo
+  // ese canto. Una superficie así se ve SIEMPRE casi de perfil —es su
+  // definición—, y en rasante un píxel de movimiento de cámara barre medio
+  // metro de superficie: todo lo que se calcule por píxel se desestabiliza.
+  //
+  // Y resulta que un ascensor de verdad no tiene ese canto a la vista. El hueco
+  // va forrado: un portal de acero que cubre jambas y dintel, y las hojas
+  // corriendo justo detrás, dentro del propio espesor del muro. Arreglar el
+  // diseño arregla el defecto, que es la mejor clase de arreglo que hay.
+  //
+  // Canto visible: cuatro centímetros y medio en vez de dieciocho. Y los cuatro
+  // son cara de acero del portal, no hormigón.
+
+  const Z_CARA = 4.51;
+
+  // Mismo criterio que las hojas: metalicidad moderada para que el portal
+  // recoja la luz de la sala en vez de depender del reflejo del entorno.
+  const matPortal = new PBRMaterial("matPortalAscensor", scene);
+  matPortal.albedoColor = new Color3(0.6, 0.61, 0.63);
+  matPortal.roughness = 0.38;
+  matPortal.metallic = 0.6;
+  matPortal.environmentIntensity = 1.1;
+
+  // Jambas y dintel. Montados a caballo sobre la cara del muro —sobresalen un
+  // centímetro y se meten tres— para que ninguna de sus caras comparta plano
+  // con ninguna del muro.
+  const CANTO = 0.12;
   [
-    { n: "marcoAscIzqHall", w: 0.08, h: ALTO + 0.08, d: 0.1, x: X - ANCHO / 2 - 0.04, y: ALTO / 2 },
-    { n: "marcoAscDerHall", w: 0.08, h: ALTO + 0.08, d: 0.1, x: X + ANCHO / 2 + 0.04, y: ALTO / 2 },
-    { n: "marcoAscSupHall", w: ANCHO + 0.16, h: 0.08, d: 0.1, x: X, y: ALTO + 0.04 },
+    { n: "portalAscensorIzq", w: CANTO, h: ALTO + CANTO, x: X - ANCHO / 2 - CANTO / 2 + 0.03, y: (ALTO + CANTO) / 2 },
+    { n: "portalAscensorDer", w: CANTO, h: ALTO + CANTO, x: X + ANCHO / 2 + CANTO / 2 - 0.03, y: (ALTO + CANTO) / 2 },
+    { n: "portalAscensorSup", w: ANCHO + CANTO * 2 - 0.06, h: CANTO, x: X, y: ALTO + CANTO / 2 - 0.03 },
   ].forEach((p) => {
-    const m = MeshBuilder.CreateBox(p.n, { width: p.w, height: p.h, depth: p.d }, scene);
-    m.position.set(p.x, p.y, 4.64);
-    m.material = matAcero;
+    const m = MeshBuilder.CreateBox(p.n, { width: p.w, height: p.h, depth: 0.04 }, scene);
+    m.position.set(p.x, p.y, Z_CARA - 0.01);
+    m.material = matPortal;
   });
 
-  // Indicador de piso: la flecha que se enciende cuando el ascensor llega.
+  // Umbral. La chapa del suelo entre el hall y la cabina, con sus guías. Es la
+  // pieza que remata el conjunto por abajo y la que delata que ahí hay un hueco
+  // por el que se pasa, no un panel pegado a la pared.
+  const umbral = MeshBuilder.CreateBox(
+    "portalAscensorUmbral",
+    { width: ANCHO + 0.04, height: 0.02, depth: 0.16 },
+    scene
+  );
+  umbral.position.set(X, 0.012, Z_CARA + 0.06);
+  umbral.material = matPortal;
+
+  const matGuia = new PBRMaterial("matGuiaAscensor", scene);
+  matGuia.albedoColor = new Color3(0.1, 0.1, 0.11);
+  matGuia.roughness = 0.5;
+  matGuia.metallic = 0.6;
+  [-1, 1].forEach((lado) => {
+    const guia = MeshBuilder.CreateBox(
+      `portalAscensorGuia_${lado > 0 ? "d" : "i"}`,
+      { width: ANCHO + 0.04, height: 0.006, depth: 0.012 },
+      scene
+    );
+    guia.position.set(X, 0.023, Z_CARA + 0.06 + lado * 0.035);
+    guia.material = matGuia;
+  });
+
+  // Botonera de llamada, en la jamba derecha. Dos pulsadores: subir y bajar.
+  const matPlaca = new PBRMaterial("matPlacaAscensor", scene);
+  matPlaca.albedoColor = new Color3(0.3, 0.31, 0.33);
+  matPlaca.roughness = 0.34;
+  matPlaca.metallic = 0.9;
+
+  const placa = MeshBuilder.CreateBox(
+    "portalAscensorPlaca",
+    { width: 0.09, height: 0.2, depth: 0.012 },
+    scene
+  );
+  placa.position.set(X + ANCHO / 2 + 0.16, 1.08, Z_CARA - 0.02);
+  placa.material = matPlaca;
+
+  const matPulsador = new PBRMaterial("matPulsadorAscensor", scene);
+  matPulsador.albedoColor = new Color3(0.05, 0.05, 0.06);
+  matPulsador.emissiveColor = new Color3(0.5, 0.42, 0.22);
+  matPulsador.roughness = 0.4;
+  [0.045, -0.045].forEach((dy, i) => {
+    const boton = MeshBuilder.CreateCylinder(
+      `portalAscensorPulsador_${i}`,
+      { diameter: 0.035, height: 0.008, tessellation: 16 },
+      scene
+    );
+    boton.rotation.x = Math.PI / 2;
+    boton.position.set(X + ANCHO / 2 + 0.16, 1.08 + dy, Z_CARA - 0.028);
+    boton.material = matPulsador;
+  });
+
+  // Indicador de piso, embutido en el dintel dentro de su propia placa oscura.
+  // Antes flotaba suelto sobre el marco; ahora es parte del conjunto.
+  const marcoInd = MeshBuilder.CreateBox(
+    "portalAscensorMarcoInd",
+    { width: 0.26, height: 0.14, depth: 0.02 },
+    scene
+  );
+  marcoInd.position.set(X, ALTO + CANTO + 0.08, Z_CARA - 0.015);
+  marcoInd.material = matPortal;
+
   const matIndicador = new PBRMaterial("matIndicadorAscensor", scene);
   matIndicador.albedoColor = new Color3(0, 0, 0);
   // Enciende tenue en reposo en lugar de quedarse apagado del todo: un panel
@@ -1889,11 +3429,10 @@ function construirAscensor(scene: Scene): Ascensor {
   matIndicador.roughness = 1;
   const indicador = MeshBuilder.CreatePlane(
     "indicadorAscensorHall",
-    { width: 0.16, height: 0.1 },
+    { width: 0.19, height: 0.085 },
     scene
   );
-  indicador.position.set(X, ALTO + 0.2, 4.58);
-  indicador.rotation.y = Math.PI;
+  indicador.position.set(X, ALTO + CANTO + 0.08, Z_CARA - 0.027);
   indicador.material = matIndicador;
 
   // --- La luz del hueco -----------------------------------------------------
@@ -1931,15 +3470,50 @@ function construirAscensor(scene: Scene): Ascensor {
   // Van detrás de la cara del muro. Al abrirse se meten por detrás de los
   // paños de pared, que es donde se esconden las de verdad: sin ese retranqueo
   // se verían deslizarse por delante de la pared como dos placas sueltas.
+  // LAS HOJAS SON MÁS ANCHAS QUE EL HUECO. Aquí estaba el parpadeo.
+  //
+  // Medían exactamente el vano: sus cantos caían en x = −3,75 y x = −2,45, que
+  // son justo los bordes del hueco del muro. Y aunque las hojas estén un
+  // centímetro por detrás, en pantalla ESE BORDE Y EL DEL HUECO CAEN SOBRE LOS
+  // MISMOS PÍXELES.
+  //
+  // Cuando dos siluetas coinciden así, el píxel del borde está cubierto en
+  // parte por las dos, y cuál gana depende de por dónde pase exactamente el
+  // canto dentro de ese píxel. Al girar la cámara eso cambia sin parar, y el
+  // borde hierve. No es profundidad, ni material, ni sombra: por eso no lo
+  // arreglaba nada de lo que se tocó antes.
+  //
+  // El solape lo resuelve por construcción, y es cómo se monta un ascensor de
+  // verdad: las hojas son más anchas que el vano y quedan escondidas tras el
+  // muro. Así el único canto que se ve es el del hueco —una sola silueta— y no
+  // hay nada con lo que competir.
+  const SOLAPE = 0.09;
+  const ANCHO_HOJA = ANCHO / 2 + SOLAPE;
+
   const hojas = [-1, 1].map((lado) => {
     const hoja = MeshBuilder.CreateBox(
       `hojaAscensorHall_${lado > 0 ? "d" : "i"}`,
-      { width: ANCHO / 2, height: ALTO, depth: 0.05 },
+      { width: ANCHO_HOJA, height: ALTO, depth: 0.05 },
       scene
     );
-    hoja.position.set(X + (lado * ANCHO) / 4, ALTO / 2, 4.7);
+
+    // Se corren hacia afuera media anchura de solape, para que sigan juntándose
+    // en el centro del hueco al cerrarse.
+    const cerrada = X + lado * (ANCHO / 4 + SOLAPE / 2);
+
+    // DENTRO DEL ESPESOR DEL MURO, justo detrás del portal.
+    //
+    // El muro va de z 4,51 a 4,69 y la hoja de 4,545 a 4,595: queda metida en
+    // su espesor. Eso cumple las dos cosas a la vez, que es lo que no se
+    // conseguía moviéndolas hacia delante o hacia atrás:
+    //
+    //   · Cerrada, está a tres centímetros y medio del portal, así que casi no
+    //     queda canto a la vista. Antes eran dieciocho.
+    //   · Abierta, corre hacia el lado y queda ENTERRADA en el muro, que en esa
+    //     zona es macizo. Se esconde sin necesidad de estar al fondo.
+    hoja.position.set(cerrada, ALTO / 2, 4.57);
     hoja.material = matAcero;
-    return { malla: hoja, lado, cerrada: X + (lado * ANCHO) / 4 };
+    return { malla: hoja, lado, cerrada };
   });
 
   // El foco se acota AQUÍ y no al crearlo, porque las hojas se construyen
@@ -1950,7 +3524,8 @@ function construirAscensor(scene: Scene): Ascensor {
       m.name.includes("Ascensor") ||
       m.name.includes("ascensor") ||
       m.name.startsWith("cabina") ||
-      m.name.startsWith("marcoAsc")
+      m.name.startsWith("portalAscensor") ||
+      m.name.startsWith("indicadorAscensor")
   );
 
   const RECORRIDO = ANCHO / 2 + 0.04;
@@ -2012,9 +3587,22 @@ export interface PuertaHall {
 }
 
 function construirPuertaHall(scene: Scene): PuertaHall {
-  const ANCHO = 1.2;
+  // MISMO CASO QUE LAS HOJAS DEL ASCENSOR, y por eso las mismas cotas raras.
+  //
+  // El vano de la puerta va de x = 1,75 a x = 2,95, que son las caras de las
+  // dos jambas. Con la hoja midiendo 1,20 y el gozne en 2,95, el marco
+  // ocupaba EXACTAMENTE ese hueco: sus dos cantos caían sobre el plano de
+  // las jambas, y encima el marco está metido en el canto del muro. Dos
+  // caras compartiendo plano en el mismo tramo es lo que hace hervir el
+  // borde al girar la cámara.
+  //
+  // Con 1,16 de ancho y el gozne en 2,93 la hoja va de 1,77 a 2,93: dos
+  // centímetros de holgura por cada lado, sin tocar ninguna jamba. Que es
+  // además como se monta un marco de verdad — nadie encaja una puerta a
+  // medida exacta del hueco, se deja holgura y luego se remata.
+  const ANCHO = 1.16;
   const ALTO = 2.15;
-  const X_GOZNE = 2.95;
+  const X_GOZNE = 2.93;
 
   const eje = new TransformNode("ejePuertaHall", scene);
   eje.position.set(X_GOZNE, 0, 4.6);

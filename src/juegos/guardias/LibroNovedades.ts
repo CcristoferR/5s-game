@@ -89,7 +89,8 @@ export type TipoFalta =
   | "novedad_no_anotada"
   | "ingreso_sin_salida"
   | "inventario_incompleto"
-  | "parrafo_mal_citado";
+  | "parrafo_mal_citado"
+  | "codigo_radial_incorrecto";
 
 export interface Falta {
   tipo: TipoFalta;
@@ -127,6 +128,12 @@ const FUNDAMENTOS: Record<TipoFalta, string> = {
     "Ingreso y salida se anotan como constancias separadas. Sin la salida, el libro deja a esas personas dentro de la instalación.",
   inventario_incompleto:
     "La entrega del servicio se hace conforme al cargo fijo: hay que declararlo completo.",
+  codigo_radial_incorrecto:
+    "El manual dedica una sección a comunicación y enlace precisamente porque un " +
+    "código mal empleado no es un error de forma: cambia lo que el otro extremo " +
+    "entiende. Acusar recibo cuando preguntan por la señal deja a central sin saber si " +
+    "se le oye, y transmitir sobre un tráfico de emergencia estorba a quien está " +
+    "coordinando con la fuerza pública.",
   parrafo_mal_citado:
     "La entrega cita el párrafo donde constan las novedades del servicio: tiene que existir, estar vigente y contener novedades.",
 };
@@ -333,6 +340,30 @@ export function anular(estado: EstadoLibro, numero: number): EstadoLibro {
  * pantalla. Que la tecla de borrar no haga nada es lo que enseña la regla: en
  * un libro foliado no se puede deshacer, solo anular a la vista de todos.
  */
+/**
+ * Anota un código radial mal empleado.
+ *
+ * Se registra como falta del servicio y no como un fallo aparte porque en el
+ * manual la comunicación es parte del servicio: lo que se dice por la
+ * frecuencia tiene las mismas consecuencias que lo que se escribe en el libro.
+ */
+export function registrarCodigoIncorrecto(
+  estado: EstadoLibro,
+  descripcion: string
+): EstadoLibro {
+  return {
+    ...estado,
+    faltas: [
+      ...estado.faltas,
+      {
+        tipo: "codigo_radial_incorrecto",
+        descripcion,
+        fundamento: FUNDAMENTOS.codigo_radial_incorrecto,
+      },
+    ],
+  };
+}
+
 export function intentarBorrar(estado: EstadoLibro): EstadoLibro {
   return {
     ...estado,
@@ -543,6 +574,10 @@ export function calificar(estado: EstadoLibro): { nota: number; faltas: Falta[] 
     intento_de_borrado: 12,
     inventario_incompleto: 12,
     parrafo_mal_citado: 10,
+    // Pesa como una cita mal hecha: es un error de procedimiento, no de
+    // fondo. No inventa un hecho ni deja una novedad sin registrar, pero
+    // rompe el entendimiento con el otro extremo de la frecuencia.
+    codigo_radial_incorrecto: 10,
     fuera_de_orden: 8,
   };
 

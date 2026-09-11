@@ -75,42 +75,6 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
   // Piloto: primer suceso generado por cámara, mismo formato que los de
   // arriba. Si funciona, esto es lo que se replica para sumar más.
   {
-    id: "camara-estacionamiento",
-    minuto: 45,
-    actividad: "CAMARA",
-    aviso:
-      "En el monitor, la cámara 2 (Estacionamiento) muestra una camioneta gris, sin patente visible, " +
-      "detenida en el sector de visitas con el motor encendido desde hace más de diez minutos. No se " +
-      "ve a nadie fuera del vehículo.",
-    opciones: [
-      {
-        texto:
-          "Se observa por cámara 2 (Estacionamiento) una camioneta gris, sin patente visible, detenida " +
-          "en el sector de visitas con el motor encendido desde aproximadamente las 00:35 horas. No se " +
-          "observan personas fuera del vehículo.",
-        clase: "factual",
-        explicacion:
-          "Lo que muestra la cámara: el vehículo, dónde está, desde cuándo y que no hay nadie fuera. Que no se distinga la patente también se anota tal cual — es lo que se observa, no lo que se omite.",
-      },
-      {
-        texto:
-          "Se observa por cámara 2 una camioneta gris estacionada de forma sospechosa en el sector de " +
-          "visitas, con el motor encendido, situación que hace prever un posible ilícito.",
-        clase: "opinion",
-        explicacion:
-          "Que la situación sea \"sospechosa\" o \"haga prever un ilícito\" es la lectura del guardia. La cámara muestra un vehículo detenido con el motor encendido; eso es el hecho, no la conclusión.",
-      },
-      {
-        texto:
-          "Se observa por cámara 2 una camioneta gris con dos sujetos en su interior, preparando un " +
-          "robo en el sector de visitas.",
-        clase: "inventada",
-        explicacion:
-          "La cámara no muestra a nadie dentro ni fuera del vehículo, y menos qué se proponían hacer. Afirmar sujetos y un robo que no se ve es señalar un hecho que carece de realidad.",
-      },
-    ],
-  },
-  {
     id: "ingreso-vehiculo",
     minuto: 60,
     actividad: "INGRESO",
@@ -179,6 +143,63 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
       },
     ],
   },
+  {
+    id: "camara-estacionamiento",
+    // Se movió de las 00:45 a las 02:02, Y SE CAMBIÓ DE SITIO EN LA LISTA.
+    //
+    // Las dos cosas van juntas. Al moverle la hora sin moverla de posición, la
+    // lista quedó desordenada —30, 122, 60, 90, 158— y el turno se atascaba en
+    // ella: a las 01:00 miraba la siguiente de la lista, veía que era la de
+    // las 02:02, decidía que todavía no tocaba, y el ingreso y la salida no
+    // ocurrían. Aparecían las tres de golpe a las 02:02.
+    //
+    // La lista va en orden cronológico. El código ya no depende de eso —ver
+    // alPasarMinuto— pero quien la lea tiene que poder seguir el turno de
+    // arriba abajo.
+    //
+    // A las 00:45 caía quince minutos después de la ronda y quince antes del
+    // ingreso: tres novedades en media hora de servicio. Comprimido, eso son
+    // diez segundos entre una y otra —ni para leer el aviso, menos para elegir
+    // cómo redactarlo— y el jugador se encontraba tres cámaras encendidas a la
+    // vez sin haber podido atender ninguna.
+    //
+    // Aquí, además, se lee mejor: primero entra una visita por la reja y sale,
+    // y DESPUÉS aparece una camioneta sin patente parada en visitas. En ese
+    // orden la segunda hace pensar en la primera.
+    minuto: 122,
+    actividad: "CAMARA",
+    aviso:
+      "En el monitor, la cámara 2 (Estacionamiento) muestra una camioneta gris, sin patente visible, " +
+      "detenida en el sector de visitas con el motor encendido desde hace más de diez minutos. No se " +
+      "ve a nadie fuera del vehículo.",
+    opciones: [
+      {
+        texto:
+          "Se observa por cámara 2 (Estacionamiento) una camioneta gris, sin patente visible, detenida " +
+          "en el sector de visitas con el motor encendido desde aproximadamente las 00:35 horas. No se " +
+          "observan personas fuera del vehículo.",
+        clase: "factual",
+        explicacion:
+          "Lo que muestra la cámara: el vehículo, dónde está, desde cuándo y que no hay nadie fuera. Que no se distinga la patente también se anota tal cual — es lo que se observa, no lo que se omite.",
+      },
+      {
+        texto:
+          "Se observa por cámara 2 una camioneta gris estacionada de forma sospechosa en el sector de " +
+          "visitas, con el motor encendido, situación que hace prever un posible ilícito.",
+        clase: "opinion",
+        explicacion:
+          "Que la situación sea \"sospechosa\" o \"haga prever un ilícito\" es la lectura del guardia. La cámara muestra un vehículo detenido con el motor encendido; eso es el hecho, no la conclusión.",
+      },
+      {
+        texto:
+          "Se observa por cámara 2 una camioneta gris con dos sujetos en su interior, preparando un " +
+          "robo en el sector de visitas.",
+        clase: "inventada",
+        explicacion:
+          "La cámara no muestra a nadie dentro ni fuera del vehículo, y menos qué se proponían hacer. Afirmar sujetos y un robo que no se ve es señalar un hecho que carece de realidad.",
+      },
+    ],
+  },
   // ─── 02:10 · La bodega ──────────────────────────────────────────────────
   //
   // Este suceso enseña un patrón distinto a los cuatro de arriba, y por eso
@@ -197,7 +218,8 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
   // no aprieta el arranque y le da contenido a la mitad muerta del turno.
   {
     id: "bodega-candado",
-    minuto: 130,
+    // Corrida a las 02:38 para no pisarse con la de las 02:02.
+    minuto: 158,
     actividad: "RONDA",
     aviso:
       "En el monitor, la cámara 4 (Bodega) muestra la puerta entornada y el candado colgando " +
@@ -230,6 +252,60 @@ export const SUCESOS_CONDOMINIO: SucesoTurno[] = [
         clase: "inventada",
         explicacion:
           "Nadie vio entrar a nadie ni forzar nada: el candado estaba abierto, no roto. Escribir un ingreso no autorizado y una violación convierte una puerta mal cerrada en un delito, y esa constancia puede terminar en una denuncia por un hecho que no ocurrió.",
+      },
+    ],
+  },
+  // ─── 02:40 · La ronda que pidió central ─────────────────────────────────
+  //
+  // Ésta no la descubre el guardia: se la MANDAN por radio cinco minutos antes
+  // (ver LLAMADAS_RADIO, "radio-solicita-ronda"). Y por eso enseña algo que
+  // ninguna de las otras enseña: lo que se anota no es solo lo que uno ve, sino
+  // también lo que le ordenaron hacer y el resultado de haberlo hecho.
+  //
+  // El manual lo pide expresamente en RONDAS: verificar y registrar en el Libro
+  // de Novedades todo lo observado, y reportar al Supervisor las veces que sea
+  // necesario. Una ronda solicitada que no queda escrita es, a efectos del
+  // libro, una ronda que no se hizo.
+  //
+  // La trampa aquí es distinta a las demás: lo fácil es escribir que se cumplió
+  // la instrucción sin decir qué se encontró. "Se realiza ronda conforme a lo
+  // solicitado" no informa de nada — y era justamente para informar para lo que
+  // central la pidió.
+  {
+    id: "ronda-solicitada",
+    minuto: 160,
+    actividad: "RONDA",
+    aviso:
+      "Se efectúa la ronda solicitada por central al sector de estacionamiento de visitas. " +
+      "Se recorren las tres bahías y el pasillo de acceso: los vehículos estacionados " +
+      "corresponden a los registrados en el turno, el cierre perimetral está indemne y no " +
+      "se observan personas ni bienes abandonados.",
+    opciones: [
+      {
+        texto:
+          "Se efectúa ronda al sector de estacionamiento de visitas, solicitada por central " +
+          "a las 02:35 horas. Se verifican las tres bahías y el pasillo de acceso, sin " +
+          "observar personas ajenas, bienes abandonados ni daños en el cierre perimetral. " +
+          "Se informa el resultado a central.",
+        clase: "factual",
+        explicacion:
+          "Dice quién la pidió, a qué hora, qué se recorrió, qué se verificó y que se informó el resultado. Una ronda solicitada se anota con su origen y con lo que se encontró: así el libro sirve para responder después por qué se hizo y qué salió.",
+      },
+      {
+        texto:
+          "Se realiza ronda al estacionamiento conforme a lo solicitado por central, sin " +
+          "novedad en el sector.",
+        clase: "opinion",
+        explicacion:
+          "No es falso, pero no informa. \"Sin novedad\" resume lo que el guardia concluyó, no lo que verificó: quien lea el libro no sabe si se revisó el cierre perimetral, si se contaron los vehículos o si solo se asomó. El manual pide detallar lo observado en forma pormenorizada, y precisamente por eso.",
+      },
+      {
+        texto:
+          "Se efectúa ronda al estacionamiento detectando un vehículo no registrado, el que " +
+          "se retira del lugar al advertir la presencia del guardia.",
+        clase: "inventada",
+        explicacion:
+          "Todos los vehículos correspondían a los registrados y no se observó a nadie. Inventar un vehículo no registrado y una huida convierte una ronda de rutina en un incidente que nunca ocurrió, y obliga a central a actuar sobre un hecho falso.",
       },
     ],
   },

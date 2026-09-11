@@ -33,6 +33,7 @@ import {
   registrar,
   anular,
   intentarBorrar,
+  registrarCodigoIncorrecto,
   registrarFiscalizacion,
   entregarServicio,
   revisionDelSupervisor,
@@ -45,6 +46,7 @@ import {
 } from "./LibroNovedades";
 import { crearRelojTurno, type RelojTurno } from "./RelojTurno";
 import { registrarTurno, NOTA_APROBACION } from "./HistorialTurnos";
+import { LLAMADAS_RADIO, type LlamadaRadio } from "./ComunicacionesRadio";
 import {
   APERTURA,
   SUCESOS_CONDOMINIO,
@@ -126,6 +128,15 @@ const SANGRIA = 16;
 export interface SesionLibro {
   /** Vuelve a abrir el libro donde quedó. */
   abrir(): void;
+  /**
+   * Atiende la llamada de radio que esté entrando, si la hay.
+   *
+   * Existe porque el aviso de una llamada es el piloto del equipo, sobre el
+   * mesón: lo natural al verlo encenderse es apretar la radio, no abrir el
+   * libro y buscar una fila. Sin esto, el aviso señalaba a un aparato que no
+   * respondía.
+   */
+  atenderRadio(): void;
 }
 
 /**
@@ -164,6 +175,15 @@ export interface EnlaceEscena {
    * del turno es un dato del documento.
    */
   alAvanzarMinuto(minuto: number): void;
+  /**
+   * Entra o se cierra una llamada de radio.
+   *
+   * La escena lo usa para el piloto del equipo. Va aquí y no dentro del panel
+   * porque el aviso tiene que verse ESTANDO EN EL PUESTO, con el libro
+   * cerrado: si solo se anunciara en la interfaz, la radio volvería a ser un
+   * menú y no un aparato que hay sobre el mesón.
+   */
+  suenaRadio(activa: boolean): void;
 }
 
 /**
@@ -207,8 +227,32 @@ export function mostrarPantallaLibro(
   /** Cuándo se abrió el servicio de verdad, para medir cuánto duró el intento. */
   const comenzadoEn = new Date();
 
-  /** Cuántos sucesos han ocurrido ya. Los ocurridos y no escritos son pendientes. */
-  let sucesosLlegados = 0;
+  /**
+   * Novedades que ya ocurrieron, por su id. Las ocurridas y no escritas son
+   * las pendientes.
+   *
+   * ─── POR QUÉ POR ID Y NO POR UN CONTADOR ────────────────────────────────
+   *
+   * Antes esto era un número: cuántas habían ocurrido, contando desde el
+   * principio de la lista. Funcionaba mientras la lista estuviera en orden
+   * cronológico, y eso era una condición que ningún sitio comprobaba ni decía.
+   *
+   * En cuanto una novedad cambió de hora sin cambiar de sitio en la lista, el
+   * turno se quedó atascado en ella: miraba la siguiente por índice, veía que
+   * su hora aún no había llegado, y daba por hecho que ninguna de las
+   * posteriores había ocurrido tampoco. Dos novedades no aparecieron a su hora
+   * y las tres saltaron juntas más tarde.
+   *
+   * Con el conjunto de ids se recorren TODAS y cada una responde por su propia
+   * hora. El orden de la lista pasa a ser cosa de quien la lee, no una regla
+   * oculta de la que depende que el turno funcione.
+   */
+  const ocurridos = new Set<string>();
+
+  /** Llamadas ya entradas, para no repetirlas. */
+  const radioEntradas = new Set<string>();
+  /** La que está sonando y aún no se ha atendido, si hay alguna. */
+  let llamadaEnEspera: LlamadaRadio | null = null;
 
   /**
    * Qué pantalla está al frente.
@@ -502,6 +546,14 @@ export function mostrarPantallaLibro(
    */
   const reloj: RelojTurno = crearRelojTurno(scene, {
     minutoFinal: MINUTO_ENTREGA,
+    // Todo lo que exige atención: cada novedad, la fiscalización y el relevo.
+    // Ordenados, porque el reloj busca el próximo recorriéndolos de principio
+    // a fin y se queda con el primero que aún no ha alcanzado.
+    hitos: [
+      ...SUCESOS_CONDOMINIO.map((s) => s.minuto),
+      MINUTO_FISCALIZACION,
+      MINUTO_ENTREGA,
+    ].sort((a, b) => a - b),
     alAvanzar: alPasarMinuto,
   });
 
@@ -513,6 +565,16 @@ export function mostrarPantallaLibro(
       // libro ya en pantalla el clic sobre la tapa no debe apilar otra capa.
       if (estado.cerrado || pantallaActual !== "cerrado") return;
       mostrarLibro();
+    },
+    atenderRadio() {
+      // Sin llamada entrando, la radio no hace nada: es un equipo a la
+      // escucha, no un menú que se abra cuando a uno le apetece.
+      if (estado.cerrado || !llamadaEnEspera) return;
+      // Y solo desde el puesto: con un panel delante, el velo ya bloquea el
+      // puntero, pero esta guarda evita apilar una capa sobre otra si el
+      // clic llegara por cualquier otro camino.
+      if (pantallaActual === "otra") return;
+      mostrarLlamadaRadio(llamadaEnEspera);
     },
   };
 
@@ -699,7 +761,7 @@ export function mostrarPantallaLibro(
     tarjeta.addControl(filete);
 
     // Las novedades que ya ocurrieron y siguen sin anotar.
-    const pendientes = SUCESOS_CONDOMINIO.slice(0, sucesosLlegados).filter(
+    const pendientes = SUCESOS_CONDOMINIO.filter((s) => ocurridos.has(s.id)).filter(
       (s) => !escritos.has(s.id)
     );
 
@@ -733,6 +795,51 @@ export function mostrarPantallaLibro(
     // horizontal —que en una lista de texto no pinta nada— no aparezca nunca.
     lista.width = ANCHO_REGISTRO + "px";
     scroll.addControl(lista);
+
+    // La llamada sin atender va ARRIBA DEL TODO, por delante de las novedades.
+    //
+    // Una frecuencia no espera: mientras no se conteste, el otro extremo no
+    // sabe si se le oye. Anotar puede aguantar medio minuto; responder a
+    // central, no.
+    if (llamadaEnEspera) {
+      const enEspera = llamadaEnEspera;
+      const marco = registro("filaRadio", 66, PALETA.dato, "rgba(110, 150, 190, 0.14)");
+      marco.isPointerBlocker = true;
+      marco.hoverCursor = "pointer";
+
+      const tituloRadio = etiqueta(
+        "radioTitulo",
+        `${horaDe(enEspera.minuto)}   RADIO`,
+        PALETA.titulo,
+        320
+      );
+      tituloRadio.fontSize = TEXTO.menor;
+      tituloRadio.left = SANGRIA + "px";
+      tituloRadio.top = "13px";
+      marco.addControl(tituloRadio);
+
+      const pieRadio = etiqueta(
+        "radioPie",
+        `LLAMADA DE ${enEspera.quien} SIN ATENDER`,
+        PALETA.dato,
+        360
+      );
+      pieRadio.fontSize = 11;
+      pieRadio.left = SANGRIA + "px";
+      pieRadio.top = "37px";
+      marco.addControl(pieRadio);
+
+      const flechaRadio = etiqueta("radioFlecha", "RESPONDER  ›", PALETA.dato, 130);
+      flechaRadio.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      flechaRadio.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      flechaRadio.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+      flechaRadio.left = -SANGRIA + "px";
+      marco.addControl(flechaRadio);
+
+      marco.onPointerUpObservable.add(() => mostrarLlamadaRadio(enEspera));
+      lista.addControl(marco);
+      lista.addControl(crearEspacio("aireTrasRadio", 12));
+    }
 
     if (pendientes.length > 0) {
       pendientes.forEach((suceso) => lista.addControl(filaPendiente(suceso)));
@@ -807,19 +914,42 @@ export function mostrarPantallaLibro(
     // repinta UNA vez al final y no dentro del bucle: dos repintados seguidos
     // del mismo libro es trabajo tirado y un parpadeo de la capa.
     let ocurrioAlgo = false;
-    while (
-      sucesosLlegados < SUCESOS_CONDOMINIO.length &&
-      SUCESOS_CONDOMINIO[sucesosLlegados].minuto <= minuto
-    ) {
-      monitor.alOcurrir(SUCESOS_CONDOMINIO[sucesosLlegados]);
-      sucesosLlegados += 1;
+    for (const suceso of SUCESOS_CONDOMINIO) {
+      if (ocurridos.has(suceso.id) || suceso.minuto > minuto) continue;
+      ocurridos.add(suceso.id);
+      monitor.alOcurrir(suceso);
       ocurrioAlgo = true;
     }
+    // --- ¿Entra alguna llamada de radio? -----------------------------------
+    //
+    // Solo una a la vez: si ya hay una sin atender, la siguiente espera su
+    // turno. Dos llamadas encimadas no ocurren en una frecuencia real, y
+    // encima dejarían al jugador sin saber a cuál está respondiendo.
+    if (!llamadaEnEspera) {
+      const entra = LLAMADAS_RADIO.find(
+        (l) => !radioEntradas.has(l.id) && l.minuto <= minuto
+      );
+      if (entra) {
+        radioEntradas.add(entra.id);
+        llamadaEnEspera = entra;
+        escena.suenaRadio(true);
+        // Se corta el adelanto igual que con una novedad: una llamada es
+        // tráfico que hay que atender, no un trámite que se pueda saltar.
+        reloj.adelantar(false);
+        reloj.respirar(2.2);
+        if (pantallaActual === "libro") mostrarLibro();
+      }
+    }
+
     if (ocurrioAlgo) {
       // Pasó algo: se corta el adelanto. Quien estuviera saltándose las horas
       // muertas se entera en el acto, en vez de descubrir la novedad tres
       // horas más tarde en la bandeja.
       reloj.adelantar(false);
+      // Un par de segundos para levantar la vista antes de que el turno siga
+      // corriendo. Es lo que separa enterarse de una novedad de encontrársela
+      // ya acumulada en la bandeja.
+      reloj.respirar(2.2);
       if (pantallaActual === "libro") mostrarLibro();
     }
 
@@ -1149,6 +1279,123 @@ export function mostrarPantallaLibro(
   }
 
   // ─── Aviso breve: prohibiciones y confirmaciones ────────────────────────
+  /**
+   * La llamada de radio.
+   *
+   * Mismo formato que un suceso del libro —mensaje arriba, opciones debajo,
+   * explicación al elegir— y eso es deliberado: para el alumno, escoger el
+   * código correcto y escoger la redacción correcta son el mismo ejercicio
+   * hecho sobre dos soportes distintos. Lo que cambia es el soporte, no el
+   * criterio.
+   */
+  function mostrarLlamadaRadio(llamada: LlamadaRadio): void {
+    verPantalla("otra", "silla");
+
+    const ANCHO_ETIQUETA = ANCHO_CONTENIDO - 82;
+    const altoOpciones = llamada.opciones.reduce(
+      (suma, o) =>
+        suma +
+        Math.max(60, altoDeTexto(`${o.codigo}   ${o.significado}`, ANCHO_ETIQUETA, TEXTO.cuerpo) + 30) +
+        10,
+      0
+    );
+    const altoMensaje = altoDeTexto(llamada.mensaje, ANCHO_CONTENIDO, TEXTO.cuerpo);
+    const alto = Math.min(660, 210 + altoMensaje + altoOpciones);
+
+    const { velo, columna } = armarCapa("Radio", alto, PALETA.dato);
+
+    columna.addControl(crearRotulo("rotuloRadio", "RADIO · LLAMADA ENTRANTE", PALETA.dato));
+    columna.addControl(crearEspacio("aireRotuloRadio", 10));
+    columna.addControl(
+      crearParrafo(
+        "quienRadio",
+        `${llamada.quien}  ·  ${horaDe(llamada.minuto)}`,
+        ANCHO_CONTENIDO,
+        TEXTO.destacado,
+        PALETA.titulo,
+        "600"
+      )
+    );
+    columna.addControl(crearEspacio("aireQuienRadio", 12));
+
+    // El mensaje, como transcripción. Va entrecomillado y en cursiva visual
+    // (color de dato) para que se lea como algo que SE OYE, no como una
+    // instrucción del juego.
+    columna.addControl(
+      crearParrafo(
+        "mensajeRadio",
+        `«${llamada.mensaje}»`,
+        ANCHO_CONTENIDO,
+        TEXTO.cuerpo,
+        PALETA.cuerpo
+      )
+    );
+    columna.addControl(crearEspacio("aireMensajeRadio", 14));
+    columna.addControl(crearDivisor("divisorRadio", ANCHO_CONTENIDO));
+    columna.addControl(crearEspacio("airePostDivisorRadio", 12));
+    columna.addControl(
+      crearParrafo(
+        "instruccionRadio",
+        "Responda con el código que corresponda. La tarjeta de claves está sobre el mesón.",
+        ANCHO_CONTENIDO,
+        TEXTO.menor,
+        PALETA.tenue
+      )
+    );
+    columna.addControl(crearEspacio("aireInstruccionRadio", 12));
+
+    llamada.opciones.forEach((opcion, i) => {
+      const boton = crearBotonOpcion(
+        `btnRadio_${llamada.id}_${i}`,
+        `${opcion.codigo}   ·   ${opcion.significado}`,
+        ANCHO_CONTENIDO
+      );
+      boton.onPointerUpObservable.add(() => {
+        // La llamada queda atendida tanto si se acierta como si no: en una
+        // frecuencia real no se puede volver a contestar lo mismo.
+        llamadaEnEspera = null;
+        escena.suenaRadio(false);
+
+        if (!opcion.correcta) {
+          estado = registrarCodigoIncorrecto(
+            estado,
+            `Se respondió ${opcion.codigo} a la llamada de las ${horaDe(llamada.minuto)}.`
+          );
+        }
+
+        mostrarNota(
+          opcion.correcta ? `${opcion.codigo} · CORRECTO` : `${opcion.codigo} · NO CORRESPONDE`,
+          opcion.explicacion,
+          opcion.correcta ? PALETA.dato : PALETA.error,
+          () => {
+            // Si la llamada traía trabajo, se avisa de que viene. La novedad
+            // llega sola por el reloj unos minutos después; esto solo evita
+            // que aparezca en la bandeja sin que nadie sepa de dónde salió.
+            if (llamada.anuncia && opcion.correcta) {
+              mostrarNota(
+                "QUEDA PENDIENTE",
+                "La ronda solicitada aparecerá en la bandeja cuando se realice. Recuerde que " +
+                  "lo que central pide por radio también se registra en el libro: una ronda " +
+                  "que no queda escrita es, para el servicio, una ronda que no se hizo.",
+                PALETA.aviso,
+                () => mostrarLibro()
+              );
+              return;
+            }
+            mostrarLibro();
+          }
+        );
+      });
+      columna.addControl(boton);
+      if (i < llamada.opciones.length - 1) {
+        columna.addControl(crearEspacio(`aireRadio_${i}`, 10));
+      }
+    });
+
+    desvanecer(velo, 0, 1, 160);
+    reemplazarCapa(velo);
+  }
+
   function mostrarNota(
     rotulo: string,
     cuerpo: string,
@@ -1289,7 +1536,16 @@ export function mostrarPantallaLibro(
     );
     columna.addControl(crearEspacio("aireDivisorEntrega", 14));
     columna.addControl(crearDivisor("divisorEntrega", ANCHO_CONTENIDO));
-    columna.addControl(crearEspacio("airePostDivisorEntrega", 14));
+
+    // El cuerpo, en un visor.
+    //
+    // Iba en la pila de la tarjeta, sin desplazamiento, y ya andaba justo:
+    // cuatro artículos del cargo fijo, el enunciado de la cita y la fila del
+    // selector suman casi los 620 px que mide. Cualquier línea de más —y el
+    // enunciado son dos— se dibujaría por debajo del borde y encima del
+    // botón de entregar, que es como se rompieron antes la fiscalización y
+    // el informe. Con visor deja de importar cuánto crezca.
+    const cuerpo = listaDesplazable(tarjeta, "Entrega", 150, 620 - 150 - 118);
 
     CARGO_FIJO.forEach((item, i) => {
       const boton = crearBotonSecundario(`btnCargo_${i}`, `☐   ${item}`, ANCHO_CONTENIDO);
@@ -1306,13 +1562,37 @@ export function mostrarPantallaLibro(
           if (boton.textBlock) boton.textBlock.text = `☑   ${item}`;
         }
       });
-      columna.addControl(boton);
-      columna.addControl(crearEspacio(`aireCargo_${i}`, 6));
+      cuerpo.addControl(boton);
+      cuerpo.addControl(crearEspacio(`aireCargo_${i}`, 6));
     });
 
-    columna.addControl(crearEspacio("airePreParrafo", 12));
-    columna.addControl(crearDivisor("divisorParrafo", ANCHO_CONTENIDO));
-    columna.addControl(crearEspacio("airePostParrafo", 14));
+    cuerpo.addControl(crearEspacio("airePreParrafo", 12));
+    cuerpo.addControl(crearDivisor("divisorParrafo", ANCHO_CONTENIDO));
+    cuerpo.addControl(crearEspacio("airePostParrafo", 14));
+
+    // EL ENUNCIADO, que es lo que faltaba.
+    //
+    // Antes lo único escrito era la frase del manual, "Novedades indicadas
+    // en el párrafo ____", con un selector al lado. Así no se lee como una
+    // pregunta: se lee como una casilla que rellenar, y lo natural es subir
+    // el número hasta el final y entregar.
+    //
+    // Poder equivocarse sigue siendo el punto, pero equivocarse tiene que
+    // ser por no aplicar bien el criterio, no por no saber que había uno.
+    // Decir cuál es el criterio no da la respuesta: los párrafos siguen
+    // siendo siete y hay que saber cuáles recogen una novedad del turno y
+    // cuáles no. Eso es exactamente lo que el ejercicio quiere preguntar.
+    cuerpo.addControl(
+      crearParrafo(
+        "enunciadoCita",
+        "Indica el párrafo donde consta una novedad del turno. Al lado del número " +
+          "aparece de qué constancia se trata.",
+        ANCHO_CONTENIDO,
+        TEXTO.menor,
+        PALETA.tenue
+      )
+    );
+    cuerpo.addControl(crearEspacio("aireEnunciadoCita", 12));
 
     // La cita del párrafo. El manual la deja como un espacio en blanco:
     // "Novedades indicadas en el párrafo ____". Por eso va como número libre y
@@ -1345,7 +1625,24 @@ export function mostrarPantallaLibro(
     numero.isHitTestVisible = false;
     filaCita.addControl(numero);
 
-    const maximo = estado.proximoParrafo;
+    // El tope es el último párrafo ESCRITO, no el siguiente por escribir.
+    //
+    // proximoParrafo es el número que va a tomar esta misma entrega, que
+    // todavía no existe. Con el tope ahí, el selector dejaba subir hasta un
+    // párrafo en blanco: quien apretaba "+" hasta el final —buscando la
+    // novedad más reciente, que es lo razonable— se llevaba la falta de cita
+    // con el mensaje "no existe el párrafo 8", refiriéndose a un número que
+    // el propio selector le había ofrecido.
+    //
+    // Y una entrega no puede citarse a sí misma, así que ese número no es
+    // que estuviera mal elegido: es que nunca podía estar bien. Ofrecer una
+    // opción que jamás es válida no enseña nada, solo descuenta diez puntos.
+    //
+    // Lo que SÍ sigue siendo decisión del alumno es no citar la apertura ni
+    // la fiscalización: existen, se pueden elegir, y elegirlas está mal
+    // porque en ellas no consta ninguna novedad. Eso es lo que el ejercicio
+    // quiere preguntar.
+    const maximo = Math.max(1, estado.proximoParrafo - 1);
 
     // Al costado del número se muestra QUÉ párrafo es. Sin esto, elegir sería
     // un ejercicio de memoria: en el puesto el guardia tiene el libro delante
@@ -1400,9 +1697,9 @@ export function mostrarPantallaLibro(
     cierreCita.isHitTestVisible = false;
     filaCita.addControl(cierreCita);
 
-    columna.addControl(filaCita);
-    columna.addControl(crearEspacio("aireReferenciaCita", 4));
-    columna.addControl(referencia);
+    cuerpo.addControl(filaCita);
+    cuerpo.addControl(crearEspacio("aireReferenciaCita", 4));
+    cuerpo.addControl(referencia);
     refrescarCita();
 
     botonAbajo(tarjeta, "btnEntregar", "Entregar el servicio", 240).onPointerUpObservable.add(
@@ -1413,7 +1710,7 @@ export function mostrarPantallaLibro(
           parrafoCitado,
           // Todo lo que alcanzó a ocurrir en el turno, esté anotado o no. Lo
           // que falte lo caza entregarServicio.
-          SUCESOS_CONDOMINIO.slice(0, sucesosLlegados)
+          SUCESOS_CONDOMINIO.filter((s) => ocurridos.has(s.id))
         );
         mostrarInformeFinal();
       }

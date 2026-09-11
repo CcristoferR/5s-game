@@ -3,6 +3,7 @@ import { mostrarMenuPrincipal, type NivelMenuInfo } from "../ui/MainMenu";
 import { GameManager } from "../core/GameManager";
 import { estaAprobado } from "./guardias/HistorialTurnos";
 import { cargarConPantalla, type BriefingCarga } from "../ui/PantallaCarga";
+import { crearRecorridoSupermercado } from "./guardias/RecorridoSupermercado";
 import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
 
 // ===========================================================================
@@ -34,6 +35,17 @@ import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
  * curso tiene sus propios escenarios y su propio vocabulario.
  */
 const BRIEFINGS: Record<number, BriefingCarga> = {
+  2: {
+    rotulo: "Escenario 02",
+    fase: "Supermercado",
+    traduccion: "Recorrido del escenario",
+    contexto:
+      "El escenario llegó del equipo 3D y todavía no tiene mecánica. Esto es " +
+      "una visita: se entra por el frente de la sala y se recorre a pie para " +
+      "revisar los pasillos, las góndolas y las alturas antes de montar nada " +
+      "encima. Caminar con WASD o las flechas; ESC para volver al menú.",
+    color: "#79a8bd",
+  },
   1: {
     rotulo: "Escenario 01",
     fase: "Condominio",
@@ -80,7 +92,10 @@ const ESCENARIOS: NivelMenuInfo[] = [
   },
   {
     numero: 2,
-    nombre: "SUPERMERCADO - Prevención y flagrancia",
+    // Mientras no tenga mecánica se anuncia como lo que es. Prometer en el
+    // menú algo que al entrar no está es peor que decir la verdad.
+    nombre: "SUPERMERCADO - Recorrido del escenario",
+    // Se abre al aprobar el condominio: más abajo se recalcula.
     desbloqueado: false,
     completado: false,
   },
@@ -134,11 +149,20 @@ export function abrirMenuGuardias(
   // cajón compartido, que es exactamente lo que es.
   const quienJuega = usuario?.trim() || "invitado";
 
+  // El segundo escenario se abre al aprobar el primero.
+  //
+  // No es una concesión: recorrer una sala de ventas solo tiene sentido con el
+  // libro de novedades ya practicado, porque lo que se va a evaluar ahí —qué
+  // se observa y cómo se deja escrito— es lo mismo que se aprende en el
+  // condominio. Y así el jugador entra al recorrido sabiendo qué mirar.
+  const condominioAprobado = estaAprobado(quienJuega, 1);
+
   const escenarios = ESCENARIOS.map((e) => ({
     ...e,
     // Del historial guardado, no de una variable que se pierde al recargar. Y
     // aprobado no es lo mismo que jugado: hace falta la nota mínima.
     completado: estaAprobado(quienJuega, e.numero),
+    desbloqueado: e.numero === 2 ? condominioAprobado : e.desbloqueado,
   }));
 
   mostrarMenuPrincipal(
@@ -194,6 +218,30 @@ export function abrirMenuGuardias(
             // atasca, es preferible entrar con algo sin terminar que dejar
             // al jugador mirando una pantalla de carga para siempre.
             const TOPE_MS = 8000;
+            await Promise.race([
+              scene.whenReadyAsync(true),
+              new Promise<void>((listo) => setTimeout(listo, TOPE_MS)),
+            ]);
+          },
+          BRIEFINGS[numero]
+        );
+        return;
+      }
+
+      // El escenario 2 todavía no tiene mecánica, pero el mapa ya existe: se
+      // entra a recorrerlo. Es el mismo orden que se siguió con el garaje del
+      // 5S — primero comprobar que el escenario funciona, después jugarlo.
+      if (numero === 2) {
+        void cargarConPantalla(
+          numero,
+          async () => {
+            await crearRecorridoSupermercado(scene, () => {
+              abrirMenuGuardias(scene, onVolverAlPortal, usuario);
+            });
+            // Misma espera que el escenario 1: crearRecorrido vuelve en cuanto
+            // declaró la geometría, pero faltan los sombreadores y la subida de
+            // las texturas. Sin esto la sala aparece por partes.
+            const TOPE_MS = 10000;
             await Promise.race([
               scene.whenReadyAsync(true),
               new Promise<void>((listo) => setTimeout(listo, TOPE_MS)),

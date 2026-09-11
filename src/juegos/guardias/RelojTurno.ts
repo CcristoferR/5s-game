@@ -67,7 +67,7 @@ import { Scene, Observer } from "@babylonjs/core";
  * —que es lo que hace que esto sea un turno y no una lista de tareas—, pero a
  * un ritmo que se puede atender.
  */
-const MINUTOS_POR_SEGUNDO = 1.5;
+const MINUTOS_POR_SEGUNDO = 1.1;
 
 /**
  * Cuánto multiplica el adelanto.
@@ -80,6 +80,17 @@ const MINUTOS_POR_SEGUNDO = 1.5;
 const FACTOR_ADELANTO = 12;
 
 export interface RelojTurno {
+  /**
+   * Detiene el turno unos segundos y lo reanuda solo.
+   *
+   * Es para el instante en que ocurre una novedad. Sin esa pausa, el jugador
+   * ve encenderse un cuadrante del monitor y el reloj sigue corriendo mientras
+   * todavía está girándose a mirar: la novedad entra en la bandeja antes de
+   * que le haya dado tiempo a registrar que ocurrió.
+   *
+   * No es tiempo regalado. Es lo que tarda cualquiera en levantar la vista.
+   */
+  respirar(segundos: number): void;
   /** Minuto del turno, redondeado hacia abajo. 0 es 00:00. */
   minuto(): number;
   /** Deja correr el reloj, o lo detiene. */
@@ -95,6 +106,25 @@ export interface RelojTurno {
 export interface OpcionesReloj {
   /** Último minuto del turno. Al llegar, el reloj se detiene solo. */
   minutoFinal: number;
+  /**
+   * Minutos en los que el turno TIENE que frenar.
+   *
+   * ─── POR QUÉ EL RELOJ LOS CONOCE ────────────────────────────────────────
+   *
+   * Hasta ahora el adelanto se cortaba desde fuera: el reloj avanzaba a ciegas
+   * y la pantalla, al enterarse de que había ocurrido una novedad, le pedía
+   * que parara. Funciona mientras el aviso llegue a tiempo — y basta un cuadro
+   * largo, un repintado o cualquier camino que no llame a esa cancelación para
+   * que el turno se coma dos o tres novedades de una sentada. El jugador se
+   * encuentra entonces con tres cámaras encendidas y tres constancias por
+   * escribir sin haber podido atender ninguna.
+   *
+   * Dándole los hitos al reloj, eso deja de poder pasar. El reloj se frena
+   * SOLO en el minuto exacto, sin depender de que nadie se lo recuerde. Cada
+   * pulsación de adelantar lleva de una novedad a la siguiente y ni un minuto
+   * más allá.
+   */
+  hitos?: number[];
   /**
    * Se llama cada vez que el reloj cambia de minuto.
    *
@@ -112,6 +142,8 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
   let corriendo = false;
   let adelantando = false;
   let terminado = false;
+  /** Segundos que quedan de pausa por una novedad recién ocurrida. */
+  let respiro = 0;
 
   const observador: Observer<Scene> | null = scene.onBeforeRenderObservable.add(() => {
     if (!corriendo || terminado) return;
@@ -119,7 +151,24 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
     // Se acota el paso: si la pestaña estuvo en segundo plano, el navegador
     // devuelve un delta enorme y el turno saltaría media hora de golpe.
     const dt = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+
+    // La pausa por novedad se consume primero. El turno no avanza mientras
+    // dura, y se descuenta con el mismo reloj real que todo lo demás.
+    if (respiro > 0) {
+      respiro -= dt;
+      return;
+    }
+
     minutoExacto += dt * MINUTOS_POR_SEGUNDO * (adelantando ? FACTOR_ADELANTO : 1);
+
+    // Frenada en el próximo hito. Se comprueba SIEMPRE, no solo adelantando:
+    // aunque a velocidad normal un cuadro nunca salta un minuto entero, hacer
+    // depender la garantía de eso sería volver a lo de antes.
+    const hito = proximoHito();
+    if (hito !== null && minutoExacto >= hito) {
+      minutoExacto = hito;
+      adelantando = false;
+    }
 
     if (minutoExacto >= opciones.minutoFinal) {
       minutoExacto = opciones.minutoFinal;
@@ -128,6 +177,16 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
 
     avisarHasta(Math.floor(minutoExacto));
   });
+
+  /** El primer hito que aún no se ha alcanzado. Null si no queda ninguno. */
+  function proximoHito(): number | null {
+    const lista = opciones.hitos;
+    if (!lista) return null;
+    for (const m of lista) {
+      if (m > ultimoAvisado) return m;
+    }
+    return null;
+  }
 
   function avisarHasta(hasta: number): void {
     while (ultimoAvisado < hasta) {
@@ -145,12 +204,21 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
     minuto: () => ultimoAvisado < 0 ? 0 : ultimoAvisado,
     correr(activo) {
       corriendo = activo;
+      // Volver de un panel no arrastra la pausa que hubiera quedado pendiente:
+      // el jugador ya tuvo su tiempo delante de la pantalla.
+      if (!activo) respiro = 0;
       // Soltar el adelanto al pausar evita la sorpresa de volver de un panel
       // con el turno disparado.
       if (!activo) adelantando = false;
     },
     adelantar(activo) {
       adelantando = activo;
+    },
+    respirar(segundos) {
+      // Se queda con la más larga en vez de sumarlas: dos novedades en el
+      // mismo minuto dan una pausa, no dos seguidas.
+      respiro = Math.max(respiro, segundos);
+      adelantando = false;
     },
     estaAdelantando: () => adelantando,
     saltarA(minuto) {

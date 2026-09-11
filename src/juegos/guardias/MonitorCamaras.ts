@@ -80,6 +80,28 @@ const ENTRADA = 3.2;
 /** Ancho y alto de un cuadrante, en las coordenadas en que se dibuja. */
 const CW = ANCHO_BASE / 2;
 const CH = ALTO_BASE / 2;
+/**
+ * Qué cámaras están en infrarrojo.
+ *
+ * ─── EL RASGO QUE MÁS DELATA UNA CÁMARA DE SEGURIDAD ─────────────────────
+ *
+ * Una cámara exterior de noche no ve en color: conmuta a infrarrojo y la
+ * imagen se vuelve monocroma, con un foco claro en el centro —donde alcanzan
+ * sus emisores— y caída rápida a negro en los bordes. Ese aspecto se reconoce
+ * al instante, y sin él ninguna cantidad de ruido consigue que una imagen
+ * parezca de vigilancia.
+ *
+ * Solo la del acceso lo lleva, y a propósito. Las otras tres dan a sitios con
+ * luz propia —estacionamiento, pasillo y bodega tienen sus luminarias— así
+ * que siguen en color. Que unas estén en infrarrojo y otras no es lo normal
+ * en una instalación de verdad, y de paso deja la CAM 02 en color, que es
+ * donde las intermitentes ámbar hacen de aviso.
+ */
+const EN_INFRARROJO = [true, false, false, false];
+
+/** La fecha que estampa el grabador. La misma que la apertura del libro. */
+const FECHA_TURNO = "14-09-2026";
+
 const QW = CW - 4;
 const QH = CH - 4;
 
@@ -90,6 +112,118 @@ interface TomaActiva {
   desde: number;
   /** Minuto del turno en que ocurrió. Rotula la toma cuando hay más de una. */
   minuto: number;
+}
+
+/**
+ * Convierte el cuadrante a visión nocturna.
+ *
+ * Tres pasos, en este orden, y el orden importa:
+ *
+ *  1. SE QUITA EL COLOR. Con el modo de fusión "saturation" sobre un gris, la
+ *     tarjeta hace la conversión entera de una pasada. Pintar cada escena ya en
+ *     grises habría dado lo mismo por fuera, pero obligaría a mantener dos
+ *     paletas de cada sitio y perdería todo el trabajo de color de las escenas.
+ *
+ *  2. SE TIÑE DE VERDE GRISÁCEO. Un sensor en infrarrojo no da un gris neutro:
+ *     tira ligeramente a verde porque responde al cercano infrarrojo con el
+ *     canal que tiene más sensibilidad. Es sutil y es de lo que más se nota
+ *     cuando falta.
+ *
+ *  3. SE PONE EL FOCO DE LOS EMISORES. Los diodos de la cámara alumbran un cono
+ *     corto: el centro sale casi quemado y los bordes caen a negro mucho antes
+ *     que con luz ambiente. Esa caída brusca es LA firma de una cámara de
+ *     seguridad de noche — más incluso que la falta de color.
+ */
+function aplicarInfrarrojo(ctx: CanvasRenderingContext2D): void {
+  ctx.save();
+  ctx.globalCompositeOperation = "saturation";
+  ctx.fillStyle = "hsl(0, 0%, 50%)";
+  ctx.fillRect(0, 0, QW, QH);
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(188, 214, 194, 0.07)";
+  ctx.fillRect(0, 0, QW, QH);
+
+  const emisores = ctx.createRadialGradient(
+    QW * 0.5, QH * 0.46, QH * 0.08,
+    QW * 0.5, QH * 0.46, QH * 1.15
+  );
+  emisores.addColorStop(0, "rgba(255, 255, 245, 0.13)");
+  emisores.addColorStop(0.38, "rgba(255, 255, 245, 0.02)");
+  emisores.addColorStop(0.72, "rgba(0, 0, 0, 0.24)");
+  emisores.addColorStop(1, "rgba(0, 0, 0, 0.62)");
+  ctx.fillStyle = emisores;
+  ctx.fillRect(0, 0, QW, QH);
+}
+
+/**
+ * Los defectos de una señal comprimida y transmitida.
+ *
+ * Todo lo que hay aquí es basura técnica, y por eso funciona: una imagen limpia
+ * se lee como render, y una imagen con los defectos correctos se lee como una
+ * grabación. Son tres, y cada una aporta algo que las otras no.
+ */
+function aplicarArtefactos(
+  ctx: CanvasRenderingContext2D,
+  indice: number,
+  segundos: number
+): void {
+  // ── Macrobloques ──────────────────────────────────────────────────────
+  //
+  // El artefacto más característico de un vídeo comprimido: cuadrados de ocho
+  // píxeles que se quedan un punto por encima o por debajo del resto porque el
+  // códec los ha resuelto con un valor único. Ninguna cantidad de ruido fino
+  // los sustituye — el ruido es del sensor, esto es del transporte.
+  //
+  // Se siembran con la hora como semilla en vez de al azar puro para que
+  // aguanten unos cuadros en el mismo sitio: un macrobloque que cambia sesenta
+  // veces por segundo se vería como ruido, no como compresión.
+  const tanda = Math.floor(segundos * 1.5) + indice * 31;
+  for (let n = 0; n < 9; n++) {
+    const s = (tanda * 9301 + n * 49297) % 233280;
+    const x = Math.floor(((s / 233280) * QW) / 8) * 8;
+    const y = Math.floor(((((s * 7) % 233280) / 233280) * QH) / 8) * 8;
+    ctx.fillStyle = n % 3 === 0 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.05)";
+    ctx.fillRect(x, y, 8, 8);
+  }
+
+  // ── Ruido con ganancia ────────────────────────────────────────────────
+  //
+  // En una cámara real la ganancia sube donde falta luz, y con ella el ruido:
+  // por eso el grano de un CCTV nocturno NO está repartido por igual, se ceba
+  // en las sombras. Aquí se aproxima sembrándolo hacia los bordes, que es donde
+  // la viñeta y la caída de los emisores ya dejan la imagen más oscura.
+  for (let n = 0; n < 34; n++) {
+    const borde = Math.random() > 0.45;
+    const x = borde
+      ? Math.random() > 0.5
+        ? Math.random() * QW * 0.28
+        : QW - Math.random() * QW * 0.28
+      : Math.random() * QW;
+    const y = borde
+      ? Math.random() > 0.5
+        ? Math.random() * QH * 0.3
+        : QH - Math.random() * QH * 0.3
+      : Math.random() * QH;
+    ctx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.09)";
+    ctx.fillRect(x, y, 1.1, 1.1);
+  }
+
+  // ── Barra de sincronía ────────────────────────────────────────────────
+  //
+  // La franja tenue que sube despacio por la imagen cuando el enlace no va
+  // sincronizado con la red eléctrica. Cada cámara con su propia fase y su
+  // propia velocidad: si las cuatro barras subieran a la vez se leerían como un
+  // efecto de pantalla, y lo que tienen que parecer son cuatro señales
+  // independientes llegando por cuatro cables distintos.
+  const fase = (segundos * (0.07 + indice * 0.018) + indice * 0.37) % 1;
+  const yBarra = fase * (QH + 60) - 30;
+  const barra = ctx.createLinearGradient(0, yBarra, 0, yBarra + 30);
+  barra.addColorStop(0, "rgba(255,255,255,0)");
+  barra.addColorStop(0.5, "rgba(255,255,255,0.028)");
+  barra.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = barra;
+  ctx.fillRect(0, yBarra, QW, 30);
 }
 
 /** Un minuto del turno como hh:mm. El turno arranca a las 00:00. */
@@ -189,6 +323,12 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
         const avance = Math.min(1, (segundos - toma.desde) / ENTRADA);
         dibujarEvento(ctx, toma.escena, avance, segundos);
       }
+
+      // El infrarrojo se aplica DESPUÉS de la escena y del suceso, nunca
+      // antes: es lo que hace el sensor con la luz que le llega, así que
+      // tiene que caer sobre todo lo que haya en el cuadro. Pintando cada
+      // cosa ya en gris se perdería, además, el trabajo de las escenas.
+      if (EN_INFRARROJO[i]) aplicarInfrarrojo(ctx);
       dibujarSenal(ctx, i, toma, cual, enEstaCamara.length);
 
       ctx.restore();
@@ -298,6 +438,9 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
       ctx.fillRect(Math.random() * QW, Math.random() * QH, 3, 3);
     }
 
+    // Los defectos del transporte: macrobloques, ganancia y sincronía.
+    aplicarArtefactos(ctx, indice, segundos);
+
     // Viñeta: ninguna óptica barata ilumina bien las esquinas.
     const vineta = ctx.createRadialGradient(QW / 2, QH / 2, QH * 0.3, QW / 2, QH / 2, QH * 0.9);
     vineta.addColorStop(0, "rgba(0,0,0,0)");
@@ -315,7 +458,7 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     // el sitio de esa cámara tiene una zona clara detrás.
     ctx.fillStyle = "rgba(0,0,0,0.42)";
     ctx.fillRect(0, 0, QW, 30);
-    ctx.fillRect(0, QH - 26, QW, 26);
+    ctx.fillRect(0, QH - 34, QW, 34);
 
     ctx.fillStyle = color;
     ctx.font = "bold 15px monospace";
@@ -324,6 +467,15 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
 
     ctx.textAlign = "right";
     ctx.fillText(marcaDeHora(), QW - 12, QH - 8);
+
+    // La fecha, encima de la hora y más pequeña. Un grabador siempre la
+    // estampa: sin fecha, una imagen de seguridad no sirve como prueba, y es
+    // de esos detalles que no se echan en falta hasta que aparecen.
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = activa ? "rgba(255,201,77,0.75)" : "rgba(124,240,164,0.7)";
+    ctx.fillText(FECHA_TURNO, QW - 12, QH - 22);
+    ctx.font = "bold 15px monospace";
+    ctx.fillStyle = color;
 
     // Con más de una toma pendiente se dice cuál se está viendo y cuántas
     // hay. Sin esto la cámara cambiaría sola cada pocos segundos y parecería
