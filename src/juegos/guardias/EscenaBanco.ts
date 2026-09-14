@@ -16,6 +16,7 @@ import {
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
+import { afinarMateriales } from "./MaterialesModelo";
 
 /** Altura de los ojos de una persona de pie. */
 const ALTURA_OJO = 1.65;
@@ -161,6 +162,24 @@ export async function cargarBanco(
     if (opciones.shadowGenerator && malla instanceof Mesh) {
       opciones.shadowGenerator.addShadowCaster(malla, false);
     }
+  });
+
+  // Mismo afinado que el supermercado: filtrado alto en todas las texturas,
+  // que es lo que hace legibles las letras vistas en ángulo.
+  //
+  // El rótulo, en cambio, queda pendiente de identificar. Este modelo llegó
+  // con los nombres que pone Maya por defecto —initialShadingGroup, set3,
+  // set9, set11, aiStandardSurface2SG— y desde aquí no hay forma de saber
+  // cuál de ellos es el letrero. En el paquete original sí existe: hay una
+  // carpeta Texturas/Letrero con sus cinco mapas.
+  //
+  // Con diagnostico activo, la consola imprime cada material con el tamaño y
+  // la altura de su malla: el rótulo es el que está alto y es ancho y plano.
+  // Una vez sabido, basta con ponerlo en la lista de abajo.
+  afinarMateriales(scene, mallas, {
+    letreros: [],
+    brilloLetrero: 1.15,
+    diagnostico: opciones.diagnostico,
   });
 
   if (opciones.diagnostico) {

@@ -12,6 +12,7 @@ import {
   PBRMaterial,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
+import { afinarMateriales } from "./MaterialesModelo";
 
 // ===========================================================================
 // El supermercado
@@ -159,6 +160,13 @@ export async function cargarSupermercado(
   const ancho = maximo.x - minimo.x;
   const alto = maximo.y - minimo.y;
   const fondo = maximo.z - minimo.z;
+
+  // El rótulo del supermercado se enciende, y todas las texturas suben de
+  // filtrado. Ver MaterialesModelo: es lo que hace que las letras se lean.
+  //
+  // "Letrero colgante" es el nombre que trae el material dentro del .glb, así
+  // que si Bitplay reexporta el escenario conservándolo, esto sigue valiendo.
+  afinarMateriales(scene, mallas, { letreros: ["letrero"], brilloLetrero: 1.15 });
 
   if (opciones.diagnostico) {
     console.log(

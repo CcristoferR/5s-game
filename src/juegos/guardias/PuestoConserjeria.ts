@@ -103,15 +103,6 @@ import { reproducir } from "../../core/Sonido";
 //   GIRADO un cuarto de vuelta      ->  el problema es la rotación de la
 //                                       malla, no la textura
 
-/**
- * Pantalla del monitor: plano vertical mirando al jugador.
- *
- * El horizontal estaba en -1 para compensar que el plano se veía por detrás,
- * girado media vuelta. Ya no se gira (ver construirMonitor), así que se ve la
- * cara frontal y la textura va tal cual.
- */
-const ORIENTACION_PANTALLA = { horizontal: 1, vertical: 1 };
-
 /** Piezas apoyadas en el mesón, vistas desde arriba: libro y tarjeta. */
 const ORIENTACION_APOYADA = { horizontal: 1, vertical: 1 };
 
@@ -193,6 +184,8 @@ export interface VistaPuesto {
    * girar en mitad de la escena peleando contra el giro asistido.
    */
   volverALaSilla(devolverControl?: boolean): void;
+  /** Cuánto está inclinada la cámara sobre el libro: 0 sentada, 1 encima. */
+  inclinacion(): number;
   /** Si ya está lo bastante cerca como para que la interfaz del libro aparezca. */
   sobreElLibro(): boolean;
   /** Quieta en la silla, sin inclinación en curso. */
@@ -219,6 +212,8 @@ export interface PuestoResult {
   flexo: Flexo;
   /** El cielo y la calle del ventanal, que siguen la hora del turno. */
   atmosfera: AtmosferaTurno;
+  /** Las cuatro cámaras del circuito cerrado. */
+  monitor: MonitorCamaras;
 }
 
 export function crearPuestoConserjeria(
@@ -232,7 +227,9 @@ export function crearPuestoConserjeria(
 
   const monitor = crearMonitorCamaras(scene);
   // Las hojas del libro, que ahora muestran lo escrito de verdad.
-  const paginas = crearPaginasLibro(scene);
+  // La letra espera a que la cámara termine de inclinarse: escribir a mitad
+  // del movimiento es escribir sin mirar.
+  const paginas = crearPaginasLibro(scene, { listoParaTrazar: () => vista.inclinacion() > 0.9 });
 
   const meson = construirMeson(scene);
   const { pantalla } = construirMonitor(scene, monitor);
@@ -332,8 +329,8 @@ export function crearPuestoConserjeria(
         seCierra(devolverControl) {
           vista.volverALaSilla(devolverControl);
         },
-        seEscribe(estado) {
-          paginas.pintar(estado);
+        seEscribe(estado, aLaVista, alTerminar) {
+          paginas.escribir(estado, aLaVista, alTerminar);
         },
       }
     );
@@ -369,7 +366,7 @@ export function crearPuestoConserjeria(
   // La cámara se engancha al final, cuando ya no se va a mover nada más.
   camara.attachControl(true);
 
-  return { meson, pantalla, radio, avisarRadio, flexo, atmosfera: cielo };
+  return { meson, pantalla, radio, avisarRadio, flexo, atmosfera: cielo, monitor };
 }
 
 /**
@@ -444,7 +441,8 @@ function montarSombras(scene: Scene, flexo: SpotLight): void {
     if (nombre.includes("Hall") || nombre.includes("Muro")) return;
     // La pantalla y el cristal no proyectan: son planos sin grosor y su sombra
     // saldría como una lámina negra flotando.
-    if (nombre.includes("pantalla") || nombre.includes("cristal") || nombre.includes("calle")) return;
+    // Los sitios del circuito cerrado están a dos kilómetros: nada que sombrear.
+    if (nombre.includes("pantalla") || nombre.includes("cristal") || nombre.includes("calle") || nombre.startsWith("cctv")) return;
     // El propio flexo tampoco: la luz sale de dentro de su pantalla, y la
     // cabeza taparía el foco entero en su propio mapa de sombras.
     if (nombre.includes("Flexo")) return;
@@ -799,6 +797,7 @@ function montarCamara(scene: Scene): { camara: FreeCamera; vista: VistaPuesto } 
         destino = 0;
         devolverControl = devolver;
       },
+      inclinacion: () => avance,
       sobreElLibro: () => avance > 0.5,
       // La rueda solo manda con la cámara quieta en la silla. Durante el
       // recorrido y sobre el libro el campo lo lleva la inclinación, y si los
@@ -878,10 +877,18 @@ function enPared(malla: Mesh | TransformNode, lado: -1 | 1): void {
  */
 function construirTableroDeLlaves(scene: Scene): void {
   const X = -ANCHO_SALA / 2 + 0.07;
-  const Z = 2.55;
-  const Y = 1.52;
-  const ANCHO = 0.95;
-  const ALTO = 0.75;
+  // Más cerca y más grande.
+  //
+  // Estaba a 2,55 de profundidad y medía 95 × 75. Desde la silla eso cae en el
+  // borde del giro máximo y ocupa poco más de un dedo de pantalla: aunque esté
+  // bien modelado, a ese tamaño no se distingue qué mueble es.
+  //
+  // Adelantándolo a 2,1 y subiéndolo a 1,15 × 0,9 se mira de frente y con
+  // tamaño suficiente para leer los números, que es lo que lo identifica.
+  const Z = 2.1;
+  const Y = 1.5;
+  const ANCHO = 1.15;
+  const ALTO = 0.9;
   const FONDO = 0.11;
 
   const raiz = new TransformNode("tableroLlaves", scene);
@@ -912,8 +919,11 @@ function construirTableroDeLlaves(scene: Scene): void {
     materialPintadoNitido(scene, "matFondoLlaves", 460, 360, 2.5, (ctx, w, h) => {
       // Melamina clara con su veta suave.
       const base = ctx.createLinearGradient(0, 0, 0, h);
-      base.addColorStop(0, "#ddd6c4");
-      base.addColorStop(1, "#cbc3b0");
+      // Melamina clara de verdad. Un panel a media luz devuelve poco, y lo que
+      // hace legible el conjunto es el contraste entre el fondo claro y las
+      // llaves oscuras colgando delante.
+      base.addColorStop(0, "#e8e1cf");
+      base.addColorStop(1, "#d8d0bb");
       ctx.fillStyle = base;
       ctx.fillRect(0, 0, w, h);
 
@@ -950,17 +960,21 @@ function construirTableroDeLlaves(scene: Scene): void {
       // distancia, así que van grandes y con contraste alto.
       for (let fila = 0; fila < 3; fila++) {
         for (let col = 0; col < 6; col++) {
-          const x = 52 + col * 72;
-          const y = 120 + fila * 96;
-          ctx.fillStyle = "rgba(252, 250, 244, 0.85)";
-          ctx.fillRect(x - 27, y, 54, 24);
-          ctx.strokeStyle = "rgba(80, 72, 54, 0.45)";
-          ctx.lineWidth = 1.2;
-          ctx.strokeRect(x - 27, y, 54, 24);
-          ctx.fillStyle = "#2b2b24";
-          ctx.font = "bold 17px monospace";
+          // Etiquetas más grandes y con más contraste: blanco casi puro con
+          // borde oscuro. Son lo único que a cuatro metros dice qué es este
+          // mueble, así que se dibujan para leerse de lejos, no para quedar
+          // bonitas de cerca.
+          const x = 56 + col * 72;
+          const y = 118 + fila * 98;
+          ctx.fillStyle = "rgba(253, 252, 248, 0.96)";
+          ctx.fillRect(x - 31, y, 62, 30);
+          ctx.strokeStyle = "rgba(60, 54, 40, 0.7)";
+          ctx.lineWidth = 1.6;
+          ctx.strokeRect(x - 31, y, 62, 30);
+          ctx.fillStyle = "#1d1d18";
+          ctx.font = "bold 22px monospace";
           ctx.textAlign = "center";
-          ctx.fillText(String(101 + fila * 6 + col), x, y + 18);
+          ctx.fillText(String(101 + fila * 6 + col), x, y + 23);
         }
       }
     }),
@@ -1042,8 +1056,8 @@ function construirTableroDeLlaves(scene: Scene): void {
 
   for (let fila = 0; fila < 3; fila++) {
     for (let col = 0; col < 6; col++) {
-      const px = -ANCHO / 2 + 0.12 + col * 0.147;
-      const py = ALTO / 2 - 0.13 - fila * 0.196;
+      const px = -ANCHO / 2 + 0.135 + col * 0.177;
+      const py = ALTO / 2 - 0.17 - fila * 0.235;
 
       // Gancho en ele: poste y punta. El poste solo se ve como un palito; la
       // punta hacia arriba es lo que lo convierte en un gancho.
@@ -1790,14 +1804,16 @@ function alumbrarPared(scene: Scene): void {
     // medio cono en 43: se quedaba JUSTO fuera y solo le llegaba el borde del
     // haz. Por eso salía apagado por mucho que se subiera la intensidad — el
     // problema no era cuánta luz daba, era hacia dónde.
-    new Vector3(-0.44, -0.89, -0.1),
+    // Recalculada para la nueva posición del tablero. Un foco mal apuntado no
+    // se arregla subiendo la intensidad: o el mueble cae dentro del cono o no.
+    new Vector3(-0.52, -0.78, -0.35),
     1.5,
     3,
     scene
   );
   foco.diffuse = new Color3(1, 0.94, 0.84);
   foco.specular = new Color3(1, 0.96, 0.9);
-  foco.intensity = 6.2;
+  foco.intensity = 7.4;
   foco.range = 4.2;
 
   foco.includedOnlyMeshes = scene.meshes.filter(
@@ -2005,10 +2021,11 @@ function construirMonitor(scene: Scene, monitor: MonitorCamaras): { pantalla: Me
   // pantalla brillante que no ilumina nada; solo lo segundo, una luz que sale
   // de un cristal apagado.
   //
-  // El material es `unlit` (ver MonitorCamaras): la luz de abajo está a
+  // El material no recibe luz (ver MonitorCamaras): la luz de abajo está a
   // catorce centímetros por delante del cristal, y con un material normal se
   // reflejaba en él y lo tapaba entero con una mancha blanca. Un monitor
-  // emite su luz, no la recibe.
+  // emite su luz, no la recibe. Lo que muestra lo filman las cuatro cámaras
+  // del circuito y lo compone su propio sombreador.
   const pantalla = MeshBuilder.CreatePlane(
     "pantallaMonitor",
     { width: ANCHO - 0.045, height: ALTO - 0.045 },
@@ -2032,7 +2049,10 @@ function construirMonitor(scene: Scene, monitor: MonitorCamaras): { pantalla: Me
   // hacia la cámara —que está en z negativo, y la normal de un plano de
   // Babylon apunta hacia -Z—, así que se ve entero y sin espejar.
   pantalla.rotation.x = INCLINACION;
-  pantalla.material = orientar(monitor.material, ORIENTACION_PANTALLA);
+  // Sin orientar: el sombreador ya lee la imagen con el origen arriba a la
+  // izquierda, igual que el lienzo de los rótulos.
+  pantalla.material = monitor.material;
+  monitor.vincularPantalla(pantalla);
 
   const luzPantalla = new PointLight(
     "luzPantallaMonitor",
@@ -2277,6 +2297,15 @@ function construirLibro(scene: Scene, paginas: PaginasLibro, onAbrir: () => void
   tapa.actionManager = new ActionManager(scene);
   tapa.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, onAbrir));
 
+  // El taco de hojas, de papel liso. Lo escrito va en un plano aparte, encima
+  // (ver hojaEscrita): la cara de arriba de una caja proyecta la textura
+  // girada un cuarto de vuelta, y el rayado corría a lo largo del lomo — las
+  // columnas quedaban de canto y lo escrito se habría leído de costado.
+  const matTaco = new PBRMaterial("matTacoHojas", scene);
+  matTaco.albedoColor = new Color3(0.78, 0.74, 0.63);
+  matTaco.roughness = 0.92;
+  matTaco.metallic = 0;
+
   // Las dos páginas, con el rayado impreso.
   [-1, 1].forEach((lado) => {
     const pagina = MeshBuilder.CreateBox(
@@ -2293,8 +2322,21 @@ function construirLibro(scene: Scene, paginas: PaginasLibro, onAbrir: () => void
     // luz del flexo como un brillo plano de plástico.
     matPagina.bumpTexture = relievePapel(scene, `relievePapel_${lado}`);
     matPagina.bumpTexture.level = 0.35;
-    pagina.material = matPagina;
+    pagina.material = matTaco;
     pagina.receiveShadows = true;
+
+    // La hoja escrita: un plano tendido sobre el taco, con el ancho de la
+    // textura a lo ancho del libro y su alto hacia el fondo. Así el rayado
+    // queda como se lee un libro abierto —cabecera arriba, renglones de
+    // izquierda a derecha— y lo que se escribe se lee de frente desde la silla.
+    // Sin picking: el clic tiene que llegar a la página de debajo.
+    const hoja = MeshBuilder.CreatePlane(`hojaEscrita_${lado}`, { width: 0.29, height: 0.375 }, scene);
+    hoja.parent = pagina;
+    hoja.position.y = 0.0046;
+    hoja.rotation.x = Math.PI / 2;
+    hoja.material = matPagina;
+    hoja.isPickable = false;
+    hoja.receiveShadows = true;
 
     // Las páginas quedan por encima de la tapa en pantalla, así que también
     // necesitan su propio receptor o el clic sobre ellas no llegaría a nada.
@@ -2960,8 +3002,9 @@ function montarReflejos(scene: Scene): void {
   // startsWith y no comparación exacta: ahora la calle es varias mallas, no
   // una. Todas empiezan por "calleExterior" justamente para que este filtro y
   // el de sombras las cacen sin tener que enumerarlas.
+  // Lo mismo con los sitios del circuito cerrado ("cctv…"): no están en la sala.
   const reflejables = scene.meshes.filter(
-    (m) => m !== piso && !m.name.startsWith("calleExterior")
+    (m) => m !== piso && !m.name.startsWith("calleExterior") && !m.name.startsWith("cctv")
   );
 
   // --- 1. Entorno -----------------------------------------------------------
@@ -3152,9 +3195,11 @@ function construirHallYVentanal(scene: Scene): Omit<PiezasExterior, "relleno"> {
   // Sin grano, por lo mismo que el muro: es otra pieza grande y de cantos
   // estrechos, y encima se ve en rasante desde dentro del hall.
 
+  // Ancha: ahora se ve también por la puerta de vidrio, en ángulo, y a catorce
+  // metros se le veía el borde.
   const acera = MeshBuilder.CreateGround(
     "aceraExterior",
-    { width: 14, height: 4.2 },
+    { width: 160, height: 4.2 },
     scene
   );
   // A ras del hall, no un escalón por debajo.
@@ -3301,10 +3346,8 @@ function construirHallYVentanal(scene: Scene): Omit<PiezasExterior, "relleno"> {
     j.material = matJunquillo;
   });
 
-  // Calle: un plano lejano. No lleva material propio: se lo pone la atmósfera
-  // del turno, que es la que sabe qué hora es. Ver AtmosferaTurno.
-  const calle = MeshBuilder.CreatePlane("calleExterior", { width: 9, height: 5 }, scene);
-  calle.position.set(0, 2, 8.4);
+  // La calle ya no es un plano pintado detrás del vidrio: la construye la
+  // atmósfera del turno con profundidad real. Ver CalleExterior.
 
   montarLluviaEnCristal(scene, cristal);
 
@@ -3383,7 +3426,6 @@ function construirHallYVentanal(scene: Scene): Omit<PiezasExterior, "relleno"> {
   );
 
   return {
-    calle,
     cristal: matCristal,
     farola,
     bulboFarola: matBulbo,

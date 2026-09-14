@@ -1,109 +1,128 @@
-import { Scene, DynamicTexture, Texture, PBRMaterial, Color3 } from "@babylonjs/core";
+import {
+  Scene,
+  ShaderMaterial,
+  Effect,
+  RenderTargetTexture,
+  DynamicTexture,
+  Texture,
+  Constants,
+  Color4,
+  Matrix,
+  Vector2,
+  Vector4,
+  type AbstractMesh,
+  type Light,
+} from "@babylonjs/core";
 import type { EscenaCamara } from "./SucesosCondominio";
+import { construirSetsCircuito, CAPA_CCTV, ANCHO_CUADRO, ALTO_CUADRO, type Rectangulo } from "./CircuitoCerrado";
 
 // ===========================================================================
 // Monitor de cámaras — las cuatro grabaciones del puesto
 // ===========================================================================
 //
-// Antes esto era una imagen fija: cuatro recuadros con su rótulo, para que el
-// monitor no se viera apagado. Ahora cada cuadrante muestra SU sitio del
-// condominio —la reja, el estacionamiento, el pasillo, la bodega— y cuando
-// ocurre un suceso, ese sitio es donde se ve ocurrir.
+// Cada cuadrante muestra SU sitio del condominio —la reja, el
+// estacionamiento, el pasillo, la bodega— y cuando ocurre un suceso, ese
+// sitio es donde se ve ocurrir.
 //
-// ─── POR QUÉ NO SE VEÍA NADA ──────────────────────────────────────────────
+// ─── DE DIBUJO A GRABACIÓN ────────────────────────────────────────────────
+//
+// Antes los sitios se pintaban en un lienzo 2D. Ahora son escenas 3D (ver
+// CircuitoCerrado) filmadas por cámaras virtuales, y lo que llega a la
+// pantalla pasa por lo mismo que pasa una imagen de CCTV de verdad:
+//
+//   ÓPTICA      gran angular con distorsión de barril y aberración cromática
+//               en los bordes; los faros encandilan y se abren en halo.
+//   SENSOR      infrarrojo en la cámara del acceso (monocromo verdoso), color
+//               lavado en las demás, grano que sube en las sombras.
+//   SEÑAL       realce de bordes del procesado analógico, negro levantado,
+//               líneas de barrido, la barra de zumbido que sube despacio y,
+//               de vez en cuando, una franja que pierde la sincronía.
+//   GRABADOR    cinco imágenes por segundo por canal, repartidas en turno
+//               entre las cuatro cámaras, y los rótulos estampados encima.
+//
+// Ese último punto es costo y aspecto a la vez. Filmar las cuatro cámaras en
+// cada fotograma sería pagar cuatro escenas extra sesenta veces por segundo;
+// filmando UNA cada cincuenta milisegundos, cada canal entrega sus cinco
+// cuadros y el tirón resultante es exactamente la firma de un multiplexor.
+//
+// ─── EL MONITOR NO RECIBE LUZ ─────────────────────────────────────────────
 //
 // La pantalla tiene una luz azul propia a catorce centímetros por delante,
-// que es la que tiñe el mesón y da el ambiente de la escena. Con el material
-// anterior —casi espejo, roughness 0.22— esa luz se reflejaba en su propio
-// monitor y lo tapaba entero con una mancha blanca. Daba igual lo que se
-// dibujara debajo.
-//
-// Por eso el material va `unlit`: la pantalla no la ilumina nada, se muestra
-// tal cual está dibujada. Que es, además, como funciona un monitor de verdad
-// —emite su luz, no la recibe— y significa que lo que se dibuja acá es
-// exactamente lo que se ve, sin que las luces de la sala lo laven.
+// que tiñe el mesón. Con un material iluminado se reflejaba en su propio
+// cristal y tapaba la imagen con una mancha blanca. Este material no mira
+// ninguna luz: emite lo que filma, como un monitor de verdad.
 //
 // ─── EL MONITOR COMPLEMENTA, NO REEMPLAZA ─────────────────────────────────
 //
-// Todo lo que se ve acá está también escrito en el `aviso` del suceso. Quien
-// mire la pantalla lo va a ver ocurrir; quien no, se entera igual al abrir el
-// libro. Es deliberado: si mirar el monitor fuera obligatorio, perderse una
-// camioneta por estar escribiendo sería una falta que el jugador no tuvo cómo
-// evitar, y el libro dejaría de bastarse solo — que es justamente lo que el
-// manual pide que sepa hacer un guardia.
+// Todo lo que se ve acá está también escrito en el `aviso` del suceso. Si
+// mirar el monitor fuera obligatorio, perderse una camioneta por estar
+// escribiendo sería una falta que el jugador no tuvo cómo evitar, y el libro
+// dejaría de bastarse solo — que es justamente lo que el manual pide que sepa
+// hacer un guardia.
 //
 // ─── CUÁNDO SE ENCIENDE Y CUÁNDO SE APAGA ─────────────────────────────────
 //
-// No hay temporizador. La cámara se enciende cuando el suceso ocurre y se
-// apaga cuando la novedad queda escrita en el libro. O sea: el monitor
-// muestra lo que está PENDIENTE. Es la mejor versión de la regla, porque
-// convierte la pantalla en un recordatorio de lo que falta anotar en vez de
-// en un adorno que se apaga solo a los diez segundos.
+// No hay temporizador. La toma se enciende cuando el suceso ocurre y se apaga
+// cuando la novedad queda escrita en el libro. El monitor muestra lo que está
+// PENDIENTE: la pantalla es un recordatorio de lo que falta anotar.
 
 /** Rótulo de cada cuadrante, en el orden en que se dibujan. */
-const ROTULOS = [
-  "CAM 01  ACCESO",
-  "CAM 02  ESTACIONAMIENTO",
-  "CAM 03  PASILLO",
-  "CAM 04  BODEGA",
-];
+const ROTULOS = ["CAM 01  ACCESO", "CAM 02  ESTACIONAMIENTO", "CAM 03  PASILLO", "CAM 04  BODEGA"];
 
-const ANCHO_BASE = 640;
-const ALTO_BASE = 400;
-
-/**
- * Densidad de la textura. El dibujo no se entera: se escala el contexto.
- *
- * Tres, no dos. El monitor es el único sitio del juego donde el jugador se
- * ACERCA a mirar —la rueda del mouse baja el campo de visión hasta un tercio—
- * y con densidad doble, a ese acercamiento, se veían los píxeles del lienzo.
- * Con tres el cuadrante se dibuja sobre 948 × 588 píxeles reales, que aguanta
- * el zoom completo sin que se note el escalón.
- */
-const FACTOR = 3;
-
-/**
- * Cada cuánto se repinta, en milisegundos.
- *
- * Unas cinco imágenes por segundo, y por dos razones que apuntan al mismo
- * lado. La primera es costo: repintar un lienzo de 1280 × 800 en cada
- * fotograma es subir cuatro megas de textura sesenta veces por segundo para
- * mover una camioneta. La segunda es que se ve MEJOR así — un multiplexor de
- * CCTV real reparte los cuadros entre sus cámaras y entrega cinco o seis por
- * canal, y ese tirón es la firma de una grabación de seguridad.
- */
-const MS_POR_CUADRO = 190;
-
-/** Cuánto tarda una escena en llegar a su pose final, en segundos reales. */
-const ENTRADA = 3.2;
-
-/** Ancho y alto de un cuadrante, en las coordenadas en que se dibuja. */
-const CW = ANCHO_BASE / 2;
-const CH = ALTO_BASE / 2;
 /**
  * Qué cámaras están en infrarrojo.
  *
- * ─── EL RASGO QUE MÁS DELATA UNA CÁMARA DE SEGURIDAD ─────────────────────
- *
- * Una cámara exterior de noche no ve en color: conmuta a infrarrojo y la
- * imagen se vuelve monocroma, con un foco claro en el centro —donde alcanzan
- * sus emisores— y caída rápida a negro en los bordes. Ese aspecto se reconoce
- * al instante, y sin él ninguna cantidad de ruido consigue que una imagen
- * parezca de vigilancia.
- *
- * Solo la del acceso lo lleva, y a propósito. Las otras tres dan a sitios con
- * luz propia —estacionamiento, pasillo y bodega tienen sus luminarias— así
- * que siguen en color. Que unas estén en infrarrojo y otras no es lo normal
- * en una instalación de verdad, y de paso deja la CAM 02 en color, que es
- * donde las intermitentes ámbar hacen de aviso.
+ * Una cámara exterior de noche conmuta a infrarrojo: imagen monocroma, zona
+ * clara donde alcanzan sus emisores y caída rápida a negro. Solo la del
+ * acceso: las otras tres dan a sitios con luz propia y siguen en color, que
+ * es lo normal en una instalación real y deja la CAM 02 en color, donde las
+ * intermitentes ámbar hacen de aviso.
  */
-const EN_INFRARROJO = [true, false, false, false];
+const EN_INFRARROJO = [1, 0, 0, 0];
+
+/**
+ * Exposición de cada canal, lo que en la cámara hace el control automático
+ * de ganancia. Cada sitio tiene su luz, y sin esto el pasillo apagado sería
+ * negro y el iluminador del acceso quemaría la reja.
+ */
+const EXPOSICION = [1.4, 1.2, 1.2, 1.35];
 
 /** La fecha que estampa el grabador. La misma que la apertura del libro. */
 const FECHA_TURNO = "14-09-2026";
 
-const QW = CW - 4;
-const QH = CH - 4;
+/** Milisegundos entre dos cuadros del mismo canal: cinco por segundo. */
+const MS_POR_CUADRO = 200;
+
+/** Cada cuántos segundos rota el cuadrante que tiene más de una toma. */
+const CICLO_MULTIPLEXOR = 4.5;
+
+/** Cuánto tarda cada escena en llegar a su pose final, en segundos reales. */
+const DURACION: Record<EscenaCamara, number> = {
+  "vehiculo-en-reja": 7,
+  "vehiculo-saliendo": 8.5,
+  "vehiculo-detenido": 1,
+  "pasillo-abierto": 2.6,
+  "bodega-abierta": 3.2,
+};
+
+/** Distorsión de barril de la óptica. La misma cifra en el sombreador y en los recuadros. */
+const DISTORSION = 0.12;
+
+// Los rótulos se dibujan en un lienzo con la proporción de la pantalla.
+const ANCHO_BASE = 640;
+const ALTO_BASE = 375;
+/**
+ * Densidad del lienzo de rótulos. El monitor es el único sitio donde el
+ * jugador se ACERCA a mirar —la rueda baja el campo de visión hasta un
+ * tercio— y a doble densidad, con ese acercamiento, se veían los píxeles.
+ */
+const FACTOR = 3;
+const CW = ANCHO_BASE / 2;
+const CH = ALTO_BASE / 2;
+/** Bisel entre cuadrantes, en coordenadas de dibujo. El sombreador usa el mismo. */
+const MARGEN = 2;
+const QW = CW - 2 * MARGEN;
+const QH = CH - 2 * MARGEN;
 
 interface TomaActiva {
   indice: number;
@@ -116,130 +135,197 @@ interface TomaActiva {
   rotulo?: string;
 }
 
-/**
- * Convierte el cuadrante a visión nocturna.
- *
- * Tres pasos, en este orden, y el orden importa:
- *
- *  1. SE QUITA EL COLOR. Con el modo de fusión "saturation" sobre un gris, la
- *     tarjeta hace la conversión entera de una pasada. Pintar cada escena ya en
- *     grises habría dado lo mismo por fuera, pero obligaría a mantener dos
- *     paletas de cada sitio y perdería todo el trabajo de color de las escenas.
- *
- *  2. SE TIÑE DE VERDE GRISÁCEO. Un sensor en infrarrojo no da un gris neutro:
- *     tira ligeramente a verde porque responde al cercano infrarrojo con el
- *     canal que tiene más sensibilidad. Es sutil y es de lo que más se nota
- *     cuando falta.
- *
- *  3. SE PONE EL FOCO DE LOS EMISORES. Los diodos de la cámara alumbran un cono
- *     corto: el centro sale casi quemado y los bordes caen a negro mucho antes
- *     que con luz ambiente. Esa caída brusca es LA firma de una cámara de
- *     seguridad de noche — más incluso que la falta de color.
- */
-function aplicarInfrarrojo(ctx: CanvasRenderingContext2D): void {
-  ctx.save();
-  ctx.globalCompositeOperation = "saturation";
-  ctx.fillStyle = "hsl(0, 0%, 50%)";
-  ctx.fillRect(0, 0, QW, QH);
-  ctx.restore();
-
-  ctx.fillStyle = "rgba(188, 214, 194, 0.07)";
-  ctx.fillRect(0, 0, QW, QH);
-
-  const emisores = ctx.createRadialGradient(
-    QW * 0.5, QH * 0.46, QH * 0.08,
-    QW * 0.5, QH * 0.46, QH * 1.15
-  );
-  emisores.addColorStop(0, "rgba(255, 255, 245, 0.13)");
-  emisores.addColorStop(0.38, "rgba(255, 255, 245, 0.02)");
-  emisores.addColorStop(0.72, "rgba(0, 0, 0, 0.24)");
-  emisores.addColorStop(1, "rgba(0, 0, 0, 0.62)");
-  ctx.fillStyle = emisores;
-  ctx.fillRect(0, 0, QW, QH);
-}
-
-/**
- * Los defectos de una señal comprimida y transmitida.
- *
- * Todo lo que hay aquí es basura técnica, y por eso funciona: una imagen limpia
- * se lee como render, y una imagen con los defectos correctos se lee como una
- * grabación. Son tres, y cada una aporta algo que las otras no.
- */
-function aplicarArtefactos(
-  ctx: CanvasRenderingContext2D,
-  indice: number,
-  segundos: number
-): void {
-  // ── Macrobloques ──────────────────────────────────────────────────────
-  //
-  // El artefacto más característico de un vídeo comprimido: cuadrados de ocho
-  // píxeles que se quedan un punto por encima o por debajo del resto porque el
-  // códec los ha resuelto con un valor único. Ninguna cantidad de ruido fino
-  // los sustituye — el ruido es del sensor, esto es del transporte.
-  //
-  // Se siembran con la hora como semilla en vez de al azar puro para que
-  // aguanten unos cuadros en el mismo sitio: un macrobloque que cambia sesenta
-  // veces por segundo se vería como ruido, no como compresión.
-  const tanda = Math.floor(segundos * 1.5) + indice * 31;
-  for (let n = 0; n < 9; n++) {
-    const s = (tanda * 9301 + n * 49297) % 233280;
-    const x = Math.floor(((s / 233280) * QW) / 8) * 8;
-    const y = Math.floor(((((s * 7) % 233280) / 233280) * QH) / 8) * 8;
-    ctx.fillStyle = n % 3 === 0 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.05)";
-    ctx.fillRect(x, y, 8, 8);
-  }
-
-  // ── Ruido con ganancia ────────────────────────────────────────────────
-  //
-  // En una cámara real la ganancia sube donde falta luz, y con ella el ruido:
-  // por eso el grano de un CCTV nocturno NO está repartido por igual, se ceba
-  // en las sombras. Aquí se aproxima sembrándolo hacia los bordes, que es donde
-  // la viñeta y la caída de los emisores ya dejan la imagen más oscura.
-  for (let n = 0; n < 34; n++) {
-    const borde = Math.random() > 0.45;
-    const x = borde
-      ? Math.random() > 0.5
-        ? Math.random() * QW * 0.28
-        : QW - Math.random() * QW * 0.28
-      : Math.random() * QW;
-    const y = borde
-      ? Math.random() > 0.5
-        ? Math.random() * QH * 0.3
-        : QH - Math.random() * QH * 0.3
-      : Math.random() * QH;
-    ctx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.09)";
-    ctx.fillRect(x, y, 1.1, 1.1);
-  }
-
-  // ── Barra de sincronía ────────────────────────────────────────────────
-  //
-  // La franja tenue que sube despacio por la imagen cuando el enlace no va
-  // sincronizado con la red eléctrica. Cada cámara con su propia fase y su
-  // propia velocidad: si las cuatro barras subieran a la vez se leerían como un
-  // efecto de pantalla, y lo que tienen que parecer son cuatro señales
-  // independientes llegando por cuatro cables distintos.
-  const fase = (segundos * (0.07 + indice * 0.018) + indice * 0.37) % 1;
-  const yBarra = fase * (QH + 60) - 30;
-  const barra = ctx.createLinearGradient(0, yBarra, 0, yBarra + 30);
-  barra.addColorStop(0, "rgba(255,255,255,0)");
-  barra.addColorStop(0.5, "rgba(255,255,255,0.028)");
-  barra.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = barra;
-  ctx.fillRect(0, yBarra, QW, 30);
-}
-
-/** Un minuto del turno como hh:mm. El turno arranca a las 00:00. */
 function horaDeMinuto(minuto: number): string {
   const h = Math.floor(minuto / 60) % 24;
   const m = Math.floor(minuto) % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Cada cuántos segundos rota el cuadrante que tiene más de una toma. */
-const CICLO_MULTIPLEXOR = 4.5;
+// ---------------------------------------------------------------------------
+// El sombreador de la pantalla
+// ---------------------------------------------------------------------------
+
+const VERTICE = /* glsl */ `
+precision highp float;
+attribute vec3 position;
+attribute vec2 uv;
+uniform mat4 world;
+uniform mat4 viewProjection;
+varying vec2 vUV;
+void main(void) {
+  vUV = uv;
+  gl_Position = viewProjection * world * vec4(position, 1.0);
+}
+`;
+
+// La tubería de la sala aplica el mapeo de tonos DESPUÉS, así que la salida
+// va en lineal: la curva de la cámara se hace acá, se lleva a pantalla y se
+// devuelve a lineal para que el post-proceso la trate como cualquier emisor.
+const FRAGMENTO = /* glsl */ `
+#extension GL_OES_standard_derivatives : enable
+precision highp float;
+
+varying vec2 vUV;
+
+uniform sampler2D cam0;
+uniform sampler2D cam1;
+uniform sampler2D cam2;
+uniform sampler2D cam3;
+uniform sampler2D superposicion;
+
+uniform float tiempo;
+uniform vec4 exposicion;
+uniform vec4 infrarrojo;
+uniform vec4 cuadros;
+uniform vec2 margen;
+uniform float distorsion;
+uniform float brillo;
+
+vec4 pesos;
+
+float azar(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// Las cuatro cámaras se leen siempre y se elige con pesos: leer dentro de un
+// if rompería las derivadas con que la tarjeta elige el nivel de detalle.
+vec3 leer(vec2 st, float sesgo) {
+  st = clamp(st, vec2(0.001), vec2(0.999));
+  vec3 c = texture2D(cam0, st, sesgo).rgb * pesos.x
+    + texture2D(cam1, st, sesgo).rgb * pesos.y
+    + texture2D(cam2, st, sesgo).rgb * pesos.z
+    + texture2D(cam3, st, sesgo).rgb * pesos.w;
+  // Un NaN o un infinito de la escena filmada no puede llegar a la sala: el
+  // bloom de la tubería lo esparciría por toda la imagen. Las comparaciones
+  // con NaN dan falso, así que esto lo deja en cero.
+  return vec3(c.r >= 0.0 ? min(c.r, 64.0) : 0.0, c.g >= 0.0 ? min(c.g, 64.0) : 0.0, c.b >= 0.0 ? min(c.b, 64.0) : 0.0);
+}
+
+// Barril: el centro se amplía y los bordes se comprimen. Las esquinas quedan
+// donde estaban, así no aparece negro en el cuadro.
+vec2 lente(vec2 c, float k) {
+  vec2 d = c * (1.0 + k * dot(c, c)) / (1.0 + 2.0 * k);
+  return vec2(d.x * 0.5 + 0.5, 0.5 - d.y * 0.5);
+}
+
+vec3 aLineal(vec3 c) {
+  return pow(clamp(c, 0.0, 1.0), vec3(2.2)) * brillo;
+}
+
+void main(void) {
+  vec2 p = vec2(vUV.x, 1.0 - vUV.y);
+  vec2 celda = floor(clamp(p, 0.0, 0.9999) * 2.0);
+  float indice = celda.x + celda.y * 2.0;
+  pesos = vec4(equal(vec4(indice), vec4(0.0, 1.0, 2.0, 3.0)));
+  vec4 sup = texture2D(superposicion, vUV);
+
+  vec2 local = (p - celda * 0.5 - margen) / (0.5 - 2.0 * margen);
+  if (local.x < 0.0 || local.y < 0.0 || local.x > 1.0 || local.y > 1.0) {
+    gl_FragColor = vec4(aLineal(mix(vec3(0.008, 0.01, 0.013), sup.rgb, sup.a)), 1.0);
+    return;
+  }
+
+  float cuadro = dot(cuadros, pesos);
+  float esIR = dot(infrarrojo, pesos);
+
+  // Pérdida de sincronía: de vez en cuando, una franja corrida un instante.
+  float reloj = tiempo * 0.9 + indice * 3.7;
+  float tramo = floor(reloj);
+  float golpe = step(0.88, azar(vec2(tramo, indice + 11.0))) * step(fract(reloj), 0.16);
+  float centro = azar(vec2(tramo, indice + 23.0));
+  float franja = golpe * (1.0 - smoothstep(0.0, 0.03, abs(local.y - centro)));
+  local.x += franja * (azar(vec2(floor(local.y * 140.0), tramo)) - 0.5) * 0.025;
+
+  vec2 c = local * 2.0 - 1.0;
+  vec2 stG = lente(c, distorsion);
+  vec2 stR = lente(c, distorsion + 0.006);
+  vec2 stB = lente(c, distorsion - 0.006);
+
+  vec3 base = vec3(leer(stR, 0.0).r, leer(stG, 0.0).g, leer(stB, 0.0).b);
+  // Realce de bordes del procesado analógico: el halo claro junto a lo oscuro.
+  vec3 blando = leer(stG, 1.5);
+  vec3 col = max(base + (base - blando) * 0.5, 0.0);
+
+  // Destello del lente: lo que pasa de cierto brillo se abre en halo.
+  vec3 halo = leer(stG, 3.0) * 0.6 + leer(stG, 5.0) * 0.4;
+  col += max(halo - 0.45, 0.0) * 1.1;
+
+  // Curva del sensor: ganancia del canal y hombro suave, sin corte duro.
+  col *= dot(exposicion, pesos);
+  col = 1.0 - exp(-col * 1.35);
+  col = pow(col, vec3(1.0 / 2.2));
+  // Curva en S del procesado: la gamma sola levanta tanto las sombras que la
+  // noche se lee como un día nublado. Esto las devuelve a su sitio.
+  col = mix(col, col * col * (3.0 - 2.0 * col), 0.45);
+
+  float luma = dot(col, vec3(0.299, 0.587, 0.114));
+  vec3 ir = vec3(dot(col, vec3(0.36, 0.5, 0.14))) * vec3(0.92, 1.0, 0.95);
+  vec3 color = mix(vec3(luma), col, 0.82) * vec3(0.98, 1.0, 1.03);
+  col = mix(color, ir, esIR);
+  // Negro levantado: una señal de vídeo nunca llega a negro puro.
+  col = col * 0.92 + 0.028;
+
+  // Cuántas líneas de vídeo caen en un píxel de la pantalla del juego.
+  float lineas = local.y * 225.0;
+  float paso = fwidth(lineas);
+
+  // Grano del sensor, congelado con el cuadro: es parte de lo grabado. Desde
+  // la silla caen varios granos por píxel y, sin atenuarlo, el promedio
+  // hierve en puntos blancos sueltos; de cerca vuelve entero.
+  vec2 grano = floor(local * vec2(384.0, 225.0));
+  float n1 = azar(grano + vec2(cuadro * 1.37, cuadro * 0.71)) - 0.5;
+  float n2 = azar(floor(grano * 0.25) + vec2(cuadro * 2.13, 7.0)) - 0.5;
+  float cercania = mix(1.0, 0.3, smoothstep(0.45, 1.8, paso));
+  col += vec3(n1 * 0.055 + n2 * 0.025) * (1.25 - luma) * cercania;
+
+  // Líneas de barrido. Se apagan solas cuando la pantalla se ve tan pequeña
+  // que caerían varias en un píxel: ahí solo harían muaré.
+  col *= 1.0 - 0.09 * (1.0 - smoothstep(0.3, 0.65, paso)) * (0.5 + 0.5 * cos(lineas * 6.28318));
+  // Barra de zumbido, subiendo despacio.
+  col *= 1.0 + 0.03 * sin((local.y + tiempo * 0.11 + indice * 0.25) * 6.28318);
+
+  // Viñeta de la óptica.
+  float r2 = dot(c, c) * 0.5;
+  col *= 1.0 - 0.42 * r2 * r2;
+
+  col = mix(col, sup.rgb, sup.a);
+  gl_FragColor = vec4(aLineal(col), 1.0);
+}
+`;
+
+/**
+ * Dónde queda, tras la óptica, un punto del cuadro filmado.
+ *
+ * El sombreador lleva cada píxel de la pantalla al punto filmado; los
+ * recuadros de detección necesitan lo contrario, así que se invierte por
+ * iteración. Converge en pocas vueltas porque la distorsión es suave.
+ */
+function trasLaOptica(x: number, y: number): [number, number] {
+  const sx = x * 2 - 1;
+  const sy = y * 2 - 1;
+  let cx = sx;
+  let cy = sy;
+  for (let n = 0; n < 8; n++) {
+    const f = (1 + DISTORSION * (cx * cx + cy * cy)) / (1 + 2 * DISTORSION);
+    cx = sx / f;
+    cy = sy / f;
+  }
+  return [(cx + 1) / 2, (cy + 1) / 2];
+}
+
+// ---------------------------------------------------------------------------
+// El monitor
+// ---------------------------------------------------------------------------
 
 export interface MonitorCamaras {
-  material: PBRMaterial;
+  material: ShaderMaterial;
+  /**
+   * La malla donde se muestra. Mientras la cámara del puesto no la tenga a la
+   * vista, las cámaras del circuito no filman: no hay nadie mirando.
+   */
+  vincularPantalla(pantalla: AbstractMesh): void;
   /**
    * Enciende la toma de un suceso. Se queda en pantalla hasta `apagar`.
    *
@@ -251,1182 +337,419 @@ export interface MonitorCamaras {
   /** Apaga la toma de ese suceso. Se llama cuando la novedad queda escrita. */
   apagar(id: string): void;
   /**
-   * Pone las cámaras en hora con el turno.
-   *
-   * Antes cada cuadrante llevaba su propia cuenta desde que se encendía, así
-   * que dos cámaras encendidas a distinta hora marcaban horas distintas. Ahora
-   * la hora la manda el reloj del turno, que es lo correcto: un CCTV tiene un
-   * solo reloj. Y de paso, estando en el puesto con el libro cerrado, esa
-   * marca es el ÚNICO sitio donde el jugador puede ver qué hora es.
+   * Pone las cámaras en hora con el turno. Un CCTV tiene un solo reloj, y
+   * estando en el puesto con el libro cerrado esa marca es el único sitio
+   * donde el jugador puede ver qué hora es.
    */
   ajustarHora(minuto: number): void;
 }
 
 export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
   const activas = new Map<string, TomaActiva>();
-
   /** Segundos reales desde que arrancó. Manda parpadeos, ruido y entradas. */
   let segundos = 0;
-  let msAcumulados = MS_POR_CUADRO;
-
   /** Hora del turno que marcan las cámaras, en minutos. */
   let minutoBase = 0;
-  let segundosEnBase = 0;
+  let pantalla: AbstractMesh | null = null;
 
-  const textura = new DynamicTexture(
-    "tex_matPantallaCCTV",
+  const sets = construirSetsCircuito(scene);
+  sets.forEach((s) => s.poner(null, 0, 0));
+
+  // Las luces de la sala no alcanzan a los sitios del circuito, ni las que ya
+  // existen ni las que se monten después. Sin esto cada malla de allá gastaría
+  // sus huecos de luz en luminarias que están a dos kilómetros.
+  const aislar = (luz: Light): void => {
+    if (!luz.name.startsWith("cctv")) luz.excludeWithLayerMask |= CAPA_CCTV;
+  };
+  scene.lights.forEach(aislar);
+  const observadorLuces = scene.onNewLightAddedObservable.add(aislar);
+
+  const motor = scene.getEngine();
+  const caps = motor.getCaps();
+  // En coma flotante los faros y las luminarias pasan de 1 y el halo del
+  // lente sale de ahí. Sin soporte se filma en 8 bits y el halo es más tímido.
+  const flotante = caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering;
+  const muestras = Math.max(1, Math.min(4, caps.maxMSAASamples || 1));
+
+  const filmaciones = sets.map((set) => {
+    const rtt = new RenderTargetTexture(`cctvCuadro_${set.indice}`, { width: ANCHO_CUADRO, height: ALTO_CUADRO }, scene, {
+      generateMipMaps: true,
+      type: flotante ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE,
+      samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
+      samples: muestras,
+    });
+    rtt.activeCamera = set.camara;
+    rtt.renderList = set.mallas;
+    // FUERA DEL PREPASS. La oclusión ambiental de la sala activa el prepass de
+    // la escena, y por omisión toda textura de render se suma a él: las cuatro
+    // filmaciones escribían en los búferes de profundidad y normales que usa
+    // la oclusión, y la sala entera salía negra. Estas imágenes no llevan
+    // oclusión ni la necesitan.
+    rtt.noPrePassRenderer = true;
+    rtt.clearColor = new Color4(0, 0, 0, 1);
+    rtt.wrapU = Texture.CLAMP_ADDRESSMODE;
+    rtt.wrapV = Texture.CLAMP_ADDRESSMODE;
+    // Se filma a pedido (ver `filmar`), nunca por su cuenta.
+    rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    // La proyección con la proporción del cuadro, no la del lienzo del juego:
+    // la cámara la calcularía con la ventana del navegador y la imagen
+    // llegaría estirada al cuadrante.
+    const proyeccion = Matrix.PerspectiveFovLH(
+      set.camara.fov,
+      ANCHO_CUADRO / ALTO_CUADRO,
+      set.camara.minZ,
+      set.camara.maxZ,
+      motor.isNDCHalfZRange
+    );
+    rtt.onBeforeRenderObservable.add(() => scene.setTransformMatrix(set.camara.getViewMatrix(), proyeccion));
+    scene.customRenderTargets.push(rtt);
+    return rtt;
+  });
+
+  const superposicion = new DynamicTexture(
+    "tex_rotulosCCTV",
     { width: ANCHO_BASE * FACTOR, height: ALTO_BASE * FACTOR },
     scene,
     true
   );
-  textura.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
-  textura.anisotropicFilteringLevel = 16;
+  superposicion.hasAlpha = true;
+  superposicion.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+  superposicion.anisotropicFilteringLevel = 16;
+  superposicion.wrapU = Texture.CLAMP_ADDRESSMODE;
+  superposicion.wrapV = Texture.CLAMP_ADDRESSMODE;
 
-  function repintar(): void {
-    const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
-
-    ctx.save();
-    ctx.scale(FACTOR, FACTOR);
-
-    // Marco entre cuadrantes: es el bisel del multiplexor, no una pared.
-    ctx.fillStyle = "#05070a";
-    ctx.fillRect(0, 0, ANCHO_BASE, ALTO_BASE);
-
-    for (let i = 0; i < 4; i++) {
-      // DOS TOMAS EN LA MISMA CÁMARA SE TURNAN, no se pisan.
-      //
-      // El ingreso y la salida ocurren los dos en la reja, así que comparten
-      // la CAM 01. Antes ganaba la última encendida: si la salida llegaba con
-      // el ingreso todavía sin anotar, la toma del ingreso desaparecía de la
-      // pantalla aunque siguiera pendiente, y el jugador se quedaba con una
-      // fila en el libro que ya no podía comprobar en ningún sitio.
-      //
-      // Ahora el cuadrante las rota, que es justo lo que hace un multiplexor
-      // de verdad cuando tiene más señales que ventanas. Se ordenan por hora
-      // para que el turno se vea en el orden en que pasó.
-      const enEstaCamara = [...activas.values()]
-        .filter((t) => t.indice === i)
-        .sort((a, b) => a.minuto - b.minuto);
-
-      const cual =
-        enEstaCamara.length > 1
-          ? Math.floor(segundos / CICLO_MULTIPLEXOR) % enEstaCamara.length
-          : 0;
-      const toma: TomaActiva | undefined = enEstaCamara[cual];
-
-      ctx.save();
-      ctx.translate((i % 2) * CW + 2, Math.floor(i / 2) * CH + 2);
-      ctx.beginPath();
-      ctx.rect(0, 0, QW, QH);
-      ctx.clip();
-
-      dibujarLugar(ctx, i);
-      if (toma) {
-        const avance = Math.min(1, (segundos - toma.desde) / ENTRADA);
-        dibujarEvento(ctx, toma.escena, avance, segundos);
-      }
-
-      // El infrarrojo se aplica DESPUÉS de la escena y del suceso, nunca
-      // antes: es lo que hace el sensor con la luz que le llega, así que
-      // tiene que caer sobre todo lo que haya en el cuadro. Pintando cada
-      // cosa ya en gris se perdería, además, el trabajo de las escenas.
-      if (EN_INFRARROJO[i]) aplicarInfrarrojo(ctx);
-      dibujarSenal(ctx, i, toma, cual, enEstaCamara.length);
-
-      ctx.restore();
+  Effect.ShadersStore["pantallaCctvVertexShader"] = VERTICE;
+  Effect.ShadersStore["pantallaCctvFragmentShader"] = FRAGMENTO;
+  const material = new ShaderMaterial(
+    "matPantallaCCTV",
+    scene,
+    { vertex: "pantallaCctv", fragment: "pantallaCctv" },
+    {
+      attributes: ["position", "uv"],
+      uniforms: ["world", "viewProjection", "tiempo", "exposicion", "infrarrojo", "cuadros", "margen", "distorsion", "brillo"],
+      samplers: ["cam0", "cam1", "cam2", "cam3", "superposicion"],
     }
+  );
+  filmaciones.forEach((rtt, i) => material.setTexture(`cam${i}`, rtt));
+  material.setTexture("superposicion", superposicion);
+  material.setVector4("exposicion", new Vector4(EXPOSICION[0], EXPOSICION[1], EXPOSICION[2], EXPOSICION[3]));
+  /** Qué canales están ahora en infrarrojo. Cambia con la hora (ver aplicarHora). */
+  const infrarrojo = new Vector4(EN_INFRARROJO[0], EN_INFRARROJO[1], EN_INFRARROJO[2], EN_INFRARROJO[3]);
+  material.setVector4("infrarrojo", infrarrojo);
+  material.setVector2("margen", new Vector2(MARGEN / ANCHO_BASE, MARGEN / ALTO_BASE));
+  material.setFloat("distorsion", DISTORSION);
+  material.setFloat("brillo", 1);
+  material.setFloat("tiempo", 0);
 
-    ctx.restore();
-    textura.update();
+  /** Recuadro de detección de cada canal, del último cuadro filmado. */
+  const detecciones: (Rectangulo | null)[] = sets.map(() => null);
+  const numeroCuadro = new Vector4(0, 0, 0, 0);
+  material.setVector4("cuadros", numeroCuadro);
+
+  /**
+   * Qué toma muestra un cuadrante.
+   *
+   * DOS TOMAS EN LA MISMA CÁMARA SE TURNAN, no se pisan. El ingreso y la
+   * salida ocurren los dos en la reja; si ganara la última, el ingreso
+   * desaparecería de la pantalla aunque siguiera pendiente. El cuadrante las
+   * rota, que es lo que hace un multiplexor cuando tiene más señales que
+   * ventanas, ordenadas por hora para que el turno se vea como pasó.
+   */
+  function enCuadrante(i: number): { toma: TomaActiva | undefined; cual: number; cuantas: number } {
+    const en = [...activas.values()].filter((t) => t.indice === i).sort((a, b) => a.minuto - b.minuto);
+    const cual = en.length > 1 ? Math.floor(segundos / CICLO_MULTIPLEXOR) % en.length : 0;
+    return { toma: en[cual], cual, cuantas: en.length };
   }
 
-  repintar();
+  /** Pone el sitio en su estado y pide un cuadro nuevo de esa cámara. */
+  function filmar(i: number): void {
+    const { toma } = enCuadrante(i);
+    const escena = toma?.escena ?? null;
+    const avance = toma ? Math.min(1, (segundos - toma.desde) / DURACION[toma.escena]) : 0;
+    sets[i].poner(escena, avance, segundos);
+    detecciones[i] = toma ? sets[i].deteccion(escena) : null;
+    filmaciones[i].resetRefreshCounter();
+    const n = (numeroCuadro.asArray()[i] + 1) % 997;
+    if (i === 0) numeroCuadro.x = n;
+    else if (i === 1) numeroCuadro.y = n;
+    else if (i === 2) numeroCuadro.z = n;
+    else numeroCuadro.w = n;
+  }
 
-  const observador = scene.onBeforeRenderObservable.add(() => {
-    const dt = scene.getEngine().getDeltaTime();
-    segundos += dt / 1000;
-    segundosEnBase += dt / 1000;
-    msAcumulados += dt;
-    if (msAcumulados < MS_POR_CUADRO) return;
-    msAcumulados = 0;
-    repintar();
-  });
-
-  scene.onDisposeObservable.addOnce(() => {
-    scene.onBeforeRenderObservable.remove(observador);
-  });
-
-  // El material de la pantalla, que es lo que decide si esto se ve o no.
-  //
-  // No basta con marcarlo `unlit`: hay que dejar explícitamente en cero cada
-  // vía por la que la luz puede llegar al cristal, porque son cuatro y basta
-  // con que quede una abierta para que vuelva la mancha blanca.
-  //
-  //   albedoColor negro   → las luces no tienen color que iluminar
-  //   disableLighting     → ninguna luz de la sala aporta
-  //   environmentIntensity → ni la sonda de reflejos de la escena
-  //   roughness 1         → sin brillo especular que devuelva la luminaria
-  //
-  // Lo único que queda en pie es el emisivo, o sea el lienzo de arriba. Un
-  // monitor emite su luz y no la recibe, así que además de funcionar es lo
-  // que corresponde.
-  const material = new PBRMaterial("matPantallaCCTV", scene);
-  material.albedoColor = new Color3(0, 0, 0);
-  material.emissiveTexture = textura;
-  material.emissiveColor = new Color3(1, 1, 1);
-  material.disableLighting = true;
-  material.environmentIntensity = 0;
-  material.metallic = 0;
-  material.roughness = 1;
-
-  // Y esta línea es la que hace que la pantalla EXISTA en pantalla.
-  //
-  // El plano lleva `rotation.y = Math.PI`, así que su normal apunta en
-  // dirección contraria a la cámara del guardia. Con el descarte de caras
-  // traseras activado —que es el valor por defecto— el plano sencillamente no
-  // se dibuja, y lo que se ve en su lugar es la carcasa de detrás con la luz
-  // azul del propio monitor reflejada encima. Esa era la mancha.
-  //
-  // El resto de superficies pintadas de la escena (las hojas del libro, la
-  // tarjeta de claves) no tenían el problema porque vienen de materialPintado,
-  // que ya lo desactiva. Esta se construye a mano y hay que decírselo.
-  //
-  // Se ve la cara trasera, o sea el lienzo espejado, y por eso la constante
-  // ORIENTACION_PANTALLA lleva el horizontal en -1: ya estaba compensado.
-  material.backFaceCulling = false;
-
-  /** La marca de hora, como la escribiría una cámara: hh:mm:ss. */
+  /** La marca de hora, como la escribe un grabador: hh:mm:ss. */
   function marcaDeHora(): string {
     // Hora y minuto los manda el reloj del TURNO; los segundos corren en tiempo
-    // real. Suena contradictorio y es a propósito: el turno va comprimido, así
-    // que un minuto de servicio dura una fracción de segundo real. Sacando los
-    // segundos del mismo sitio, el contador se quedaría clavado en 00 y la
-    // marca parecería rota. Nadie cuadra los segundos de un CCTV contra su
-    // minutero; lo que sí se nota es un reloj que no se mueve.
+    // real. El turno va comprimido: sacando los segundos de su reloj, el
+    // contador se quedaría clavado en 00 y la marca parecería rota.
     const total = Math.max(0, minutoBase);
     const h = Math.floor(total / 60) % 24;
     const m = Math.floor(total) % 60;
     const s = Math.floor(segundos) % 60;
-    return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+    return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
   }
 
-  function dibujarSenal(
-    ctx: CanvasRenderingContext2D,
-    indice: number,
-    toma: TomaActiva | undefined,
-    cual: number,
-    cuantas: number
-  ): void {
+  /** Texto con contorno, como lo estampa el grabador: se lee sobre cualquier fondo. */
+  function texto(ctx: CanvasRenderingContext2D, t: string, x: number, y: number, color: string): void {
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.strokeText(t, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(t, x, y);
+  }
+
+  function dibujarSenal(ctx: CanvasRenderingContext2D, indice: number): void {
+    const { toma, cual, cuantas } = enCuadrante(indice);
     const activa = toma !== undefined;
-    // Líneas de barrido. El paso va en coordenadas de dibujo, así que con la
-    // densidad al triple salen tres píxeles reales por línea en vez de dos:
-    // más finas y más juntas, que es como se ven de verdad al acercarse.
-    ctx.fillStyle = "rgba(255,255,255,0.03)";
-    for (let y = 0; y < QH; y += 2.5) ctx.fillRect(0, y, QW, 0.9);
+    const color = activa ? "#ffc94d" : "#e4ece6";
+    ctx.lineJoin = "round";
+    // Nada de un canal se dibuja sobre el vecino.
+    ctx.beginPath();
+    ctx.rect(0, 0, QW, QH);
+    ctx.clip();
 
-    // Grano. Se resiembra en cada cuadro: eso es lo que lo hace parecer ruido
-    // de sensor y no suciedad pintada en la textura.
-    //
-    // Va en dos tamaños. Los puntos finos son el ruido propiamente dicho; los
-    // gruesos y más tenues son la compresión, que es lo que de verdad delata
-    // una grabación de CCTV. Con un solo tamaño el ruido se veía uniforme, y
-    // el ruido uniforme parece textura, no señal.
-    ctx.fillStyle = "rgba(255,255,255,0.07)";
-    for (let n = 0; n < 52; n++) {
-      ctx.fillRect(Math.random() * QW, Math.random() * QH, 0.8, 0.8);
+    // Recuadro del detector de movimiento, deformado con la misma óptica que
+    // la imagen para que abrace lo que marca y no quede corrido en los bordes.
+    const r = detecciones[indice];
+    if (activa && r) {
+      const puntos = [
+        trasLaOptica(r.x0, r.y0),
+        trasLaOptica(r.x1, r.y0),
+        trasLaOptica(r.x0, r.y1),
+        trasLaOptica(r.x1, r.y1),
+        trasLaOptica((r.x0 + r.x1) / 2, r.y0),
+        trasLaOptica((r.x0 + r.x1) / 2, r.y1),
+        trasLaOptica(r.x0, (r.y0 + r.y1) / 2),
+        trasLaOptica(r.x1, (r.y0 + r.y1) / 2),
+      ];
+      // La inversa de la óptica empuja hacia fuera: cerca del borde el recuadro
+      // se saldría del cuadro, así que se acota a él.
+      const x0 = Math.max(3, Math.min(...puntos.map((q) => q[0])) * QW);
+      const x1 = Math.min(QW - 3, Math.max(...puntos.map((q) => q[0])) * QW);
+      const y0 = Math.max(3, Math.min(...puntos.map((q) => q[1])) * QH);
+      const y1 = Math.min(QH - 3, Math.max(...puntos.map((q) => q[1])) * QH);
+      const brazo = Math.min(12, (x1 - x0) * 0.3, (y1 - y0) * 0.3);
+      ctx.fillStyle = "rgba(255,201,77,0.07)";
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.lineWidth = 3.2;
+      const esquinas = (): void => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0 + brazo);
+        ctx.lineTo(x0, y0);
+        ctx.lineTo(x0 + brazo, y0);
+        ctx.moveTo(x1 - brazo, y0);
+        ctx.lineTo(x1, y0);
+        ctx.lineTo(x1, y0 + brazo);
+        ctx.moveTo(x1, y1 - brazo);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x1 - brazo, y1);
+        ctx.moveTo(x0 + brazo, y1);
+        ctx.lineTo(x0, y1);
+        ctx.lineTo(x0, y1 - brazo);
+        ctx.stroke();
+      };
+      esquinas();
+      ctx.strokeStyle = "#ffc94d";
+      ctx.lineWidth = 1.6;
+      esquinas();
+      ctx.strokeStyle = "rgba(255,201,77,0.35)";
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.font = "bold 8px monospace";
+      ctx.textAlign = "left";
+      const etiquetaY = y0 > 60 ? y0 - 4 : y1 + 10;
+      texto(ctx, "MOVIMIENTO", x0 + 1, etiquetaY, "#ffc94d");
     }
-    ctx.fillStyle = "rgba(190,205,225,0.04)";
-    for (let n = 0; n < 14; n++) {
-      ctx.fillRect(Math.random() * QW, Math.random() * QH, 3, 3);
-    }
 
-    // Los defectos del transporte: macrobloques, ganancia y sincronía.
-    aplicarArtefactos(ctx, indice, segundos);
+    // Bandas tenues bajo los textos: sin ellas el rótulo se pierde justo
+    // cuando el iluminador deja una zona clara detrás.
+    const banda = ctx.createLinearGradient(0, 0, 0, 34);
+    banda.addColorStop(0, "rgba(0,0,0,0.45)");
+    banda.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = banda;
+    ctx.fillRect(0, 0, QW, 34);
+    const bandaBaja = ctx.createLinearGradient(0, QH - 38, 0, QH);
+    bandaBaja.addColorStop(0, "rgba(0,0,0,0)");
+    bandaBaja.addColorStop(1, "rgba(0,0,0,0.45)");
+    ctx.fillStyle = bandaBaja;
+    ctx.fillRect(0, QH - 38, QW, 38);
 
-    // Viñeta: ninguna óptica barata ilumina bien las esquinas.
-    const vineta = ctx.createRadialGradient(QW / 2, QH / 2, QH * 0.3, QW / 2, QH / 2, QH * 0.9);
-    vineta.addColorStop(0, "rgba(0,0,0,0)");
-    vineta.addColorStop(1, "rgba(0,0,0,0.42)");
-    ctx.fillStyle = vineta;
-    ctx.fillRect(0, 0, QW, QH);
-
-    ctx.strokeStyle = activa ? "#8a5a1c" : "#1c242c";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(0, 0, QW, QH);
-
-    const color = activa ? "#ffc94d" : "#7cf0a4";
-
-    // Banda oscura bajo los textos. Sin ella el rótulo se pierde justo cuando
-    // el sitio de esa cámara tiene una zona clara detrás.
-    ctx.fillStyle = "rgba(0,0,0,0.42)";
-    ctx.fillRect(0, 0, QW, 30);
-    ctx.fillRect(0, QH - 34, QW, 34);
-
-    ctx.fillStyle = color;
-    ctx.font = "bold 15px monospace";
     ctx.textAlign = "left";
-    ctx.fillText(ROTULOS[indice], 12, 21);
+    ctx.font = "bold 14px monospace";
+    texto(ctx, ROTULOS[indice], 10, 20, color);
 
-    // La marca del detector de movimiento, si la toma trae una. Es el dato que
-    // permite anotar "desde las 01:50" sin calcularlo a ojo: lo estampa la
-    // cámara, igual que la hora.
-    if (toma?.rotulo) {
-      ctx.fillStyle = "rgba(0,0,0,0.42)";
-      ctx.fillRect(0, 30, QW * 0.58, 20);
-      ctx.fillStyle = color;
-      ctx.font = "bold 12px monospace";
-      ctx.fillText(toma.rotulo, 12, 45);
-      ctx.font = "bold 15px monospace";
+    // Modo del sensor, como lo indican los grabadores.
+    const anchoRotulo = ctx.measureText(ROTULOS[indice]).width;
+    if (infrarrojo.asArray()[indice]) {
+      ctx.font = "bold 9px monospace";
+      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(18 + anchoRotulo, 10, 18, 12);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(18 + anchoRotulo, 10, 18, 12);
+      texto(ctx, "IR", 21 + anchoRotulo, 19.5, color);
     }
 
+    // La marca del detector, si la toma trae una. Es el dato que permite
+    // anotar "desde las 01:50" sin calcularlo a ojo: lo estampa la cámara.
+    if (toma?.rotulo) {
+      ctx.font = "bold 11px monospace";
+      texto(ctx, toma.rotulo, 10, 37, color);
+    }
+
+    // Fecha y hora abajo a la derecha. Sin fecha una imagen de seguridad no
+    // sirve como prueba.
     ctx.textAlign = "right";
-    ctx.fillText(marcaDeHora(), QW - 12, QH - 8);
-
-    // La fecha, encima de la hora y más pequeña. Un grabador siempre la
-    // estampa: sin fecha, una imagen de seguridad no sirve como prueba, y es
-    // de esos detalles que no se echan en falta hasta que aparecen.
     ctx.font = "bold 10px monospace";
-    ctx.fillStyle = activa ? "rgba(255,201,77,0.75)" : "rgba(124,240,164,0.7)";
-    ctx.fillText(FECHA_TURNO, QW - 12, QH - 22);
-    ctx.font = "bold 15px monospace";
-    ctx.fillStyle = color;
+    texto(ctx, FECHA_TURNO, QW - 10, QH - 24, activa ? "rgba(255,201,77,0.85)" : "rgba(228,236,230,0.8)");
+    ctx.font = "bold 14px monospace";
+    texto(ctx, marcaDeHora(), QW - 10, QH - 9, color);
 
-    // Con más de una toma pendiente se dice cuál se está viendo y cuántas
-    // hay. Sin esto la cámara cambiaría sola cada pocos segundos y parecería
-    // un fallo en vez de un reparto; y el jugador no tendría forma de saber
-    // que le falta anotar dos cosas del mismo sitio.
+    // Con más de una toma pendiente se dice cuál se ve y cuántas hay: si no,
+    // el cuadrante cambiaría solo y parecería un fallo en vez de un reparto.
     if (toma && cuantas > 1) {
       ctx.textAlign = "left";
       ctx.font = "bold 12px monospace";
-      ctx.fillText(`${horaDeMinuto(toma.minuto)}  ${cual + 1}/${cuantas}`, 12, QH - 8);
+      texto(ctx, `${horaDeMinuto(toma.minuto)}  ${cual + 1}/${cuantas}`, 10, QH - 9, color);
     }
 
-    // Testigo de grabación. Parpadea solo donde hay algo ocurriendo, así el
+    // Testigo de grabación: parpadea solo donde hay algo ocurriendo, así el
     // cuadrante que importa se distingue de un vistazo.
     if (activa && Math.floor(segundos * 1.6) % 2 === 0) {
-      ctx.fillStyle = "#ff5252";
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.beginPath();
-      ctx.arc(QW - 17, 15, 4.5, 0, Math.PI * 2);
+      ctx.arc(QW - 16, 15, 6, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = color;
-      ctx.font = "bold 12px monospace";
+      ctx.fillStyle = "#ff4a4a";
+      ctx.beginPath();
+      ctx.arc(QW - 16, 15, 4.5, 0, Math.PI * 2);
+      ctx.fill();
       ctx.textAlign = "right";
-      ctx.fillText("REC", QW - 27, 20);
+      ctx.font = "bold 12px monospace";
+      texto(ctx, "REC", QW - 26, 19.5, color);
     }
+
+    // Borde del cuadrante: ámbar donde hay algo pendiente.
+    ctx.strokeStyle = activa ? "rgba(214,150,52,0.95)" : "rgba(34,42,50,0.9)";
+    ctx.lineWidth = activa ? 3 : 2;
+    ctx.strokeRect(0, 0, QW, QH);
   }
+
+  let firmaPrevia = "";
+  let ultimaRevision = -1;
+
+  /** Repinta los rótulos solo si cambió algo de lo que muestran. */
+  function rotular(forzar = false): void {
+    const partes = [marcaDeHora(), String(Math.floor(segundos * 1.6) % 2), infrarrojo.asArray().join("")];
+    for (let i = 0; i < sets.length; i++) {
+      const { toma, cual, cuantas } = enCuadrante(i);
+      const r = detecciones[i];
+      partes.push(
+        `${toma ? `${toma.escena}@${toma.minuto}:${toma.rotulo ?? ""}` : "-"}:${cual}/${cuantas}:${
+          r ? [r.x0, r.y0, r.x1, r.y1].map((v) => v.toFixed(3)).join(",") : ""
+        }`
+      );
+    }
+    const firma = partes.join("|");
+    if (!forzar && firma === firmaPrevia) return;
+    firmaPrevia = firma;
+
+    const ctx = superposicion.getContext() as unknown as CanvasRenderingContext2D;
+    ctx.save();
+    ctx.clearRect(0, 0, ANCHO_BASE * FACTOR, ALTO_BASE * FACTOR);
+    ctx.scale(FACTOR, FACTOR);
+    for (let i = 0; i < sets.length; i++) {
+      ctx.save();
+      ctx.translate((i % 2) * CW + MARGEN, Math.floor(i / 2) * CH + MARGEN);
+      dibujarSenal(ctx, i);
+      ctx.restore();
+    }
+    ctx.restore();
+    superposicion.update();
+  }
+
+  let diaAplicado = -1;
+  /**
+   * Pone el circuito en hora: el reloj que estampan y la luz que filman.
+   *
+   * La luz de día sigue la misma curva que el ventanal —noche cerrada hasta
+   * las 05:30, alba y amanecer hasta el final del turno— para que el monitor
+   * no muestre noche mientras por la ventana ya aclaró.
+   */
+  function aplicarHora(minuto: number): void {
+    minutoBase = minuto;
+    const x = Math.max(0, Math.min(1, (minuto - 330) / 140));
+    const dia = x * x * (3 - 2 * x);
+    if (Math.abs(dia - diaAplicado) < 0.005) return;
+    diaAplicado = dia;
+    sets.forEach((s) => s.amanecer(dia));
+    // El filtro de corte IR: con luz de sobra la cámara vuelve a color.
+    const ir = EN_INFRARROJO.map((v) => (v && dia < 0.55 ? 1 : 0));
+    infrarrojo.set(ir[0], ir[1], ir[2], ir[3]);
+    material.setVector4("infrarrojo", infrarrojo);
+    // El control de ganancia de las cámaras exteriores baja con el día: sin
+    // él, a las ocho la vereda y el cielo salían quemados a blanco.
+    const ganancia = 1 - 0.5 * dia;
+    material.setVector4(
+      "exposicion",
+      new Vector4(EXPOSICION[0] * ganancia, EXPOSICION[1] * ganancia, EXPOSICION[2], EXPOSICION[3])
+    );
+  }
+  aplicarHora(0);
+
+  rotular(true);
+
+  let turno = 0;
+  let msAcumulados = 0;
+  const PASO = MS_POR_CUADRO / sets.length;
+
+  const observador = scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(250, motor.getDeltaTime());
+    segundos += dt / 1000;
+    msAcumulados += dt;
+    if (msAcumulados >= PASO) {
+      msAcumulados %= PASO;
+      const camara = scene.activeCamera;
+      if (!pantalla || !camara || camara.isInFrustum(pantalla)) {
+        filmar(turno);
+        turno = (turno + 1) % sets.length;
+      }
+    }
+    if (segundos - ultimaRevision >= 0.05) {
+      ultimaRevision = segundos;
+      rotular();
+    }
+    material.setFloat("tiempo", segundos);
+    material.setVector4("cuadros", numeroCuadro);
+  });
+
+  scene.onDisposeObservable.addOnce(() => {
+    scene.onBeforeRenderObservable.remove(observador);
+    scene.onNewLightAddedObservable.remove(observadorLuces);
+  });
 
   return {
     material,
+    vincularPantalla(malla) {
+      pantalla = malla;
+    },
     ajustarHora(minuto) {
-      minutoBase = minuto;
+      aplicarHora(minuto);
     },
     encender(id, indice, escena, minuto, rotulo) {
-      minutoBase = minuto;
-      segundosEnBase = 0;
+      aplicarHora(minuto);
       activas.set(id, { indice, escena, desde: segundos, minuto, rotulo });
       // Sin esto el cuadrante tarda hasta un quinto de segundo en encenderse.
-      // Se nota cuando el suceso llega con el monitor a la vista.
-      repintar();
+      filmar(indice);
+      rotular(true);
     },
     apagar(id) {
-      if (!activas.delete(id)) return;
-      repintar();
+      const toma = activas.get(id);
+      if (!toma) return;
+      activas.delete(id);
+      filmar(toma.indice);
+      rotular(true);
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Los cuatro sitios
-// ---------------------------------------------------------------------------
-//
-// Cada cámara dibuja SIEMPRE su sitio, haya suceso o no. Es lo que hace que el
-// monitor se lea como cuatro puntos del condominio y no como cuatro recuadros
-// apagados esperando: la reja está ahí desde el minuto cero, y cuando llega la
-// camioneta llega A la reja.
-//
-// La paleta va deliberadamente alta para lo que es una escena nocturna. No se
-// está pintando la noche, se está pintando un MONITOR que muestra la noche, y
-// esa pantalla se mira desde metro y medio en una sala a oscuras.
-
-function dibujarLugar(ctx: CanvasRenderingContext2D, indice: number): void {
-  ctx.fillStyle = "#141a21";
-  ctx.fillRect(0, 0, QW, QH);
-
-  if (indice === 0) dibujarAcceso(ctx);
-  else if (indice === 1) dibujarEstacionamiento(ctx);
-  else if (indice === 2) dibujarPasillo(ctx);
-  else dibujarBodega(ctx);
-}
-
-/** CAM 01 — la reja principal, mirando hacia la calle. */
-function dibujarAcceso(ctx: CanvasRenderingContext2D): void {
-  const horizonte = QH * 0.44;
-
-  const fondo = ctx.createLinearGradient(0, 0, 0, horizonte);
-  fondo.addColorStop(0, "#151b23");
-  fondo.addColorStop(1, "#28313c");
-  ctx.fillStyle = fondo;
-  ctx.fillRect(0, 0, QW, horizonte);
-
-  // Vereda: la franja clara que separa la calle del antejardín.
-  ctx.fillStyle = "#3a4450";
-  ctx.fillRect(0, horizonte, QW, QH * 0.05);
-
-  const suelo = ctx.createLinearGradient(0, horizonte, 0, QH);
-  suelo.addColorStop(0, "#2c343e");
-  suelo.addColorStop(1, "#181e25");
-  ctx.fillStyle = suelo;
-  ctx.fillRect(0, horizonte + QH * 0.05, QW, QH);
-
-  // La reja, corrida a la derecha.
-  ctx.strokeStyle = "#5c6875";
-  ctx.lineWidth = 2;
-  for (let x = QW * 0.54; x < QW * 0.99; x += 9) {
-    ctx.beginPath();
-    ctx.moveTo(x, horizonte - QH * 0.2);
-    ctx.lineTo(x, horizonte + QH * 0.14);
-    ctx.stroke();
-  }
-  ctx.beginPath();
-  ctx.moveTo(QW * 0.54, horizonte - QH * 0.2);
-  ctx.lineTo(QW * 0.99, horizonte - QH * 0.2);
-  ctx.stroke();
-
-  // Pilar con su luminaria encendida.
-  ctx.fillStyle = "#4a545f";
-  ctx.fillRect(QW * 0.48, horizonte - QH * 0.3, 11, QH * 0.44);
-  ctx.fillStyle = "#fff0c8";
-  ctx.beginPath();
-  ctx.arc(QW * 0.48 + 5, horizonte - QH * 0.3, 5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // El charco de luz de esa luminaria sobre el pavimento.
-  const charco = ctx.createRadialGradient(
-    QW * 0.48, horizonte + QH * 0.3, 2,
-    QW * 0.48, horizonte + QH * 0.3, QW * 0.34
-  );
-  charco.addColorStop(0, "rgba(255, 235, 190, 0.16)");
-  charco.addColorStop(1, "rgba(255, 235, 190, 0)");
-  ctx.fillStyle = charco;
-  ctx.fillRect(0, horizonte, QW, QH);
-}
-
-/** CAM 02 — el estacionamiento de visitas, con sus bahías demarcadas. */
-function dibujarEstacionamiento(ctx: CanvasRenderingContext2D): void {
-  const horizonte = QH * 0.32;
-
-  // Muro del fondo con su zócalo.
-  ctx.fillStyle = "#333c47";
-  ctx.fillRect(0, 0, QW, horizonte);
-  ctx.fillStyle = "#1d242c";
-  ctx.fillRect(0, horizonte - 5, QW, 5);
-
-  const suelo = ctx.createLinearGradient(0, horizonte, 0, QH);
-  suelo.addColorStop(0, "#2f3841");
-  suelo.addColorStop(1, "#161c23");
-  ctx.fillStyle = suelo;
-  ctx.fillRect(0, horizonte, QW, QH - horizonte);
-
-  // Demarcación de las bahías. Convergen levemente hacia el fondo: es lo que
-  // da profundidad sin tener que dibujar perspectiva de verdad.
-  ctx.strokeStyle = "rgba(226, 230, 214, 0.34)";
-  ctx.lineWidth = 2;
-  for (let i = 0; i <= 3; i++) {
-    ctx.beginPath();
-    ctx.moveTo(QW * (0.14 + i * 0.26), horizonte + 3);
-    ctx.lineTo(QW * (0.03 + i * 0.33), QH);
-    ctx.stroke();
-  }
-
-  // Luminaria del cielo y su charco, que es lo que hace que el suelo no sea
-  // una superficie plana y muerta.
-  const charco = ctx.createRadialGradient(
-    QW * 0.62, horizonte + QH * 0.2, 4,
-    QW * 0.62, horizonte + QH * 0.2, QW * 0.42
-  );
-  charco.addColorStop(0, "rgba(214, 230, 255, 0.13)");
-  charco.addColorStop(1, "rgba(214, 230, 255, 0)");
-  ctx.fillStyle = charco;
-  ctx.fillRect(0, horizonte, QW, QH);
-
-  // Pilar estructural pegado al borde izquierdo.
-  ctx.fillStyle = "#3d4650";
-  ctx.fillRect(0, horizonte - QH * 0.22, 15, QH);
-}
-
-/** CAM 03 — el pasillo del segundo piso de la torre A, en fuga al fondo. */
-function dibujarPasillo(ctx: CanvasRenderingContext2D): void {
-  const fx = QW * 0.53;
-  const fy = QH * 0.47;
-  const fw = QW * 0.17;
-  const fh = QH * 0.32;
-
-  ctx.fillStyle = "#12181e";
-  ctx.fillRect(0, 0, QW, QH);
-
-  // Piso: trapecio del borde inferior al fondo. Con esto solo ya se lee como
-  // un pasillo; el resto son las paredes que lo cierran.
-  ctx.fillStyle = "#2b333d";
-  ctx.beginPath();
-  ctx.moveTo(0, QH);
-  ctx.lineTo(QW, QH);
-  ctx.lineTo(fx + fw / 2, fy + fh / 2);
-  ctx.lineTo(fx - fw / 2, fy + fh / 2);
-  ctx.closePath();
-  ctx.fill();
-
-  // Paredes laterales, la de la derecha algo más apagada para que el volumen
-  // se lea sin tener que iluminar nada.
-  ctx.fillStyle = "#242c35";
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(fx - fw / 2, fy - fh / 2);
-  ctx.lineTo(fx - fw / 2, fy + fh / 2);
-  ctx.lineTo(0, QH);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#1b222a";
-  ctx.beginPath();
-  ctx.moveTo(QW, 0);
-  ctx.lineTo(fx + fw / 2, fy - fh / 2);
-  ctx.lineTo(fx + fw / 2, fy + fh / 2);
-  ctx.lineTo(QW, QH);
-  ctx.closePath();
-  ctx.fill();
-
-  // Muro del fondo.
-  ctx.fillStyle = "#323b46";
-  ctx.fillRect(fx - fw / 2, fy - fh / 2, fw, fh);
-
-  // Puertas de los departamentos sobre la pared izquierda, encogiendo hacia
-  // el fondo.
-  ctx.fillStyle = "#161c23";
-  [0.08, 0.3, 0.5].forEach((t) => {
-    const alto = QH * (0.6 - t * 0.46);
-    ctx.fillRect(
-      t * (fx - fw / 2),
-      QH * 0.52 - alto / 2,
-      QW * (0.085 - t * 0.05),
-      alto
-    );
-  });
-}
-
-/**
- * CAM 04 — la bodega.
- *
- * Mira desde el fondo hacia la puerta, no al revés. Es la orientación que tiene
- * sentido en una bodega vigilada: lo que importa es quién entra, así que la
- * cámara se cuelga en la pared del fondo apuntando a la única abertura.
- *
- * Y es también lo que permite que el suceso del candado se LEA. Con la cámara
- * mirando a los estantes, una puerta entornada a la espalda no se vería.
- */
-function dibujarBodega(ctx: CanvasRenderingContext2D): void {
-  const suelo = QH * 0.62;
-
-  // Muro del fondo: hormigón, más claro arriba porque es donde pega el tubo.
-  const pared = ctx.createLinearGradient(0, 0, 0, suelo);
-  pared.addColorStop(0, "#3a4450");
-  pared.addColorStop(1, "#242c35");
-  ctx.fillStyle = pared;
-  ctx.fillRect(0, 0, QW, suelo);
-
-  // Juntas del bloque de hormigón. Dos líneas bastan para dar la escala del
-  // muro; más convierten la pared en un dibujo de ladrillos.
-  ctx.strokeStyle = "rgba(0,0,0,0.16)";
-  ctx.lineWidth = 1;
-  [0.2, 0.42].forEach((t) => {
-    ctx.beginPath();
-    ctx.moveTo(0, suelo * t);
-    ctx.lineTo(QW, suelo * t);
-    ctx.stroke();
-  });
-
-  // Radier: liso, con su junta de dilatación en fuga y algo más oscuro al
-  // fondo. La fuga es lo que separa un suelo de una franja de color.
-  const radier = ctx.createLinearGradient(0, suelo, 0, QH);
-  radier.addColorStop(0, "#2a323b");
-  radier.addColorStop(1, "#434d59");
-  ctx.fillStyle = radier;
-  ctx.fillRect(0, suelo, QW, QH - suelo);
-  ctx.fillStyle = "#1a212a";
-  ctx.fillRect(0, suelo - 2, QW, 3);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
-  ctx.lineWidth = 1.5;
-  [[0.34, 0.12], [0.72, 0.95]].forEach(([arriba, abajo]) => {
-    ctx.beginPath();
-    ctx.moveTo(QW * arriba, suelo);
-    ctx.lineTo(QW * abajo, QH);
-    ctx.stroke();
-  });
-
-  // --- Estantería de la izquierda, en fuga ---------------------------------
-  //
-  // Los montantes se acortan y se juntan hacia el fondo. Con eso solo, una
-  // estantería plana pasa a tener profundidad sin dibujar una sola diagonal
-  // más de las imprescindibles.
-  const montantes = [
-    { x: 0.02, alto: 0.52, y: 0.1 },
-    { x: 0.17, alto: 0.44, y: 0.16 },
-    { x: 0.29, alto: 0.38, y: 0.2 },
-  ];
-  ctx.fillStyle = "#4a5561";
-  montantes.forEach((m) => ctx.fillRect(QW * m.x, QH * m.y, 5, QH * m.alto));
-
-  // Baldas y su carga.
-  [0.3, 0.45].forEach((fila, nivel) => {
-    ctx.fillStyle = "#525d6a";
-    ctx.beginPath();
-    ctx.moveTo(QW * 0.02, QH * (fila + 0.06));
-    ctx.lineTo(QW * 0.31, QH * fila);
-    ctx.lineTo(QW * 0.31, QH * fila + 4);
-    ctx.lineTo(QW * 0.02, QH * (fila + 0.06) + 5);
-    ctx.closePath();
-    ctx.fill();
-
-    const cajas: [number, number, string][] = nivel === 0
-      ? [[0.04, 0.1, "#6b7ембр".length ? "#6b7480" : "#6b7480"], [0.16, 0.08, "#57616d"], [0.25, 0.055, "#727c88"]]
-      : [[0.05, 0.09, "#5d6773"], [0.15, 0.07, "#6e7884"], [0.23, 0.065, "#525c68"]];
-    cajas.forEach(([x, ancho, color], i) => {
-      const escala = 1 - x * 0.5;
-      const alto = QH * 0.09 * escala;
-      const py = QH * (fila + 0.055 - x * 0.19) - alto;
-      ctx.fillStyle = color;
-      ctx.fillRect(QW * x, py, QW * ancho, alto);
-      // Tapa y cinta: dos trazos que convierten un rectángulo en una caja.
-      ctx.fillStyle = "rgba(255,255,255,0.09)";
-      ctx.fillRect(QW * x, py, QW * ancho, 2.5);
-      ctx.fillStyle = "rgba(0,0,0,0.24)";
-      ctx.fillRect(QW * x + QW * ancho * 0.45, py, 2, alto);
-      // Etiqueta pegada, solo en las de delante: al fondo sería un punto.
-      if (i === 0) {
-        ctx.fillStyle = "rgba(232,236,228,0.5)";
-        ctx.fillRect(QW * x + 3, py + alto * 0.4, QW * ancho * 0.42, alto * 0.28);
-      }
-    });
-  });
-
-  // --- La puerta, a la derecha ---------------------------------------------
-  //
-  // Cerrada por defecto: hoja de acero en su marco, con la argolla y el candado
-  // enganchado. Es la pieza que el suceso del candado modifica, así que se
-  // dibuja completa aunque no esté pasando nada — si solo apareciera cuando
-  // ocurre algo, el cambio no se leería como un cambio.
-  const px = QW * 0.62;
-  const pw = QW * 0.3;
-  const py = QH * 0.14;
-  const ph = suelo - py;
-
-  ctx.fillStyle = "#39424d";
-  ctx.fillRect(px - 5, py - 5, pw + 10, ph + 5);
-  const hoja = ctx.createLinearGradient(px, 0, px + pw, 0);
-  hoja.addColorStop(0, "#5a6470");
-  hoja.addColorStop(0.6, "#4a535f");
-  hoja.addColorStop(1, "#3d4650");
-  ctx.fillStyle = hoja;
-  ctx.fillRect(px, py, pw, ph);
-
-  // Refuerzos horizontales de la hoja.
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  [0.28, 0.64].forEach((t) => ctx.fillRect(px, py + ph * t, pw, 3));
-
-  // Argolla y candado cerrado: el arco baja y cierra sobre la hembrilla.
-  ctx.fillStyle = "#2c343d";
-  ctx.fillRect(px - 3, py + ph * 0.46, 12, 16);
-  candado(ctx, px + 2, py + ph * 0.5, false);
-
-  // --- Techo y equipamiento -------------------------------------------------
-  // Tubo fluorescente encendido, con su chorro sobre el radier.
-  ctx.fillStyle = "#2f3842";
-  ctx.fillRect(QW * 0.24, QH * 0.03, QW * 0.34, 7);
-  ctx.fillStyle = "rgba(226, 240, 255, 0.8)";
-  ctx.fillRect(QW * 0.25, QH * 0.03 + 2, QW * 0.32, 3.5);
-  const chorro = ctx.createRadialGradient(
-    QW * 0.41, QH * 0.55, 4,
-    QW * 0.41, QH * 0.55, QW * 0.5
-  );
-  chorro.addColorStop(0, "rgba(214, 232, 255, 0.11)");
-  chorro.addColorStop(1, "rgba(214, 232, 255, 0)");
-  ctx.fillStyle = chorro;
-  ctx.fillRect(0, 0, QW, QH);
-
-  // Extintor colgado: lo pide el manual en cada recinto, y una mancha roja en
-  // una escena de grises la ancla como sitio real.
-  ctx.fillStyle = "#8f2b22";
-  ctx.fillRect(QW * 0.5, QH * 0.3, 9, QH * 0.16);
-  ctx.fillStyle = "#b8382c";
-  ctx.fillRect(QW * 0.5, QH * 0.3, 4, QH * 0.16);
-  ctx.fillStyle = "#2a323b";
-  ctx.fillRect(QW * 0.5 + 1, QH * 0.27, 7, QH * 0.035);
-
-  // Pallet con carga envuelta, en el suelo.
-  ctx.fillStyle = "#4a4034";
-  ctx.fillRect(QW * 0.08, QH * 0.78, QW * 0.26, QH * 0.05);
-  ctx.fillStyle = "#2f281f";
-  for (let i = 0; i < 4; i++) ctx.fillRect(QW * (0.1 + i * 0.065), QH * 0.83, 5, QH * 0.05);
-  ctx.fillStyle = "rgba(180, 196, 210, 0.32)";
-  ctx.fillRect(QW * 0.1, QH * 0.66, QW * 0.22, QH * 0.12);
-  ctx.fillStyle = "rgba(255,255,255,0.09)";
-  ctx.fillRect(QW * 0.1, QH * 0.66, QW * 0.22, 3);
-}
-
-/**
- * Un candado colgando de su argolla.
- *
- * `abierto` levanta el arco y lo saca de la hembrilla. Es un detalle de seis
- * píxeles, pero es LA diferencia que el jugador tiene que ver para escribir la
- * constancia correcta, así que se dibuja con el arco completo en las dos
- * posiciones en vez de sugerirlo con un color.
- */
-function candado(ctx: CanvasRenderingContext2D, x: number, y: number, abierto: boolean): void {
-  const cuerpoAlto = 11;
-  const cuerpoAncho = 9;
-
-  ctx.strokeStyle = "#aab4c0";
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  if (abierto) {
-    // Arco girado sobre su eje: sale de la hembrilla y queda ladeado.
-    ctx.arc(x + cuerpoAncho * 0.9, y - 1, 4.6, Math.PI * 0.9, Math.PI * 2.05);
-  } else {
-    ctx.arc(x + cuerpoAncho / 2, y, 4.2, Math.PI, 0);
-  }
-  ctx.stroke();
-
-  const cuerpo = ctx.createLinearGradient(x, y, x + cuerpoAncho, y);
-  cuerpo.addColorStop(0, "#8e99a6");
-  cuerpo.addColorStop(1, "#5f6874");
-  ctx.fillStyle = cuerpo;
-  ctx.fillRect(x, y, cuerpoAncho, cuerpoAlto);
-  ctx.fillStyle = "#2b333c";
-  ctx.fillRect(x + cuerpoAncho / 2 - 1, y + cuerpoAlto * 0.55, 2, 3);
-}
-
-// ---------------------------------------------------------------------------
-// Lo que ocurre encima
-// ---------------------------------------------------------------------------
-//
-// `avance` va de 0 a 1 durante los primeros segundos y después se queda en 1.
-// Eso hace dos cosas a la vez: quien esté mirando el monitor VE llegar la
-// camioneta, y quien llegue tarde encuentra la escena en su pose final, que
-// sigue describiendo el hecho. Nada desaparece por haber tardado.
-
-function dibujarEvento(
-  ctx: CanvasRenderingContext2D,
-  escena: EscenaCamara,
-  avance: number,
-  segundos: number
-): void {
-  if (escena === "vehiculo-en-reja") vehiculoEnReja(ctx, avance);
-  else if (escena === "vehiculo-saliendo") vehiculoSaliendo(ctx, avance);
-  else if (escena === "vehiculo-detenido") vehiculoDetenido(ctx, segundos);
-  else if (escena === "pasillo-abierto") pasilloAbierto(ctx, avance);
-  else if (escena === "bodega-abierta") bodegaAbierta(ctx, avance);
-}
-
-/** Suavizado de entrada. Un vehículo que frena no lo hace linealmente. */
-function suave(t: number): number {
-  return 1 - Math.pow(1 - t, 3);
-}
-
-/**
- * La camioneta, de perfil.
- *
- * ─── POR QUÉ VALE LA PENA DIBUJARLA BIEN ──────────────────────────────────
- *
- * Antes eran cinco rectángulos: un bloque para el cuerpo, otro para la
- * cabina, uno para el parabrisas y dos para las ruedas. De lejos pasaba, pero
- * el monitor es justo el sitio donde el jugador se acerca a mirar, y de cerca
- * se leía como un icono de aplicación, no como un vehículo grabado por una
- * cámara.
- *
- * Lo que la vuelve reconocible no son los detalles chicos, son cuatro cosas:
- * el hueco de los arcos de rueda —un auto no apoya la carrocería en el
- * suelo—, la caída del techo hacia atrás, el brillo horizontal a la altura de
- * las manillas, y la sombra de contacto debajo. Sin esa sombra el vehículo
- * flota, y flotando no hay dibujo que lo salve.
- *
- * ─── SE DIBUJA SIEMPRE MIRANDO A LA IZQUIERDA ─────────────────────────────
- *
- * Y si tiene que mirar al otro lado, se espeja el lienzo entero. Es la única
- * forma de no tener que escribir cada coordenada dos veces, y de que las dos
- * versiones sean de verdad el mismo vehículo — que importa, porque el juego
- * pide reconocer que la camioneta que sale a las 01:30 es la que entró a la
- * 01:00.
- *
- * @param x       Borde izquierdo del vehículo.
- * @param y       Línea de cintura: donde la chapa se junta con las ventanas.
- * @param ancho   Largo total.
- * @param alto    Alto del faldón, de la cintura al bajo de la carrocería.
- * @param color   Color de la chapa.
- * @param haciaLaIzquierda  Hacia dónde apunta el morro.
- */
-function carroceria(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  ancho: number,
-  alto: number,
-  color: string,
-  haciaLaIzquierda = true
-): void {
-  const L = ancho;
-  const H = alto;
-  const suelo = y + H * 1.42;
-  const techo = y - H * 0.98;
-  const radioRueda = H * 0.62;
-
-  ctx.save();
-  if (haciaLaIzquierda) {
-    ctx.translate(x, 0);
-  } else {
-    ctx.translate(x + L, 0);
-    ctx.scale(-1, 1);
-  }
-
-  // --- Sombra de contacto ---------------------------------------------------
-  //
-  // Va antes que nada, para que todo lo demás caiga encima. Es más ancha que
-  // el vehículo y muy aplastada: la luz de las luminarias viene de arriba.
-  const sombra = ctx.createRadialGradient(L * 0.5, suelo, 2, L * 0.5, suelo, L * 0.56);
-  sombra.addColorStop(0, "rgba(0,0,0,0.55)");
-  sombra.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.save();
-  ctx.translate(0, suelo);
-  ctx.scale(1, 0.22);
-  ctx.translate(0, -suelo);
-  ctx.fillStyle = sombra;
-  ctx.beginPath();
-  ctx.arc(L * 0.5, suelo, L * 0.56, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // --- Ruedas ---------------------------------------------------------------
-  //
-  // Antes que la carrocería: así el faldón les recorta la mitad de arriba y
-  // quedan metidas en su arco en vez de pegadas por fuera.
-  const ejes = [L * 0.21, L * 0.79];
-  ejes.forEach((ex) => {
-    ctx.fillStyle = "#080a0d";
-    ctx.beginPath();
-    ctx.arc(ex, suelo - radioRueda * 0.86, radioRueda, 0, Math.PI * 2);
-    ctx.fill();
-    // Llanta: un disco más claro y bastante más chico. A esta escala no hay
-    // radios que dibujar, solo el contraste que dice que la rueda gira.
-    ctx.fillStyle = "#39434e";
-    ctx.beginPath();
-    ctx.arc(ex, suelo - radioRueda * 0.86, radioRueda * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // --- Faldón: el cuerpo bajo, de morro a portalón --------------------------
-  //
-  // No es un rectángulo. El morro cae y se adelanta abajo (el paragolpes), y
-  // detrás la caja de carga termina recta. Entre medio, los dos arcos.
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(L * 0.02, y + H * 0.28);
-  ctx.quadraticCurveTo(0, y + H * 0.62, L * 0.015, y + H);
-  ctx.lineTo(L * 0.05, y + H * 1.12);
-  // Arco delantero.
-  ctx.lineTo(ejes[0] - radioRueda * 1.05, y + H * 1.12);
-  ctx.arc(ejes[0], y + H * 1.12, radioRueda * 1.05, Math.PI, 0, true);
-  ctx.lineTo(ejes[1] - radioRueda * 1.05, y + H * 1.12);
-  // Arco trasero.
-  ctx.arc(ejes[1], y + H * 1.12, radioRueda * 1.05, Math.PI, 0, true);
-  ctx.lineTo(L * 0.985, y + H * 1.12);
-  ctx.lineTo(L, y + H * 0.1);
-  ctx.lineTo(L * 0.02, y);
-  ctx.closePath();
-  ctx.fill();
-
-  // Sombra bajo el faldón: oscurece el tercio inferior de la chapa. Es lo que
-  // le da volumen al costado sin tener que dibujar un degradado por encima.
-  const bajo = ctx.createLinearGradient(0, y + H * 0.35, 0, y + H * 1.12);
-  bajo.addColorStop(0, "rgba(0,0,0,0)");
-  bajo.addColorStop(1, "rgba(0,0,0,0.38)");
-  ctx.fillStyle = bajo;
-  ctx.fill();
-
-  // --- Cabina ---------------------------------------------------------------
-  //
-  // Trapecio con el techo caído hacia atrás y el parabrisas tumbado. Esa
-  // inclinación es lo que separa una camioneta moderna de una caja.
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(L * 0.19, y + 1);
-  ctx.lineTo(L * 0.34, techo);
-  ctx.lineTo(L * 0.6, techo + H * 0.06);
-  ctx.lineTo(L * 0.62, y + 1);
-  ctx.closePath();
-  ctx.fill();
-
-  // --- Cristales ------------------------------------------------------------
-  //
-  // Dos, separados por el montante central. El parabrisas va más claro porque
-  // devuelve la luz del cielo; la ventanilla lateral, más oscura, porque
-  // detrás está el interior del vehículo, que no tiene luz.
-  ctx.fillStyle = "#8ea3b8";
-  ctx.beginPath();
-  ctx.moveTo(L * 0.225, y - 2);
-  ctx.lineTo(L * 0.35, techo + H * 0.14);
-  ctx.lineTo(L * 0.425, techo + H * 0.14);
-  ctx.lineTo(L * 0.425, y - 2);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#4d5c6b";
-  ctx.beginPath();
-  ctx.moveTo(L * 0.45, y - 2);
-  ctx.lineTo(L * 0.45, techo + H * 0.15);
-  ctx.lineTo(L * 0.585, techo + H * 0.19);
-  ctx.lineTo(L * 0.585, y - 2);
-  ctx.closePath();
-  ctx.fill();
-
-  // --- Línea de cintura -----------------------------------------------------
-  //
-  // El brillo horizontal a la altura de las manillas. Es el detalle que más
-  // rinde de todos: una sola línea clara recorriendo el costado y la chapa
-  // deja de ser plana.
-  ctx.strokeStyle = "rgba(226, 236, 248, 0.34)";
-  ctx.lineWidth = Math.max(1, H * 0.09);
-  ctx.beginPath();
-  ctx.moveTo(L * 0.06, y + H * 0.3);
-  ctx.lineTo(L * 0.96, y + H * 0.24);
-  ctx.stroke();
-
-  // Junta de la puerta y borde de la caja de carga.
-  ctx.strokeStyle = "rgba(0,0,0,0.32)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(L * 0.44, y + H * 0.06);
-  ctx.lineTo(L * 0.44, y + H * 0.95);
-  ctx.moveTo(L * 0.64, y + H * 0.02);
-  ctx.lineTo(L * 0.64, y + H * 1.0);
-  ctx.stroke();
-
-  // Espejo retrovisor. Dos píxeles que se leen igual.
-  ctx.fillStyle = "#2a323b";
-  ctx.fillRect(L * 0.2, y - H * 0.16, L * 0.05, H * 0.16);
-
-  ctx.restore();
-}
-
-/**
- * Faro encendido, con su cono y el charco que deja en el pavimento.
- *
- * El cono solo no basta: en una grabación nocturna lo que primero se ve no es
- * el haz, es la mancha de luz que el faro pone en el suelo. Sin ella el cono
- * parece un triángulo pegado al vehículo.
- */
-function faro(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  hacia: number,
-  alcance: number
-): void {
-  // Charco en el pavimento, delante del morro.
-  const charco = ctx.createRadialGradient(
-    x + hacia * alcance * 0.55, y + alcance * 0.16, 2,
-    x + hacia * alcance * 0.55, y + alcance * 0.16, alcance * 0.62
-  );
-  charco.addColorStop(0, "rgba(255, 238, 196, 0.26)");
-  charco.addColorStop(1, "rgba(255, 238, 196, 0)");
-  ctx.save();
-  ctx.translate(0, y + alcance * 0.16);
-  ctx.scale(1, 0.34);
-  ctx.translate(0, -(y + alcance * 0.16));
-  ctx.fillStyle = charco;
-  ctx.beginPath();
-  ctx.arc(x + hacia * alcance * 0.55, y + alcance * 0.16, alcance * 0.62, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // El haz.
-  const cono = ctx.createLinearGradient(x, y, x + hacia * alcance, y);
-  cono.addColorStop(0, "rgba(255, 244, 212, 0.4)");
-  cono.addColorStop(1, "rgba(255, 240, 200, 0)");
-  ctx.fillStyle = cono;
-  ctx.beginPath();
-  ctx.moveTo(x, y - 2);
-  ctx.lineTo(x + hacia * alcance, y - alcance * 0.26);
-  ctx.lineTo(x + hacia * alcance, y + alcance * 0.32);
-  ctx.lineTo(x, y + 3);
-  ctx.closePath();
-  ctx.fill();
-
-  // Núcleo: el punto brillante del propio faro. Es lo que hace que el haz
-  // salga de algún sitio en vez de aparecer de la nada.
-  const nucleo = ctx.createRadialGradient(x, y, 0.5, x, y, alcance * 0.14);
-  nucleo.addColorStop(0, "rgba(255, 252, 238, 0.95)");
-  nucleo.addColorStop(1, "rgba(255, 246, 214, 0)");
-  ctx.fillStyle = nucleo;
-  ctx.beginPath();
-  ctx.arc(x, y, alcance * 0.14, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-/**
- * 01:00 — la camioneta llega a la reja y se detiene.
- *
- * Entra por la derecha, que es por donde está la reja, y frena en el
- * antejardín. Queda ahí con los faros encendidos: es lo que el guardia tiene
- * delante mientras confirma con el 302 y anota la patente.
- */
-function vehiculoEnReja(ctx: CanvasRenderingContext2D, avance: number): void {
-  const y = QH * 0.44 + QH * 0.22;
-  const x = QW * 1.02 - suave(avance) * QW * 0.66;
-
-  faro(ctx, x + 1, y + QH * 0.07, -1, QW * 0.34);
-  carroceria(ctx, x, y, QW * 0.3, QH * 0.09, "#5b636d", true);
-}
-
-/**
- * 01:30 — la misma camioneta, saliendo.
- *
- * Arranca del mismo punto donde quedó detenida y se va hacia la reja: quien
- * vio la toma de las 01:00 reconoce que es el mismo vehículo haciendo el
- * camino inverso, que es exactamente lo que hay que redactar.
- */
-function vehiculoSaliendo(ctx: CanvasRenderingContext2D, avance: number): void {
-  const y = QH * 0.44 + QH * 0.22;
-  // Termina DENTRO del cuadro, no saliéndose por el borde: quien llegue
-  // tarde a mirar tiene que encontrar el vehículo, no un rastro rojo.
-  const x = QW * 0.12 + suave(avance) * QW * 0.5;
-  const ancho = QW * 0.3;
-  const alto = QH * 0.09;
-
-  // Espejado: ahora el morro mira a la derecha, hacia la reja. Es el mismo
-  // vehículo de las 01:00 haciendo el camino inverso, y que se reconozca es
-  // justamente lo que hay que redactar en el libro.
-  carroceria(ctx, x, y, ancho, alto, "#5b636d", false);
-
-  // Luces traseras, que ahora quedan a la izquierda, y su rastro sobre el
-  // pavimento. Van DESPUÉS de la carrocería para que el halo la desborde,
-  // como desborda una luz encendida en una grabación.
-  const cy = y + alto * 0.55;
-  const rastro = ctx.createLinearGradient(x, cy, x - QW * 0.22, cy);
-  rastro.addColorStop(0, "rgba(255, 72, 52, 0.3)");
-  rastro.addColorStop(1, "rgba(255, 72, 52, 0)");
-  ctx.fillStyle = rastro;
-  ctx.fillRect(x - QW * 0.22, cy - alto * 0.5, QW * 0.22, alto * 1.1);
-
-  const halo = ctx.createRadialGradient(x + 2, cy, 1, x + 2, cy, QW * 0.05);
-  halo.addColorStop(0, "rgba(255, 96, 70, 0.75)");
-  halo.addColorStop(1, "rgba(255, 96, 70, 0)");
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(x + 2, cy, QW * 0.05, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#ff6a4a";
-  ctx.fillRect(x, cy - 2, 4, 5);
-}
-/**
- * 00:45 — la camioneta gris detenida en visitas, con las intermitentes.
- *
- * No se mueve: eso ES el suceso. Lo único vivo son las intermitentes y el
- * humo del escape, y por eso el ojo se va para allá aunque el cuadrante sea
- * pequeño y el monitor esté al fondo del mesón.
- */
-function vehiculoDetenido(ctx: CanvasRenderingContext2D, segundos: number): void {
-  const y = QH * 0.32 + QH * 0.34;
-  const x = QW * 0.32;
-  const ancho = QW * 0.36;
-  const alto = QH * 0.1;
-
-  carroceria(ctx, x, y, ancho, alto, "#6b737d", true);
-
-  // El motor está encendido, y en una noche fría eso se ve. El humo sale por
-  // detrás, o sea a la derecha, porque el morro mira a la izquierda.
-  const humo = ctx.createRadialGradient(
-    x + ancho + 4, y + alto * 1.3, 1,
-    x + ancho + 4, y + alto * 1.3, 7 + Math.sin(segundos * 1.7) * 3
-  );
-  humo.addColorStop(0, "rgba(206, 218, 230, 0.20)");
-  humo.addColorStop(1, "rgba(206, 218, 230, 0)");
-  ctx.fillStyle = humo;
-  ctx.beginPath();
-  ctx.arc(x + ancho + 4, y + alto * 1.3, 7 + Math.sin(segundos * 1.7) * 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Intermitentes. Es lo único vivo del cuadro, y por eso el ojo se va para
-  // allá aunque el cuadrante sea pequeño y el monitor esté al fondo del mesón.
-  if (Math.floor(segundos * 2) % 2 === 0) {
-    [x + 3, x + ancho - 5].forEach((fx) => {
-      const cy = y + alto * 0.5;
-      const halo = ctx.createRadialGradient(fx, cy, 1, fx, cy, QW * 0.038);
-      halo.addColorStop(0, "rgba(255, 196, 82, 0.62)");
-      halo.addColorStop(1, "rgba(255, 190, 70, 0)");
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(fx, cy, QW * 0.038, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#ffd76a";
-      ctx.fillRect(fx - 2, cy - 2, 4, 4);
-    });
-  }
-}
-
-/**
- * 00:30 — el pasillo con la luz encendida y la ventana abierta.
- *
- * Las dos cosas que dice el aviso, visibles a la vez: el plafón encendido con
- * su charco en el piso, y la hoja de la ventana batida hacia dentro. Cuando la
- * novedad queda escrita —"se cierra la ventana y se apagan las luces"— la
- * cámara vuelve sola a la calma, y ahí se ve que quedó resuelto.
- */
-function pasilloAbierto(ctx: CanvasRenderingContext2D, avance: number): void {
-  // La luz "prende" en el primer tramo: es la única forma de que quien esté
-  // mirando note que algo cambió, y no que el pasillo siempre estuvo así.
-  const fuerza = suave(avance);
-
-  ctx.fillStyle = `rgba(255, 248, 224, ${0.85 * fuerza})`;
-  ctx.fillRect(QW * 0.44, QH * 0.19, QW * 0.15, 5);
-
-  const luz = ctx.createRadialGradient(QW * 0.51, QH * 0.23, 3, QW * 0.51, QH * 0.23, QH * 0.62);
-  luz.addColorStop(0, `rgba(255, 242, 205, ${0.3 * fuerza})`);
-  luz.addColorStop(1, "rgba(255, 242, 205, 0)");
-  ctx.fillStyle = luz;
-  ctx.fillRect(0, 0, QW, QH);
-
-  // --- La ventana abierta ---------------------------------------------------
-  //
-  // Va sobre el muro DERECHO, siguiendo su fuga. Antes era un rectángulo recto
-  // pegado encima, y por eso se leía como un cartel flotando delante del
-  // pasillo en vez de como un hueco en la pared. El pasillo tiene perspectiva;
-  // lo que va en sus paredes también.
-  //
-  // El muro derecho va del borde de la pantalla (cerca) al vano del fondo
-  // (lejos). Estas dos funciones dan, para un punto cualquiera de ese
-  // recorrido, dónde caen su arista de arriba y la de abajo.
-  const mx = (t: number) => QW * (0.615 + 0.385 * t);
-  const myArriba = (t: number) => QH * 0.31 * (1 - t);
-  const myAbajo = (t: number) => QH * (0.63 + 0.37 * t);
-  /** Punto a la altura `h` (0 arriba, 1 abajo) del muro, en la fuga `t`. */
-  const punto = (t: number, h: number): [number, number] => [
-    mx(t),
-    myArriba(t) + (myAbajo(t) - myArriba(t)) * h,
-  ];
-
-  // Adelantada hacia la cámara para que no se pise con el vano del fondo.
-  const T1 = 0.44;
-  const T2 = 0.74;
-
-  // Hueco. Azul muy oscuro, no negro: al otro lado hay noche, y la noche
-  // tiene color. En negro puro se veía como un agujero recortado.
-  ctx.fillStyle = "#080c14";
-  ctx.beginPath();
-  ctx.moveTo(...punto(T1, 0.24));
-  ctx.lineTo(...punto(T2, 0.24));
-  ctx.lineTo(...punto(T2, 0.72));
-  ctx.lineTo(...punto(T1, 0.72));
-  ctx.closePath();
-  ctx.fill();
-
-  // Marco.
-  ctx.strokeStyle = "#7b8794";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // La hoja batida hacia dentro del pasillo. Es lo que distingue una ventana
-  // ABIERTA de una ventana simplemente oscura, y por eso vale la pena: sin
-  // ella la novedad no se ve, se supone.
-  const [hx1, hy1] = punto(T1, 0.24);
-  const [hx2, hy2] = punto(T1, 0.72);
-  ctx.fillStyle = "rgba(122, 137, 152, 0.72)";
-  ctx.beginPath();
-  ctx.moveTo(hx1, hy1);
-  ctx.lineTo(hx1 - QW * 0.11, hy1 + QH * 0.07);
-  ctx.lineTo(hx2 - QW * 0.11, hy2 + QH * 0.02);
-  ctx.lineTo(hx2, hy2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#96a3b0";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  // Reflejo del plafón en el cristal de la hoja. Un trazo, y el vidrio deja
-  // de parecer chapa gris.
-  ctx.strokeStyle = "rgba(255, 246, 220, 0.3)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(hx1 - QW * 0.085, hy1 + QH * 0.09);
-  ctx.lineTo(hx2 - QW * 0.05, hy2 - QH * 0.03);
-  ctx.stroke();
-}
-
-/**
- * 02:10 — la bodega con la puerta entornada y el candado abierto.
- *
- * A diferencia de las otras cuatro, aquí no llega ni se va nada: la escena es
- * un ESTADO que ya estaba cuando la cámara lo enseña. Por eso `avance` no
- * mueve un vehículo sino que abre la hoja, y solo un poco — una puerta de par
- * en par contaría otra cosa, y lo que hay que redactar es exactamente esto:
- * entornada, no abierta; el candado suelto, no roto.
- *
- * La hoja se dibuja ENCIMA de la cerrada que ya pintó dibujarBodega, tapándola
- * con el hueco negro del marco: así el retranqueo queda a la vista y se lee
- * como una puerta que gira, no como un rectángulo que cambia de color.
- */
-function bodegaAbierta(ctx: CanvasRenderingContext2D, avance: number): void {
-  const suelo = QH * 0.62;
-  const px = QW * 0.62;
-  const pw = QW * 0.3;
-  const py = QH * 0.14;
-  const ph = suelo - py;
-
-  // Entreabre hasta poco más de un tercio y se queda ahí.
-  const hueco = pw * (0.14 + suave(avance) * 0.24);
-
-  // El vano: negro, porque detrás de la puerta no hay luz.
-  ctx.fillStyle = "#05070a";
-  ctx.fillRect(px, py, pw, ph);
-
-  // Luz del pasillo colándose por la rendija, sobre el radier. Es lo que hace
-  // que la puerta se lea abierta de un vistazo, incluso antes de distinguir el
-  // candado: un rectángulo negro no llama la atención, un reguero de luz sí.
-  const rendija = ctx.createLinearGradient(px, suelo, px + hueco * 2.4, QH);
-  rendija.addColorStop(0, "rgba(255, 244, 214, 0.2)");
-  rendija.addColorStop(1, "rgba(255, 244, 214, 0)");
-  ctx.fillStyle = rendija;
-  ctx.beginPath();
-  ctx.moveTo(px, suelo);
-  ctx.lineTo(px + hueco, suelo);
-  ctx.lineTo(px + hueco * 2.6, QH);
-  ctx.lineTo(px - hueco * 0.4, QH);
-  ctx.closePath();
-  ctx.fill();
-
-  // La hoja, corrida y en escorzo: se estrecha al girar hacia dentro.
-  const anchoHoja = pw - hueco;
-  const hoja = ctx.createLinearGradient(px + hueco, 0, px + pw, 0);
-  hoja.addColorStop(0, "#6e7885");
-  hoja.addColorStop(0.5, "#4a535f");
-  hoja.addColorStop(1, "#39424d");
-  ctx.fillStyle = hoja;
-  ctx.beginPath();
-  ctx.moveTo(px + hueco, py + ph * 0.03);
-  ctx.lineTo(px + pw, py);
-  ctx.lineTo(px + pw, py + ph);
-  ctx.lineTo(px + hueco, py + ph * 0.97);
-  ctx.closePath();
-  ctx.fill();
-
-  // Canto de la hoja: el grosor de la chapa, que es lo que remata el escorzo.
-  ctx.fillStyle = "#8e99a6";
-  ctx.fillRect(px + hueco - 2.5, py + ph * 0.03, 2.5, ph * 0.94);
-
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  [0.28, 0.64].forEach((t) => ctx.fillRect(px + hueco, py + ph * t, anchoHoja, 3));
-
-  // Argolla vacía y candado colgando abierto. Es el detalle que decide la
-  // redacción: abierto, no forzado.
-  ctx.fillStyle = "#2c343d";
-  ctx.fillRect(px - 3, py + ph * 0.46, 12, 16);
-  candado(ctx, px - 1, py + ph * 0.53, true);
 }

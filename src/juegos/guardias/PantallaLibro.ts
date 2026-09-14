@@ -300,8 +300,16 @@ export interface EnlaceMeson {
    * escena y el jugador no debe poder girarla hasta que termine.
    */
   seCierra(devolverControl: boolean): void;
-  /** Cambió lo escrito: repintar las hojas. */
-  seEscribe(estado: EstadoLibro): void;
+  /**
+   * Cambió lo escrito: pasarlo a las hojas.
+   *
+   * `aLaVista` dice si el libro está descubierto, sin panel delante. Solo
+   * entonces lo nuevo se TRAZA —letra a letra, como se escribe— y
+   * `alTerminar` llega cuando cae la última letra, o enseguida si no había
+   * nada que escribir. Con un panel encima o sentado en la silla las hojas
+   * esperan: la constancia se escribe cuando el guardia vuelve a inclinarse.
+   */
+  seEscribe(estado: EstadoLibro, aLaVista: boolean, alTerminar?: () => void): void;
 }
 
 export function mostrarPantallaLibro(
@@ -427,15 +435,17 @@ export function mostrarPantallaLibro(
    */
   function verPantalla(
     cual: "libro" | "otra" | "cerrado",
-    pose: "libro" | "silla" = "libro"
+    pose: "libro" | "silla" = "libro",
+    alTrazado?: () => void
   ): void {
     pantallaActual = cual;
     if (cual === "cerrado" || pose === "silla") meson.seCierra(!enSecuencia);
     else meson.seAbre();
-    // Las hojas se repintan en cada cambio de pantalla. Toda escritura
+    // Las hojas se ponen al día en cada cambio de pantalla. Toda escritura
     // termina en uno, así que con esto no hace falta acordarse de repintar
-    // detrás de cada constancia.
-    meson.seEscribe(estado);
+    // detrás de cada constancia. Y solo con la vista del libro al frente se
+    // ve trazar: detrás de un panel no hay nadie mirando la plana.
+    meson.seEscribe(estado, cual === "libro", alTrazado);
     ajustarReloj();
   }
 
@@ -795,7 +805,24 @@ export function mostrarPantallaLibro(
   // turno, se anota una novedad pendiente, se anula una constancia o se
   // intenta borrarla.
   function mostrarLibro(): void {
-    verPantalla("libro");
+    // LA TARJETA ESPERA A LA ÚLTIMA LETRA.
+    //
+    // Si hay algo nuevo, se escribe ahora sobre las hojas, y la tarjeta que se
+    // apoya abajo taparía justo la mitad de la plana donde cae. Se monta
+    // igual —así ninguna otra pantalla puede quedar debajo— pero oculta, y
+    // entra cuando la constancia está escrita. Sin nada que escribir, entra
+    // enseguida, como siempre.
+    let capa: Rectangle | null = null;
+    let trazado = false;
+    const aparecer = (): void => {
+      if (!capa || capaActual !== capa) return;
+      capa.isVisible = true;
+      desvanecer(capa, 0, 1, 200);
+    };
+    verPantalla("libro", "libro", () => {
+      trazado = true;
+      aparecer();
+    });
 
     // La tarjeta se apoya abajo y deja el libro a la vista por encima, así que
     // su alto es un compromiso: lo bastante para trabajar, lo justo para no
@@ -1026,8 +1053,11 @@ export function mostrarPantallaLibro(
     tarjeta.addControl(btnPuesto);
     btnPuesto.onPointerUpObservable.add(() => cerrarPorAhora());
 
-    desvanecer(velo, 0, 1, 160);
+    // Oculta mientras se traza: ni se ve ni recibe clics. `aparecer` la trae.
+    velo.isVisible = false;
+    capa = velo;
     reemplazarCapa(velo);
+    if (trazado) aparecer();
   }
 
   /**
@@ -1866,7 +1896,12 @@ export function mostrarPantallaLibro(
           // que falte lo caza entregarServicio.
           SUCESOS_CONDOMINIO.filter((s) => ocurridos.has(s.id))
         );
-        mostrarInformeFinal();
+        // La entrega se firma A LA VISTA: se retira el panel, la última
+        // constancia del turno se escribe sobre el libro con las dos firmas y
+        // recién entonces llega el informe. Es el cierre del nivel, y es el
+        // plano que tiene que quedar.
+        retirarCapaYa();
+        verPantalla("libro", "libro", () => mostrarInformeFinal());
       }
     );
 

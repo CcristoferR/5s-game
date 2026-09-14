@@ -604,6 +604,84 @@ export function generarCantoHojas(ancho: number, alto: number, semilla: number):
 }
 
 // ---------------------------------------------------------------------------
+// Asfalto mojado
+// ---------------------------------------------------------------------------
+
+/** Ruido de valor que se repite cada `periodo` unidades: no deja costura al embaldosar. */
+function ruidoPeriodico(x: number, y: number, periodo: number, semilla: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const m = (v: number): number => ((v % periodo) + periodo) % periodo;
+  const a = hash(m(ix), m(iy), semilla);
+  const b = hash(m(ix + 1), m(iy), semilla);
+  const c = hash(m(ix), m(iy + 1), semilla);
+  const d = hash(m(ix + 1), m(iy + 1), semilla);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+/**
+ * Asfalto después de la lluvia, embaldosable.
+ *
+ * Lo que hace que un suelo se lea MOJADO no es el color: es que la rugosidad
+ * no sea pareja. El árido que asoma queda mate, y en los charcos el agua
+ * rellena el poro y el suelo se vuelve un espejo. Con eso, la luz de un farol
+ * se estira sobre la calzada en manchas brillantes sueltas en lugar de un
+ * reflejo uniforme.
+ */
+export function generarAsfaltoMojado(lado: number, semilla: number): { albedo: Mapa; normal: Mapa; orm: Mapa } {
+  const n = lado * lado;
+  const albedo = new Uint8Array(n * 4);
+  const orm = new Uint8Array(n * 4);
+  const altura = new Float32Array(n);
+
+  for (let y = 0; y < lado; y++) {
+    for (let x = 0; x < lado; x++) {
+      const u = x / lado;
+      const v = y / lado;
+      let charcoRuido = 0;
+      let amplitud = 0.5;
+      let norma = 0;
+      for (let o = 0, f = 3; o < 4; o++, f *= 2) {
+        charcoRuido += ruidoPeriodico(u * f, v * f, f, semilla + o * 17) * amplitud;
+        norma += amplitud;
+        amplitud *= 0.5;
+      }
+      charcoRuido /= norma;
+      const charco = suave(0.56, 0.66, charcoRuido);
+      const arido = hash(x, y, semilla + 91);
+      const grano = ruidoPeriodico(u * 96, v * 96, 96, semilla + 5);
+
+      const i = y * lado + x;
+      const tono = (0.085 + (arido - 0.5) * 0.035 + (grano - 0.5) * 0.025) * (1 - 0.3 * charco);
+      albedo[i * 4] = byte(tono);
+      albedo[i * 4 + 1] = byte(tono * 1.02);
+      albedo[i * 4 + 2] = byte(tono * 1.06);
+      albedo[i * 4 + 3] = 255;
+
+      altura[i] = (1 - charco) * ((arido - 0.5) * 0.0012 + (grano - 0.5) * 0.0008);
+      orm[i * 4] = byte(1 - (1 - charco) * (0.5 - arido) * 0.25);
+      // Charco a 0,2 y no a espejo perfecto: con la luz de un farol rasante, un
+      // espejo devuelve un punto; algo de rugosidad estira el brillo en la
+      // estela vertical que tiene una calle mojada de noche.
+      orm[i * 4 + 1] = byte(0.2 + (1 - charco) * (0.42 + arido * 0.12));
+      orm[i * 4 + 2] = 0;
+      orm[i * 4 + 3] = 255;
+    }
+  }
+
+  const texel = 1 / lado;
+  return {
+    albedo: { ancho: lado, alto: lado, datos: albedo },
+    normal: { ancho: lado, alto: lado, datos: normalesDesdeAltura(altura, lado, lado, texel, texel, 1) },
+    orm: { ancho: lado, alto: lado, datos: orm },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // El haz del flexo
 // ---------------------------------------------------------------------------
 

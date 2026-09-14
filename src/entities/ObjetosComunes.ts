@@ -142,6 +142,21 @@ export function materialPintado(
   mat.roughness = 0.85;
   mat.metallic = 0;
   mat.backFaceCulling = false;
+
+  // ILUMINACIÓN A DOS CARAS. Va junto al descarte, no por separado.
+  //
+  // Apagar el descarte hace que la cara trasera se DIBUJE, pero no que se
+  // ilumine bien: Babylon la sigue sombreando con la normal apuntando al
+  // lado contrario, así que la superficie recibe la luz por detrás y se
+  // apaga. Y como el reflejo especular sí depende de dónde esté el ojo, lo
+  // oscuro cambia al moverse: un cartel que se enciende y se apaga según
+  // desde dónde se mire.
+  //
+  // Esto le dice que invierta la normal al dibujar el reverso, que es lo
+  // único que faltaba para que una chapa colgada se ilumine igual por los
+  // dos lados. Alcanza a todo lo pintado del juego —carteles, hojas del
+  // libro, etiquetas, tableros— porque materialPintadoNitido pasa por aquí.
+  mat.twoSidedLighting = true;
   return mat;
 }
 
