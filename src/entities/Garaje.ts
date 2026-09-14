@@ -79,7 +79,8 @@ export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}):
 
   raiz.scaling.setAll(escala);
   raiz.computeWorldMatrix(true);
-  scene.render();
+  // Sin scene.render(): mide con computeWorldMatrix, que es lo que hace falta.
+  // Un render completo aquí revienta si la escena todavía no tiene cámara.
 
   const { minimo, maximo } = medirConjunto(mallas);
 

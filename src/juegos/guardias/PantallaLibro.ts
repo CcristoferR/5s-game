@@ -19,14 +19,15 @@ import {
   crearParrafo,
   crearEspacio,
   crearDivisor,
-  crearBotonPrincipal,
   crearBotonSecundario,
   crearBotonOpcion,
   rotularOpcion,
   neutralizarAnimaciones,
   altoDeTexto,
   desvanecer,
+  afinarGui,
 } from "../../ui/EstiloUI";
+import { reproducir } from "../../core/Sonido";
 import {
   libroVacio,
   abrirServicio,
@@ -60,13 +61,13 @@ import {
 // Pantalla del libro de novedades — Escenario 1 (condominio)
 // ===========================================================================
 //
-// El turno completo pasa por acá: se abre la cabecera, van llegando los tres
-// sucesos, a las 03:20 fiscaliza el supervisor y a las 08:00 se entrega el
+// El turno completo pasa por acá: se abre la cabecera, van llegando las
+// novedades, a las 03:20 fiscaliza el supervisor y a las 08:00 se entrega el
 // servicio. Todo lo que se puntúa es lo que quedó escrito.
 //
 // ─── POR QUÉ NO HAY NINGÚN AVISO AL ELEGIR UNA REDACCIÓN ──────────────────
 //
-// Se elige una de las tres formas de anotar, se escribe, y no pasa NADA. Ni
+// Se elige una de las cuatro formas de anotar, se escribe, y no pasa NADA. Ni
 // verde ni rojo ni explicación. Esa ausencia es el nivel: el manual prohíbe
 // las opiniones y los hechos inventados, pero ningún sistema del mundo puede
 // detectarlos al vuelo — nadie sabe si "actitud sospechosa" es lo que el
@@ -116,6 +117,98 @@ const ANCHO_REGISTRO = ANCHO_CONTENIDO - 18;
 const RAIL = 2;
 /** Aire entre el raíl y el contenido. */
 const SANGRIA = 16;
+
+/** Un color de la paleta con otra opacidad. Acepta "#rrggbb" y "rgb(a)(…)". */
+function conAlfa(color: string, alfa: number): string {
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alfa})`;
+  }
+  const partes = color.match(/rgba?\(([^)]+)\)/)?.[1].split(",").map((p) => p.trim());
+  return partes && partes.length >= 3 ? `rgba(${partes[0]},${partes[1]},${partes[2]},${alfa})` : color;
+}
+
+/**
+ * Botón de los paneles del turno.
+ *
+ * ─── POR QUÉ NO EL PRINCIPAL DEL SISTEMA ──────────────────────────────────
+ *
+ * El botón principal del sistema es un bloque casi blanco, pensado para los
+ * menús que tapan la escena entera. Aquí los paneles se apoyan sobre el libro
+ * en penumbra, y un rectángulo blanco en una sala de noche es lo más luminoso
+ * del cuadro: tira de la vista más que el propio libro y cansa en un turno que
+ * se juega mirando esa zona durante minutos.
+ *
+ * Así que el peso lo lleva el color de acento, a baja opacidad, con su borde:
+ * se reconoce como la acción principal sin encandilar. El secundario va solo
+ * con borde. Leen los colores de PALETA, así que siguen al tema claro.
+ */
+function botonTurno(
+  nombre: string,
+  texto: string,
+  ancho: number,
+  variante: "principal" | "secundario",
+  acento: () => string = () => PALETA.dato
+): Button {
+  const principal = variante === "principal";
+  const boton = Button.CreateSimpleButton(nombre, texto);
+  boton.width = ancho + "px";
+  boton.height = "46px";
+  boton.fontSize = TEXTO.menor;
+  boton.fontWeight = "600";
+  boton.cornerRadius = 12;
+  boton.thickness = 1;
+  boton.hoverCursor = "pointer";
+  neutralizarAnimaciones(boton);
+
+  const reposo = (): void => {
+    boton.background = principal ? conAlfa(acento(), 0.2) : "transparent";
+    boton.color = principal ? conAlfa(acento(), 0.5) : PALETA.borde;
+  };
+  const encima = (): void => {
+    boton.background = principal ? conAlfa(acento(), 0.32) : PALETA.tarjetaSuave;
+    boton.color = principal ? conAlfa(acento(), 0.8) : PALETA.tenue;
+  };
+  reposo();
+
+  if (boton.textBlock) {
+    boton.textBlock.color = principal ? PALETA.titulo : PALETA.cuerpo;
+    boton.textBlock.isHitTestVisible = false;
+  }
+  boton.onPointerEnterObservable.add(encima);
+  boton.onPointerOutObservable.add(reposo);
+  boton.onPointerUpObservable.add(() => reproducir("boton"));
+  return boton;
+}
+
+/**
+ * La acción de una fila que pide algo —responder la radio, anotar una
+ * novedad—, dibujada como pastilla al costado. Antes era una etiqueta en
+ * mayúsculas con una flecha, y no se leía como algo que se pueda apretar.
+ */
+function pastillaAccion(nombre: string, texto: string, color: string): Rectangle {
+  const pastilla = new Rectangle(nombre);
+  pastilla.width = "128px";
+  pastilla.height = "34px";
+  pastilla.cornerRadius = 17;
+  pastilla.thickness = 1;
+  pastilla.color = conAlfa(color, 0.6);
+  pastilla.background = conAlfa(color, 0.18);
+  pastilla.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+  pastilla.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+  pastilla.left = -SANGRIA + "px";
+  pastilla.isHitTestVisible = false;
+
+  const rotulo = new TextBlock(`${nombre}_texto`, texto);
+  rotulo.color = PALETA.titulo;
+  rotulo.fontSize = 14;
+  rotulo.fontWeight = "600";
+  rotulo.isHitTestVisible = false;
+  pastilla.addControl(rotulo);
+  return pastilla;
+}
 
 /**
  * El libro abierto, como algo que dura todo el turno.
@@ -220,6 +313,16 @@ export function mostrarPantallaLibro(
   meson: EnlaceMeson
 ): SesionLibro {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("pantallaLibro", true, scene);
+  // FUERA DEL POST-PROCESO.
+  //
+  // Una capa de Babylon pasa por defecto por la tubería de la cámara, y el
+  // puesto tiene bloom, grano, viñeta y contraste. Mientras esa tubería estuvo
+  // colgada de una cámara destruida no se notaba; en cuanto se enganchó bien,
+  // la interfaz empezó a recibirlo todo: el botón claro florecía, el texto salía
+  // granulado y la tarjeta se lavaba. La interfaz no es parte de la escena y no
+  // tiene por qué verse a través de la cámara.
+  if (gui.layer) gui.layer.applyPostProcess = false;
+  afinarGui(gui);
 
   let estado: EstadoLibro = libroVacio();
   const escritos = new Set<string>();
@@ -407,10 +510,10 @@ export function mostrarPantallaLibro(
   function botonMinimo(nombre: string, texto: string, color: string): Button {
     const boton = Button.CreateSimpleButton(nombre, texto);
     boton.width = COL_ACCIONES + "px";
-    boton.height = "24px";
+    boton.height = "26px";
     boton.fontSize = 12;
     boton.fontWeight = "600";
-    boton.cornerRadius = 6;
+    boton.cornerRadius = 13;
     boton.thickness = 1;
     boton.color = PALETA.borde;
     boton.background = "transparent";
@@ -420,8 +523,14 @@ export function mostrarPantallaLibro(
       boton.textBlock.color = color;
       boton.textBlock.isHitTestVisible = false;
     }
-    boton.onPointerEnterObservable.add(() => (boton.color = PALETA.tenue));
-    boton.onPointerOutObservable.add(() => (boton.color = PALETA.borde));
+    boton.onPointerEnterObservable.add(() => {
+      boton.color = conAlfa(color, 0.6);
+      boton.background = conAlfa(color, 0.12);
+    });
+    boton.onPointerOutObservable.add(() => {
+      boton.color = PALETA.borde;
+      boton.background = "transparent";
+    });
     return boton;
   }
 
@@ -469,6 +578,12 @@ export function mostrarPantallaLibro(
       velo.background = "transparent";
     }
     const tarjeta = crearTarjeta(velo, `tarjeta${nombre}`, ANCHO_TARJETA, alto);
+    // Esquinas más abiertas y una sombra suave: la tarjeta se separa de la
+    // escena por profundidad, no por brillo.
+    tarjeta.cornerRadius = 18;
+    tarjeta.shadowColor = "rgba(0,0,0,0.45)";
+    tarjeta.shadowBlur = 28;
+    tarjeta.shadowOffsetY = 10;
     if (apoyada) {
       tarjeta.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
       tarjeta.top = "-26px";
@@ -477,7 +592,10 @@ export function mostrarPantallaLibro(
       // flotando delante.
       tarjeta.alpha = 0.96;
     }
-    crearFilete(tarjeta, `filete${nombre}`, ANCHO_TARJETA, colorFilete);
+    // El filete de color, más corto que la tarjeta: a todo lo ancho asomaba
+    // en ángulo recto por encima de las esquinas redondeadas.
+    const filete = crearFilete(tarjeta, `filete${nombre}`, ANCHO_TARJETA - 72, colorFilete);
+    filete.cornerRadius = 2;
 
     const columna = new StackPanel(`columna${nombre}`);
     columna.isVertical = true;
@@ -528,7 +646,7 @@ export function mostrarPantallaLibro(
   }
 
   function botonAbajo(tarjeta: Rectangle, nombre: string, texto: string, ancho: number): Button {
-    const boton = crearBotonPrincipal(nombre, texto, ancho);
+    const boton = botonTurno(nombre, texto, ancho, "principal");
     boton.left = -MARGEN + "px";
     boton.top = "-24px";
     boton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -726,25 +844,33 @@ export function mostrarPantallaLibro(
     // El reloj, a la derecha y en monoespaciado: es un dato de instrumento, no
     // prosa. Se guarda la referencia porque tiene que latir cada minuto sin
     // rehacer la pantalla entera.
+    // Dentro de una pastilla: se lee como un instrumento y no como un título
+    // más de la cabecera.
+    const pastillaReloj = new Rectangle("pastillaRelojLibro");
+    pastillaReloj.width = "150px";
+    pastillaReloj.height = "46px";
+    pastillaReloj.cornerRadius = 12;
+    pastillaReloj.thickness = 1;
+    pastillaReloj.color = conAlfa(PALETA.dato, 0.35);
+    pastillaReloj.background = conAlfa(PALETA.dato, 0.12);
+    pastillaReloj.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    pastillaReloj.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    pastillaReloj.isHitTestVisible = false;
+    cabecera.addControl(pastillaReloj);
+
     relojEnPantalla = new TextBlock("relojLibro", horaDe(reloj.minuto()));
-    relojEnPantalla.width = "180px";
-    relojEnPantalla.height = "34px";
     relojEnPantalla.color = PALETA.titulo;
-    relojEnPantalla.fontSize = 30;
+    relojEnPantalla.fontSize = 26;
     relojEnPantalla.fontWeight = "700";
     relojEnPantalla.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    relojEnPantalla.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    relojEnPantalla.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    relojEnPantalla.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    relojEnPantalla.top = "6px";
     relojEnPantalla.isHitTestVisible = false;
-    cabecera.addControl(relojEnPantalla);
+    pastillaReloj.addControl(relojEnPantalla);
 
     const pieTurno = etiqueta("pieTurnoLibro", `TURNO ${APERTURA.turno}`, PALETA.tenue, 220);
     pieTurno.fontSize = 11;
     pieTurno.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     pieTurno.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    pieTurno.top = "42px";
+    pieTurno.top = "56px";
     cabecera.addControl(pieTurno);
 
     // Filete de un píxel en vez de divisor: separa sin dibujar una raya.
@@ -803,9 +929,11 @@ export function mostrarPantallaLibro(
     // central, no.
     if (llamadaEnEspera) {
       const enEspera = llamadaEnEspera;
-      const marco = registro("filaRadio", 66, PALETA.dato, "rgba(110, 150, 190, 0.14)");
+      const marco = registro("filaRadio", 70, PALETA.dato, conAlfa(PALETA.dato, 0.14));
       marco.isPointerBlocker = true;
       marco.hoverCursor = "pointer";
+      marco.onPointerEnterObservable.add(() => (marco.background = conAlfa(PALETA.dato, 0.22)));
+      marco.onPointerOutObservable.add(() => (marco.background = conAlfa(PALETA.dato, 0.14)));
 
       const tituloRadio = etiqueta(
         "radioTitulo",
@@ -829,12 +957,7 @@ export function mostrarPantallaLibro(
       pieRadio.top = "37px";
       marco.addControl(pieRadio);
 
-      const flechaRadio = etiqueta("radioFlecha", "RESPONDER  ›", PALETA.dato, 130);
-      flechaRadio.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-      flechaRadio.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-      flechaRadio.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-      flechaRadio.left = -SANGRIA + "px";
-      marco.addControl(flechaRadio);
+      marco.addControl(pastillaAccion("radioAccion", "Responder  ›", PALETA.dato));
 
       marco.onPointerUpObservable.add(() => mostrarLlamadaRadio(enEspera));
       lista.addControl(marco);
@@ -866,24 +989,36 @@ export function mostrarPantallaLibro(
     // Adelantar. Ya no hace avanzar el turno —eso lo hace el reloj, corra el
     // jugador o no—: solo acelera las horas muertas. Se apaga solo en cuanto
     // ocurre algo, así que no hay forma de saltarse una novedad con él.
-    const btnAvanzar = botonAbajo(
-      tarjeta,
+    // Mientras adelanta, el botón pasa al ámbar de aviso: se ve de reojo que el
+    // turno va rápido, sin tener que leer la etiqueta.
+    const acentoAvance = (): string => (reloj.estaAdelantando() ? PALETA.aviso : PALETA.dato);
+    const btnAvanzar = botonTurno(
       "btnAdelantar",
-      reloj.estaAdelantando() ? "Adelantando…" : "Adelantar el turno",
-      260
+      reloj.estaAdelantando() ? "Adelantando…  »" : "Adelantar el turno  »",
+      260,
+      "principal",
+      acentoAvance
     );
+    btnAvanzar.left = -MARGEN + "px";
+    btnAvanzar.top = "-24px";
+    btnAvanzar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    btnAvanzar.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    tarjeta.addControl(btnAvanzar);
     btnAvanzar.onPointerUpObservable.add(() => {
       reloj.adelantar(!reloj.estaAdelantando());
       if (btnAvanzar.textBlock) {
         btnAvanzar.textBlock.text = reloj.estaAdelantando()
-          ? "Adelantando…"
-          : "Adelantar el turno";
+          ? "Adelantando…  »"
+          : "Adelantar el turno  »";
       }
+      // El puntero sigue encima al soltar: se repinta en ese estado.
+      btnAvanzar.background = conAlfa(acentoAvance(), 0.32);
+      btnAvanzar.color = conAlfa(acentoAvance(), 0.8);
     });
 
     // Salir al puesto. Es la pieza que hace utilizable el monitor: sin esto
     // el libro tapa la escena de punta a punta y las cámaras no las ve nadie.
-    const btnPuesto = crearBotonSecundario("btnVolverPuesto", "Volver al puesto", 200);
+    const btnPuesto = botonTurno("btnVolverPuesto", "Volver al puesto", 200, "secundario");
     btnPuesto.left = MARGEN + "px";
     btnPuesto.top = "-24px";
     btnPuesto.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1028,13 +1163,17 @@ export function mostrarPantallaLibro(
     marco.width = ANCHO_REGISTRO + "px";
     marco.height = alto + "px";
     marco.thickness = 0;
-    marco.cornerRadius = 8;
+    marco.cornerRadius = 12;
     marco.background = fondo;
     marco.paddingBottom = "8px";
 
+    // El raíl, como una píldora separada del borde: pegado al canto de una
+    // tarjeta redondeada asomaba recto por las esquinas.
     const rail = new Rectangle(`${nombre}_rail`);
-    rail.width = RAIL + "px";
-    rail.height = "100%";
+    rail.width = RAIL + 1 + "px";
+    rail.height = "62%";
+    rail.cornerRadius = 2;
+    rail.left = "6px";
     rail.thickness = 0;
     rail.background = colorRail;
     rail.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1171,8 +1310,8 @@ export function mostrarPantallaLibro(
    * es el botón — un objetivo de sesenta píxeles de alto, no una línea de texto.
    */
   function filaPendiente(suceso: SucesoTurno): Rectangle {
-    const REPOSO = "rgba(189, 160, 121, 0.10)";
-    const ENCIMA = "rgba(189, 160, 121, 0.18)";
+    const REPOSO = conAlfa(PALETA.aviso, 0.1);
+    const ENCIMA = conAlfa(PALETA.aviso, 0.18);
 
     const marco = registro(`pendiente_${suceso.id}`, 66, PALETA.aviso, REPOSO);
     marco.isPointerBlocker = true;
@@ -1201,12 +1340,7 @@ export function mostrarPantallaLibro(
     pie.top = "37px";
     marco.addControl(pie);
 
-    const flecha = etiqueta(`pendienteFlecha_${suceso.id}`, "ANOTAR  ›", PALETA.aviso, 120);
-    flecha.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    flecha.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    flecha.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    flecha.left = -SANGRIA + "px";
-    marco.addControl(flecha);
+    marco.addControl(pastillaAccion(`pendienteAccion_${suceso.id}`, "Anotar  ›", PALETA.aviso));
 
     marco.onPointerEnterObservable.add(() => (marco.background = ENCIMA));
     marco.onPointerOutObservable.add(() => (marco.background = REPOSO));
@@ -1215,7 +1349,7 @@ export function mostrarPantallaLibro(
     return marco;
   }
 
-  // ─── Un suceso: tres formas de anotarlo, cero comentarios ───────────────
+  // ─── Un suceso: cuatro formas de anotarlo, cero comentarios ─────────────
   function mostrarSuceso(suceso: SucesoTurno): void {
     verPantalla("otra");
     // El alto sale del texto real, con la MISMA cuenta que usa crearBotonOpcion
@@ -1229,8 +1363,24 @@ export function mostrarPantallaLibro(
       0
     );
     const separaciones = (suceso.opciones.length - 1) * 10;
-    const alto = 118 + altoAviso + altoOpciones + separaciones;
-    const { velo, columna } = armarCapa("Suceso", alto, PALETA.dato);
+    // Margen, rótulo, aire, aviso, aire, divisor y aire: lo que va antes de
+    // la primera opción.
+    const altoCabecera = 28 + 18 + 10 + altoAviso + 18 + 1 + 16;
+    const PIE = 27;
+    const altoNecesario = altoCabecera + altoOpciones + separaciones + PIE;
+
+    // CON CUATRO REDACCIONES NO SIEMPRE CABE.
+    //
+    // Con tres, la tarjeta más larga del turno rondaba los 600 px. La cuarta
+    // —la incompleta— la lleva por encima de 800 en los sucesos de texto largo,
+    // y en un portátil eso se sale por abajo: la última opción queda fuera de
+    // la pantalla y no hay forma de elegirla. Si no cabe, la tarjeta se topa al
+    // alto disponible y las opciones van en un visor; el aviso queda fijo
+    // arriba, que es lo que hay que tener a la vista mientras se decide.
+    const altoDisponible = Math.max(420, gui.getSize().height - 48);
+    const cabe = altoNecesario <= altoDisponible;
+    const alto = cabe ? altoNecesario : altoDisponible;
+    const { velo, tarjeta, columna } = armarCapa("Suceso", alto, PALETA.dato);
 
     columna.addControl(
       crearRotulo("rotuloSuceso", `${horaDe(suceso.minuto)} · ${suceso.actividad}`)
@@ -1250,6 +1400,10 @@ export function mostrarPantallaLibro(
     columna.addControl(crearDivisor("divisorSuceso", ANCHO_CONTENIDO));
     columna.addControl(crearEspacio("airePostDivisorSuceso", 16));
 
+    const opciones = cabe
+      ? columna
+      : listaDesplazable(tarjeta, "OpcionesSuceso", altoCabecera, alto - altoCabecera - PIE);
+
     let yaElegida = false;
     suceso.opciones.forEach((opcion, i) => {
       const boton = crearBotonOpcion(`btnOpcionSuceso_${i}`, opcion.texto, ANCHO_CONTENIDO);
@@ -1264,9 +1418,9 @@ export function mostrarPantallaLibro(
         monitor.alQuedarEscrita(suceso);
         mostrarLibro();
       });
-      columna.addControl(boton);
+      opciones.addControl(boton);
       if (i < suceso.opciones.length - 1) {
-        columna.addControl(crearEspacio(`aireOpcionSuceso_${i}`, 10));
+        opciones.addControl(crearEspacio(`aireOpcionSuceso_${i}`, 10));
       }
     });
 

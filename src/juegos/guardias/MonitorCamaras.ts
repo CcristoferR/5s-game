@@ -112,6 +112,8 @@ interface TomaActiva {
   desde: number;
   /** Minuto del turno en que ocurrió. Rotula la toma cuando hay más de una. */
   minuto: number;
+  /** Marca propia de la toma, como la del detector de movimiento. */
+  rotulo?: string;
 }
 
 /**
@@ -245,7 +247,7 @@ export interface MonitorCamaras {
    * y la salida comparten la CAM 01: si la salida llegara con el ingreso aún
    * sin anotar, apagar "la cámara 1" apagaría la toma equivocada.
    */
-  encender(id: string, indice: number, escena: EscenaCamara, minuto: number): void;
+  encender(id: string, indice: number, escena: EscenaCamara, minuto: number, rotulo?: string): void;
   /** Apaga la toma de ese suceso. Se llama cuando la novedad queda escrita. */
   apagar(id: string): void;
   /**
@@ -465,6 +467,18 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     ctx.textAlign = "left";
     ctx.fillText(ROTULOS[indice], 12, 21);
 
+    // La marca del detector de movimiento, si la toma trae una. Es el dato que
+    // permite anotar "desde las 01:50" sin calcularlo a ojo: lo estampa la
+    // cámara, igual que la hora.
+    if (toma?.rotulo) {
+      ctx.fillStyle = "rgba(0,0,0,0.42)";
+      ctx.fillRect(0, 30, QW * 0.58, 20);
+      ctx.fillStyle = color;
+      ctx.font = "bold 12px monospace";
+      ctx.fillText(toma.rotulo, 12, 45);
+      ctx.font = "bold 15px monospace";
+    }
+
     ctx.textAlign = "right";
     ctx.fillText(marcaDeHora(), QW - 12, QH - 8);
 
@@ -506,10 +520,10 @@ export function crearMonitorCamaras(scene: Scene): MonitorCamaras {
     ajustarHora(minuto) {
       minutoBase = minuto;
     },
-    encender(id, indice, escena, minuto) {
+    encender(id, indice, escena, minuto, rotulo) {
       minutoBase = minuto;
       segundosEnBase = 0;
-      activas.set(id, { indice, escena, desde: segundos, minuto });
+      activas.set(id, { indice, escena, desde: segundos, minuto, rotulo });
       // Sin esto el cuadrante tarda hasta un quinto de segundo en encenderse.
       // Se nota cuando el suceso llega con el monitor a la vista.
       repintar();

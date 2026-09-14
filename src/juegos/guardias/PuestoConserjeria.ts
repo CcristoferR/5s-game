@@ -22,20 +22,33 @@ import {
   ActionManager,
   ExecuteCodeAction,
   PointerEventTypes,
+  Quaternion,
   type IWheelEvent,
 } from "@babylonjs/core";
 import { mostrarPantallaLibro, type SesionLibro } from "./PantallaLibro";
 import { crearFigura, UNIFORME_SUPERVISOR, ROPA_RESIDENTE } from "./Figura";
 import { crearMonitorCamaras, type MonitorCamaras } from "./MonitorCamaras";
 import { crearPaginasLibro, type PaginasLibro } from "./PaginasLibro";
+import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
 import { CAMARAS_POR_SUCESO } from "./SucesosCondominio";
 import { materialPintado, materialPintadoNitido } from "../../entities/ObjetosComunes";
 import { texturaGrano, texturaMetalCepillado } from "../../entities/TexturasSuperficie";
 import {
-  superficieMadera,
   superficieCaucho,
   relievePapel,
 } from "./TexturasPuesto";
+import {
+  generarMadera,
+  generarCuero,
+  generarCantoHojas,
+  generarHazFlexo,
+  generarDegradadoReflector,
+  subirMapa,
+  proyectarUVCaja,
+  proyectarUVCanto,
+} from "./TexturasPBR";
+import { crearAtmosferaTurno, type AtmosferaTurno, type PiezasExterior } from "./AtmosferaTurno";
+import { reproducir } from "../../core/Sonido";
 
 // ===========================================================================
 // Puesto de conserjería — escenario del Escenario 1
@@ -202,6 +215,10 @@ export interface PuestoResult {
   radio: Mesh;
   /** Enciende o apaga el parpadeo del piloto de la radio. */
   avisarRadio: (encendido: boolean) => void;
+  /** El flexo, que se enciende y se apaga con un clic sobre él. */
+  flexo: Flexo;
+  /** El cielo y la calle del ventanal, que siguen la hora del turno. */
+  atmosfera: AtmosferaTurno;
 }
 
 export function crearPuestoConserjeria(
@@ -211,6 +228,7 @@ export function crearPuestoConserjeria(
 ): PuestoResult {
   configurarEscenaNocturna(scene);
   const { camara, vista } = montarCamara(scene);
+  montarPostProceso(scene, camara);
 
   const monitor = crearMonitorCamaras(scene);
   // Las hojas del libro, que ahora muestran lo escrito de verdad.
@@ -243,6 +261,7 @@ export function crearPuestoConserjeria(
   // tiene que entrar. Para cuando alguien haga clic en el libro ya está.
   let supervisor: Supervisor | null = null;
   let residentes: Residentes | null = null;
+  let atmosfera: AtmosferaTurno | null = null;
 
   // El clic va sobre la tapa Y sobre cada hoja, así que hay tres mallas que
   // pueden abrir el libro. Este cerrojo evita que dos avisos seguidos monten
@@ -266,7 +285,7 @@ export function crearPuestoConserjeria(
         // vacío sin tocar una línea del libro.
         alOcurrir(suceso) {
           const toma = CAMARAS_POR_SUCESO[suceso.id];
-          if (toma) monitor.encender(suceso.id, toma.indice, toma.escena, suceso.minuto);
+          if (toma) monitor.encender(suceso.id, toma.indice, toma.escena, suceso.minuto, toma.rotulo);
         },
         alQuedarEscrita(suceso) {
           monitor.apagar(suceso.id);
@@ -295,6 +314,8 @@ export function crearPuestoConserjeria(
         },
         alAvanzarMinuto(minuto) {
           residentes?.enMinuto(minuto);
+          // Y el cielo del ventanal: la noche pasa a la misma hora que el libro.
+          atmosfera?.enMinuto(minuto);
           // Las cámaras marcan la hora del turno, no una suya. Es el único
           // reloj que el jugador tiene a la vista estando en el puesto.
           monitor.ajustarHora(minuto);
@@ -320,7 +341,7 @@ export function crearPuestoConserjeria(
   construirTablaDeClaves(scene);
   construirDotacionDelPuesto(scene);
   construirSala(scene);
-  construirHallYVentanal(scene);
+  const exterior = construirHallYVentanal(scene);
   const puerta = construirPuertaHall(scene);
   // Antes de las sombras y de los reflejos, para que la figura entre en las dos
   // listas: proyecta sombra sobre el piso y se refleja en él como todo lo demás.
@@ -330,7 +351,15 @@ export function crearPuestoConserjeria(
   construirLuminarias(scene);
   const flexo = construirFlexo(scene);
 
-  montarSombras(scene, flexo);
+  // La calle y el cielo, que siguen la hora. Van antes de las sombras y los
+  // reflejos: sus planos se reconocen por el nombre para quedar fuera de los dos.
+  const cielo = crearAtmosferaTurno(scene, {
+    ...exterior,
+    relleno: scene.getLightByName("luzRellenoNoche") as HemisphericLight | null,
+  });
+  atmosfera = cielo;
+
+  montarSombras(scene, flexo.luz);
 
   // Los reflejos van los ÚLTIMOS: la sonda fotografía la sala y el espejo
   // guarda la lista de lo que refleja, así que todo tiene que existir ya.
@@ -340,7 +369,7 @@ export function crearPuestoConserjeria(
   // La cámara se engancha al final, cuando ya no se va a mover nada más.
   camara.attachControl(true);
 
-  return { meson, pantalla, radio, avisarRadio };
+  return { meson, pantalla, radio, avisarRadio, flexo, atmosfera: cielo };
 }
 
 /**
@@ -416,6 +445,9 @@ function montarSombras(scene: Scene, flexo: SpotLight): void {
     // La pantalla y el cristal no proyectan: son planos sin grosor y su sombra
     // saldría como una lámina negra flotando.
     if (nombre.includes("pantalla") || nombre.includes("cristal") || nombre.includes("calle")) return;
+    // El propio flexo tampoco: la luz sale de dentro de su pantalla, y la
+    // cabeza taparía el foco entero en su propio mapa de sombras.
+    if (nombre.includes("Flexo")) return;
     sombras.addShadowCaster(malla);
   });
 }
@@ -463,9 +495,18 @@ function retirarPostProceso(scene: Scene): void {
 }
 
 function configurarEscenaNocturna(scene: Scene): void {
-  // Fuera el amanecer del galpón.
-  scene.lights.slice().forEach((luz) => luz.dispose());
-  scene.cameras.slice().forEach((camara) => camara.dispose());
+  // Fuera todo lo del escenario anterior.
+  //
+  // Antes aquí solo se soltaban luces y cámaras, y con eso bastaba mientras
+  // el condominio fue el único escenario: se entraba desde el galpón del 5S,
+  // que trae poco más que eso. Con tres escenarios compartiendo una sola
+  // escena ya no vale — volver al condominio después del supermercado
+  // dejaba dentro las góndolas.
+  //
+  // Se centraliza en limpiarEscena para que los tres hagan lo mismo: que
+  // cada uno limpie a su manera es cómo se acaba teniendo un escenario que
+  // quita las mallas pero no las tuberías, y otro que no quita nada.
+  limpiarEscena(scene);
   scene.fogMode = Scene.FOGMODE_NONE;
 
   // Azul muy oscuro, no negro. Solo se ve por el ventanal, pero es el color
@@ -494,7 +535,26 @@ function configurarEscenaNocturna(scene: Scene): void {
   relleno.intensity = 0.26;
   relleno.diffuse = new Color3(0.56, 0.56, 0.62);
   relleno.groundColor = new Color3(0.1, 0.11, 0.16);
+}
 
+/**
+ * Tone mapping, bloom, grano, viñeta, FXAA y oclusión ambiental.
+ *
+ * ─── POR QUÉ VA APARTE Y DESPUÉS DE LA CÁMARA ─────────────────────────────
+ *
+ * Estaba dentro de configurarEscenaNocturna y se enganchaba a la cámara
+ * activa de ese momento — que es la NEUTRA que deja limpiarEscena. Dos líneas
+ * más abajo montarCamara activa la del puesto y usarCamara retira la neutra.
+ * Resultado: las dos tuberías quedaban colgadas de una cámara destruida y el
+ * turno entero se dibujaba SIN post-proceso. Sin mapeo de tonos, sin bloom,
+ * sin oclusión: todo lo que se había calibrado aquí no llegaba a pantalla, y
+ * es buena parte de por qué la escena se veía plana.
+ *
+ * Se comprobó leyendo las tuberías en ejecución: "postProcesoPuesto" y
+ * "oclusionPuesto" apuntaban a [camaraNeutra]. Ahora se montan con la cámara
+ * del puesto ya creada.
+ */
+function montarPostProceso(scene: Scene, camara: FreeCamera): void {
   // Postproceso.
   //
   // El grano y la viñeta siguen valiendo —es de noche— pero bajan los dos. Con
@@ -511,7 +571,9 @@ function configurarEscenaNocturna(scene: Scene): void {
   // retirar antes de montar las nuevas.
   retirarPostProceso(scene);
 
-  const tuberia = new DefaultRenderingPipeline("postProcesoPuesto", true, scene, scene.cameras);
+  // Se engancha a la cámara del puesto, recibida ya creada. Ver la nota de la
+  // función: engancharlo a la activa del momento lo dejaba en la neutra.
+  const tuberia = new DefaultRenderingPipeline("postProcesoPuesto", true, scene, [camara]);
   // MSAA de la tarjeta. Se deja puesto, pero NO basta acá: ver justo abajo.
   tuberia.samples = 4;
 
@@ -622,10 +684,7 @@ function configurarEscenaNocturna(scene: Scene): void {
   oclusion.maxZ = 6;
   oclusion.samples = 16;
   oclusion.expensiveBlur = true;
-  scene.postProcessRenderPipelineManager.attachCamerasToRenderPipeline(
-    "oclusionPuesto",
-    scene.cameras
-  );
+  scene.postProcessRenderPipelineManager.attachCamerasToRenderPipeline("oclusionPuesto", [camara]);
 }
 
 /**
@@ -649,6 +708,10 @@ function configurarEscenaNocturna(scene: Scene): void {
  */
 function montarCamara(scene: Scene): { camara: FreeCamera; vista: VistaPuesto } {
   const camara = new FreeCamera("camaraPuesto", POSE_SILLA.clone(), scene);
+  // Se activa a mano y se retira la neutra que dejó la limpieza. Antes esto no
+  // hacía falta porque era la primera cámara de la escena y Babylon la activaba
+  // sola; ya no lo es.
+  usarCamara(scene, camara);
   camara.setTarget(MIRA_SILLA.clone());
 
   camara.minZ = 0.05;
@@ -1786,47 +1849,104 @@ function alumbrarPared(scene: Scene): void {
 // ---------------------------------------------------------------------------
 
 function construirMeson(scene: Scene): Mesh {
-  const madera = superficieMadera(scene, "texMaderaMeson");
+  const LARGO = 2.6;
+  const FONDO = 0.86;
+  const GRUESO = 0.06;
+
+  // ─── MADERA MACIZA BARNIZADA, CON TODOS SUS MAPAS ───────────────────────
+  //
+  // Era una foto de veta con un relieve sacado de su propio brillo y UNA sola
+  // rugosidad para toda la tabla. Bajo el flexo brillaba igual el poro que la
+  // veta, y así brilla un plástico. Encima el color era casi negro: la luz
+  // llegaba y no tenía nada que devolver.
+  //
+  // Ahora es un tablero de cuatro tablas con su veta de catedral, su poro, su
+  // oclusión y, sobre todo, SU BARNIZ: una capa aparte que devuelve el reflejo
+  // nítido del flexo y de las luminarias mientras la madera de debajo reparte
+  // la luz según su veta. Ver TexturasPBR.
+  //
+  // La zona gastada va donde se apoyan los antebrazos al escribir, delante del
+  // libro. El cerco de la taza, a la derecha y bajo el flexo: donde se deja la
+  // taza para no mojar el libro.
+  const mapas = generarMadera({
+    ancho: 1024,
+    alto: 2048,
+    fondoM: FONDO,
+    largoM: LARGO,
+    tablas: 4,
+    semilla: 1987,
+    desgaste: { u: 0.16, v: 0.45, radioU: 0.17, radioV: 0.14 },
+    taza: { um: 0.13, vm: 1.66, radioM: 0.037 },
+  });
+  const color = subirMapa(scene, "texMesonColor", mapas.albedo, true);
+  const normal = subirMapa(scene, "texMesonNormal", mapas.normal, false);
+  const orm = subirMapa(scene, "texMesonORM", mapas.orm, false);
+  const barniz = subirMapa(scene, "texMesonBarniz", mapas.barniz, false);
+  const normalBarniz = subirMapa(scene, "texMesonNormalBarniz", mapas.normalBarniz, false);
 
   const matTapa = new PBRMaterial("matTapaMeson", scene);
-  matTapa.albedoTexture = madera.color;
-  // El relieve es lo que hace que la veta atrape la luz del flexo por un lado
-  // y se ensombrezca por el otro. Sin él la madera es una foto sobre plástico.
-  matTapa.bumpTexture = madera.relieve;
-  matTapa.roughness = 0.38;
-  matTapa.metallic = 0.04;
-  // Reflejo bajo pero presente: una tapa mate no devuelve nada del monitor y
-  // se ve como cartón. Con algo de brillo aparece el resplandor de la pantalla
-  // sobre la madera, que es lo que hace creíble un puesto de noche.
-  matTapa.reflectivityColor = new Color3(0.24, 0.24, 0.26);
+  matTapa.albedoTexture = color;
+  matTapa.bumpTexture = normal;
+  matTapa.metallicTexture = orm;
+  matTapa.useAmbientOcclusionFromMetallicTextureRed = true;
+  matTapa.useRoughnessFromMetallicTextureGreen = true;
+  matTapa.useMetallnessFromMetallicTextureBlue = true;
+  // Con mapa, estos dos pasan a ser multiplicadores: el valor sale de la textura.
+  matTapa.metallic = 1;
+  matTapa.roughness = 1;
+  matTapa.clearCoat.isEnabled = true;
+  matTapa.clearCoat.intensity = 1;
+  matTapa.clearCoat.roughness = 1;
+  matTapa.clearCoat.texture = barniz;
+  matTapa.clearCoat.useRoughnessFromMainTexture = true;
+  matTapa.clearCoat.bumpTexture = normalBarniz;
+  matTapa.clearCoat.indexOfRefraction = 1.5;
+  // Más entorno que el resto de la sala: un barniz tiene que devolverla.
+  matTapa.environmentIntensity = 1.5;
 
-  const tapa = MeshBuilder.CreateBox("tapaMeson", { width: 2.6, height: 0.06, depth: 0.86 }, scene);
-  tapa.position.set(0, ALTO_MESON - 0.03, 0.3);
+  const tapa = MeshBuilder.CreateBox("tapaMeson", { width: LARGO, height: GRUESO, depth: FONDO }, scene);
+  // Veta a lo largo en la tapa y en los cantos, sin aplastarse. Ver la función.
+  proyectarUVCaja(tapa, { u: FONDO, v: LARGO });
+  tapa.position.set(0, ALTO_MESON - GRUESO / 2, 0.3);
   tapa.material = matTapa;
   tapa.receiveShadows = true;
 
   // Canto redondeado, hacia el jugador. Es el borde que queda a un palmo de la
   // cámara: si se deja en arista viva, es lo primero que delata que es una caja.
+  // La veta sigue desde la tapa y dobla por el canto sin corte.
   const canto = MeshBuilder.CreateCylinder(
     "cantoMeson",
-    { diameter: 0.06, height: 2.6, tessellation: 20 },
+    { diameter: GRUESO, height: LARGO, tessellation: 32 },
     scene
   );
+  proyectarUVCanto(canto, LARGO, { u: FONDO, v: LARGO });
   canto.rotation.z = Math.PI / 2;
-  canto.position.set(0, ALTO_MESON - 0.03, 0.3 - 0.43);
+  canto.position.set(0, ALTO_MESON - GRUESO / 2, 0.3 - FONDO / 2);
   canto.material = matTapa;
 
+  // El frente es el mismo árbol, teñido más oscuro y con un barniz satinado:
+  // en un mueble de recepción la cara vertical nunca va igual que la cubierta.
   const matFrente = new PBRMaterial("matFrenteMeson", scene);
-  matFrente.albedoColor = new Color3(0.13, 0.1, 0.085);
-  matFrente.roughness = 0.7;
-  matFrente.metallic = 0;
+  matFrente.albedoTexture = color;
+  matFrente.albedoColor = new Color3(0.42, 0.36, 0.33);
+  matFrente.bumpTexture = normal;
+  matFrente.metallicTexture = orm;
+  matFrente.useAmbientOcclusionFromMetallicTextureRed = true;
+  matFrente.useRoughnessFromMetallicTextureGreen = true;
+  matFrente.useMetallnessFromMetallicTextureBlue = true;
+  matFrente.metallic = 1;
+  matFrente.roughness = 1;
+  matFrente.clearCoat.isEnabled = true;
+  matFrente.clearCoat.intensity = 0.55;
+  matFrente.clearCoat.roughness = 0.3;
 
   const frente = MeshBuilder.CreateBox(
     "frenteMeson",
-    { width: 2.6, height: ALTO_MESON - 0.06, depth: 0.05 },
+    { width: LARGO, height: ALTO_MESON - GRUESO, depth: 0.05 },
     scene
   );
-  frente.position.set(0, (ALTO_MESON - 0.06) / 2, 0.3 - 0.43);
+  proyectarUVCaja(frente, { u: FONDO, v: LARGO }, { u: 0.35, v: 0 });
+  frente.position.set(0, (ALTO_MESON - GRUESO) / 2, 0.3 - FONDO / 2);
   frente.material = matFrente;
   frente.receiveShadows = true;
 
@@ -2112,13 +2232,40 @@ function construirLibro(scene: Scene, paginas: PaginasLibro, onAbrir: () => void
   const Z = 0.06;
   const GIRO = 0.06;
 
+  // ─── TAPAS DE CUERINA GRANULADA ──────────────────────────────────────────
+  //
+  // Eran un color café liso con ruido en el brillo. Un libro de novedades es
+  // un libro de actas de tapa dura forrada en cuerina: grano en relieve,
+  // cúpulas pulidas por la mano, surcos mates y los cantos gastados hasta
+  // clarear. Bajo el flexo es eso lo que atrapa la luz — y el brillo
+  // aterciopelado de canto (sheen) es lo que la separa de un plástico.
+  const cuero = generarCuero({ ancho: 1024, alto: 1024, fondoM: 0.4, largoM: 0.62, semilla: 77 });
   const matTapa = new PBRMaterial("matTapaLibro", scene);
-  matTapa.albedoColor = new Color3(0.11, 0.075, 0.06);
-  matTapa.roughness = 0.78;
-  matTapa.metallic = 0;
-  matTapa.microSurfaceTexture = texturaGrano(scene, 0.22);
+  matTapa.albedoTexture = subirMapa(scene, "texCueroLibroColor", cuero.albedo, true);
+  matTapa.bumpTexture = subirMapa(scene, "texCueroLibroNormal", cuero.normal, false);
+  matTapa.metallicTexture = subirMapa(scene, "texCueroLibroORM", cuero.orm, false);
+  matTapa.useAmbientOcclusionFromMetallicTextureRed = true;
+  matTapa.useRoughnessFromMetallicTextureGreen = true;
+  matTapa.useMetallnessFromMetallicTextureBlue = true;
+  matTapa.metallic = 1;
+  matTapa.roughness = 1;
+  matTapa.sheen.isEnabled = true;
+  matTapa.sheen.intensity = 0.35;
+  matTapa.sheen.color = new Color3(0.85, 0.62, 0.55);
+  matTapa.sheen.roughness = 0.5;
+  matTapa.environmentIntensity = 1.2;
+
+  // El canto del taco de hojas: sin él, el borde de las páginas mostraba el
+  // rayado del libro aplastado en ocho milímetros.
+  const canto = generarCantoHojas(1024, 48, 5);
+  const matCanto = new PBRMaterial("matCantoHojas", scene);
+  matCanto.albedoTexture = subirMapa(scene, "texCantoHojasColor", canto.albedo, true, Texture.CLAMP_ADDRESSMODE);
+  matCanto.bumpTexture = subirMapa(scene, "texCantoHojasNormal", canto.normal, false, Texture.CLAMP_ADDRESSMODE);
+  matCanto.roughness = 0.86;
+  matCanto.metallic = 0;
 
   const tapa = MeshBuilder.CreateBox("tapaLibro", { width: 0.62, height: 0.014, depth: 0.4 }, scene);
+  proyectarUVCaja(tapa, { u: 0.4, v: 0.62 });
   tapa.position.set(X, ALTO_MESON + 0.007, Z);
   tapa.rotation.y = GIRO;
   tapa.material = matTapa;
@@ -2153,11 +2300,30 @@ function construirLibro(scene: Scene, paginas: PaginasLibro, onAbrir: () => void
     // necesitan su propio receptor o el clic sobre ellas no llegaría a nada.
     pagina.actionManager = new ActionManager(scene);
     pagina.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, onAbrir));
+
+    // Tres cantos visibles por página: el de delante, el del fondo y el
+    // exterior. El del lomo lo tapa el lomo. Van hijos de la página, así giran
+    // con ella, y sin picking: el clic tiene que llegar a la página de detrás.
+    const cantos: [string, number, number, number, number][] = [
+      ["frente", 0.29, 0, -0.1878, 0],
+      ["fondo", 0.29, 0, 0.1878, Math.PI],
+      ["exterior", 0.375, lado * 0.1453, 0, lado > 0 ? -Math.PI / 2 : Math.PI / 2],
+    ];
+    cantos.forEach(([nombre, ancho, x, z, giro]) => {
+      const plano = MeshBuilder.CreatePlane(`cantoHojas_${nombre}_${lado}`, { width: ancho, height: 0.008 }, scene);
+      plano.parent = pagina;
+      plano.position.set(x, 0, z);
+      plano.rotation.y = giro;
+      plano.material = matCanto;
+      plano.isPickable = false;
+      plano.receiveShadows = true;
+    });
   });
 
   // Lomo, algo más alto que las páginas: es lo que hace que se lea como un
   // libro abierto y no como dos hojas sueltas.
   const lomo = MeshBuilder.CreateBox("lomoLibro", { width: 0.02, height: 0.026, depth: 0.4 }, scene);
+  proyectarUVCaja(lomo, { u: 0.4, v: 0.62 }, { u: 0, v: 0.3 });
   lomo.position.set(X, ALTO_MESON + 0.02, Z);
   lomo.rotation.y = GIRO;
   lomo.material = matTapa;
@@ -2872,7 +3038,10 @@ function montarReflejos(scene: Scene): void {
 function ampliarLucesPorMaterial(scene: Scene): void {
   scene.materials.forEach((mat) => {
     if (!(mat instanceof PBRMaterial)) return;
-    mat.maxSimultaneousLights = 8;
+    // Diez y no ocho: el libro y lo que hay junto al flexo suman la luz
+    // rebotada, y el piso del hall la que entra por el ventanal al amanecer.
+    // Con ocho alguna se descartaría en silencio justo cuando se enciende.
+    mat.maxSimultaneousLights = 10;
 
     // ─── EL HORMIGUEO DE LAS SUPERFICIES PULIDAS ──────────────────────
     //
@@ -2909,7 +3078,7 @@ function ampliarLucesPorMaterial(scene: Scene): void {
   });
 }
 
-function construirHallYVentanal(scene: Scene): void {
+function construirHallYVentanal(scene: Scene): Omit<PiezasExterior, "relleno"> {
   // El piso y los muros laterales los pone construirSala. Acá queda solo lo
   // que mira al exterior: el hueco del ventanal, el cristal, la calle y la
   // farola que entra por él.
@@ -3132,11 +3301,10 @@ function construirHallYVentanal(scene: Scene): void {
     j.material = matJunquillo;
   });
 
-  // Calle: un plano lejano con la luz de una farola. No hay geometría detrás
-  // porque no hace falta — de noche, desde dentro, no se ve más que eso.
+  // Calle: un plano lejano. No lleva material propio: se lo pone la atmósfera
+  // del turno, que es la que sabe qué hora es. Ver AtmosferaTurno.
   const calle = MeshBuilder.CreatePlane("calleExterior", { width: 9, height: 5 }, scene);
   calle.position.set(0, 2, 8.4);
-  calle.material = materialCalleNocturna(scene);
 
   montarLluviaEnCristal(scene, cristal);
 
@@ -3213,6 +3381,14 @@ function construirHallYVentanal(scene: Scene): void {
   farola.includedOnlyMeshes = scene.meshes.filter(
     (m) => m.name.startsWith("calle") || m.name.startsWith("acera") || m.name.startsWith("farola")
   );
+
+  return {
+    calle,
+    cristal: matCristal,
+    farola,
+    bulboFarola: matBulbo,
+    posicionBulbo: bulbo.position.clone(),
+  };
 }
 
 /**
@@ -4039,27 +4215,6 @@ function montarSupervisor(scene: Scene, camara: FreeCamera, puerta: PuertaHall):
 }
 
 /**
- * Lo que se ve por el ventanal.
- *
- * ─── DÓNDE HAY QUE PINTAR, Y POR QUÉ IMPORTA TANTO ────────────────────────
- *
- * Un ventanal no enseña todo lo que hay detrás: enseña el cono que dejan pasar
- * su hueco y la posición de quien mira. Desde la silla, por este ventanal, del
- * plano de la calle solo se ve la franja u 0,23–0,77 · v 0,29–0,78. Todo lo
- * que se pinte fuera de ahí no lo verá nadie nunca.
- *
- * En la versión anterior las cinco ventanas encendidas del edificio de
- * enfrente estaban en u 0,12 · 0,18 · 0,31 · 0,84 · 0,90 — LAS CINCO fuera del
- * cono. Lo único que caía dentro era el halo de la farola, y por eso el
- * ventanal se veía como un rectángulo negro con una mancha caliente: no era
- * que faltara contenido, es que estaba pintado donde no se mira.
- *
- * Así que la composición se hace al revés de lo normal: primero se marca la
- * franja visible y dentro de ella se coloca lo que tiene que leerse —el
- * edificio de enfrente, la vereda, el asfalto mojado—. Lo de los bordes es
- * relleno para que no se corte, no contenido.
- */
-/**
  * Lluvia corriendo por el cristal del ventanal.
  *
  * ─── POR QUÉ LLUEVE ───────────────────────────────────────────────────────
@@ -4188,211 +4343,321 @@ function montarLluviaEnCristal(scene: Scene, cristal: Mesh): void {
   });
 }
 
-function materialCalleNocturna(scene: Scene): PBRMaterial {
-  // La franja que de verdad se ve por el hueco: u 0,23–0,77 · v 0,29–0,78.
-  // Solo hacen falta las verticales para componer, porque la fachada y el
-  // suelo cruzan el ancho entero; las horizontales quedan de referencia en el
-  // comentario de arriba.
-  const V0 = 0.29;
-  const V1 = 0.78;
-
-  const mat = materialPintado(scene, "matCalleNocturna", 1400, 780, (ctx, w, h) => {
-    // --- Cielo ---------------------------------------------------------------
-    const cielo = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-    cielo.addColorStop(0, "#070a12");
-    cielo.addColorStop(1, "#131a2b");
-    ctx.fillStyle = cielo;
-    ctx.fillRect(0, 0, w, h);
-
-    // --- Edificio de enfrente -------------------------------------------------
-    //
-    // Ocupa la mitad alta de la franja visible. Es la pieza que da la escala:
-    // sin algo construido al otro lado, el ventanal podría dar a cualquier
-    // parte, y un condominio da a otro edificio.
-    const yEdificio = h * (V0 - 0.06);
-    const altoEdificio = h * (V1 - V0) * 0.62;
-    ctx.fillStyle = "#191d29";
-    ctx.fillRect(0, yEdificio, w, altoEdificio);
-
-    // Cornisa: una línea clara arriba que lo despega del cielo.
-    ctx.fillStyle = "rgba(90, 100, 120, 0.35)";
-    ctx.fillRect(0, yEdificio, w, 4);
-
-    // Retícula de ventanas. Cinco filas por doce columnas, repartidas por todo
-    // el ancho —el cono visible se lleva las de en medio y el resto rellena—.
-    const COLS = 12;
-    const FILAS = 5;
-    const anchoV = (w / COLS) * 0.46;
-    const altoV = (altoEdificio / FILAS) * 0.5;
-    /** Cuáles están encendidas. Fijo y no al azar: la fachada no parpadea. */
-    const encendidas = new Set(["1,3", "2,6", "2,7", "3,4", "0,8", "3,9", "4,5"]);
-
-    for (let f = 0; f < FILAS; f += 1) {
-      for (let c = 0; c < COLS; c += 1) {
-        const x = (c + 0.5) * (w / COLS) - anchoV / 2;
-        const y = yEdificio + 26 + f * (altoEdificio / FILAS);
-        const viva = encendidas.has(`${f},${c}`);
-
-        ctx.fillStyle = viva ? "#ffd58e" : "#0d1119";
-        ctx.fillRect(x, y, anchoV, altoV);
-
-        if (viva) {
-          // Derrame de la luz sobre la fachada. Es lo que hace que la ventana
-          // parezca encendida y no un rectángulo amarillo pegado.
-          const g = ctx.createRadialGradient(
-            x + anchoV / 2,
-            y + altoV / 2,
-            2,
-            x + anchoV / 2,
-            y + altoV / 2,
-            anchoV * 2.4
-          );
-          g.addColorStop(0, "rgba(255, 208, 136, 0.4)");
-          g.addColorStop(1, "rgba(255, 208, 136, 0)");
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.arc(x + anchoV / 2, y + altoV / 2, anchoV * 2.4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-
-    // --- Vereda y calzada ------------------------------------------------------
-    const ySuelo = yEdificio + altoEdificio;
-    const suelo = ctx.createLinearGradient(0, ySuelo, 0, h);
-    suelo.addColorStop(0, "#0f1119");
-    suelo.addColorStop(0.3, "#15171f");
-    suelo.addColorStop(1, "#0a0c11");
-    ctx.fillStyle = suelo;
-    ctx.fillRect(0, ySuelo, w, h - ySuelo);
-
-    // Bordillo: la línea que separa vereda de calzada.
-    ctx.fillStyle = "rgba(120, 128, 142, 0.22)";
-    ctx.fillRect(0, ySuelo + (h - ySuelo) * 0.34, w, 3);
-
-    // --- Farola ----------------------------------------------------------------
-    //
-    // Cae en u 0,66 · v 0,34, dentro del cono. Se conserva porque era lo único
-    // que se veía antes y porque el poste está modelado justo delante: el halo
-    // pintado es el resplandor de esa misma lámpara sobre el fondo.
-    const halo = ctx.createRadialGradient(w * 0.66, h * 0.34, 8, w * 0.66, h * 0.34, 260);
-    halo.addColorStop(0, "rgba(255, 226, 168, 0.8)");
-    halo.addColorStop(0.35, "rgba(255, 214, 140, 0.17)");
-    halo.addColorStop(1, "rgba(255, 214, 140, 0)");
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(w * 0.66, h * 0.34, 260, 0, Math.PI * 2);
-    ctx.fill();
-
-    // --- Asfalto mojado --------------------------------------------------------
-    //
-    // Septiembre en Puerto Montt. Cada luz encendida se estira hacia abajo
-    // sobre el suelo, que es lo que hace que una calle de noche se lea como
-    // mojada. Cuesta cuatro degradados y cambia la escena entera.
-    // El reflejo se apaga en el primer tercio del suelo. Llegando abajo del
-    // todo, los rastros dejaban de leerse como reflejos y se veían como
-    // columnas de luz plantadas en la calzada.
-    const reflejar = (x: number, color: string, ancho: number, fuerza: number): void => {
-      const largo = (h - ySuelo) * 0.62;
-      const g = ctx.createLinearGradient(0, ySuelo, 0, ySuelo + largo);
-      g.addColorStop(0, color.replace("ALPHA", String(fuerza)));
-      g.addColorStop(0.35, color.replace("ALPHA", String(fuerza * 0.34)));
-      g.addColorStop(1, color.replace("ALPHA", "0"));
-      ctx.fillStyle = g;
-      // Más estrecho abajo que arriba: un reflejo sobre mojado se afila con la
-      // distancia, no baja con el mismo ancho.
-      ctx.beginPath();
-      ctx.moveTo(x - ancho / 2, ySuelo);
-      ctx.lineTo(x + ancho / 2, ySuelo);
-      ctx.lineTo(x + ancho * 0.18, ySuelo + largo);
-      ctx.lineTo(x - ancho * 0.18, ySuelo + largo);
-      ctx.closePath();
-      ctx.fill();
-    };
-
-    reflejar(w * 0.66, "rgba(255, 214, 140, ALPHA)", 150, 0.26);
-    encendidas.forEach((clave) => {
-      const c = Number(clave.split(",")[1]);
-      reflejar((c + 0.5) * (w / COLS), "rgba(255, 208, 136, ALPHA)", 58, 0.1);
-    });
-  });
-
-  mat.emissiveColor = new Color3(1, 1, 1);
-  mat.emissiveTexture = mat.albedoTexture;
-  mat.roughness = 1;
-  return mat;
+/**
+ * El flexo del mesón: la única luz cálida de la escena, la que da sombras y la
+ * única que el guardia puede apagar.
+ *
+ * ─── POR QUÉ SE REHIZO ────────────────────────────────────────────────────
+ *
+ * La pantalla estaba montada al revés: el giro dejaba la boca ancha mirando
+ * hacia arriba y la punta estrecha hacia el mesón, con la bombilla asomando
+ * por la punta y la tapa inferior cerrando el cono. Encendido no se veía
+ * encendido: se veía una bola amarilla pegada a un cucurucho.
+ *
+ * Ahora la cabeza se orienta con un cuaternión desde la dirección real de la
+ * luz: la boca apunta exactamente adonde alumbra, por dentro hay un reflector
+ * que se enciende con la bombilla, y el brazo es de dos tramos con sus
+ * rótulas, como un flexo de arquitecto.
+ *
+ * ─── Y POR QUÉ APUNTA AL LIBRO ────────────────────────────────────────────
+ *
+ * El foco anterior caía setenta centímetros a la derecha del libro: la plana
+ * quedaba en el borde del cono, justo donde la luz ya se apaga. La cabeza se
+ * adelanta sobre el mesón y apunta a la plana con unos treinta y cinco grados
+ * de caída: rasante lo justo para que la veta y las rayas del barniz se lean,
+ * no tanto como para dejar la página en penumbra. Desde la silla queda a la
+ * derecha del monitor, sin tapar ninguna cámara.
+ */
+export interface Flexo {
+  luz: SpotLight;
+  /** Enciende o apaga, con la inercia de una lámpara de verdad. */
+  alternar(): void;
+  /** Deja la lámpara encendida o apagada en el acto, sin rampa ni sonido. */
+  fijar(encendido: boolean): void;
+  encendido(): boolean;
 }
 
-/** Flexo del mesón. La única luz cálida de la escena, y la que da sombras. */
-function construirFlexo(scene: Scene): SpotLight {
+/** Un cilindro tendido entre dos puntos. */
+function varilla(
+  scene: Scene,
+  nombre: string,
+  desde: Vector3,
+  hasta: Vector3,
+  diametro: number,
+  material: PBRMaterial
+): Mesh {
+  const eje = hasta.subtract(desde);
+  const pieza = MeshBuilder.CreateCylinder(
+    nombre,
+    { diameter: diametro, height: eje.length(), tessellation: 14 },
+    scene
+  );
+  pieza.position = desde.add(eje.scale(0.5));
+  pieza.rotationQuaternion = new Quaternion();
+  Quaternion.FromUnitVectorsToRef(Vector3.Up(), eje.normalize(), pieza.rotationQuaternion);
+  pieza.material = material;
+  return pieza;
+}
+
+function construirFlexo(scene: Scene): Flexo {
   const X = 0.95;
   const Z = 0.5;
+  const Y = ALTO_MESON;
 
-  const matMetal = new PBRMaterial("matFlexo", scene);
-  matMetal.albedoColor = new Color3(0.08, 0.085, 0.095);
-  matMetal.roughness = 0.4;
-  matMetal.metallic = 0.6;
+  const LUZ = new Vector3(0.55, Y + 0.42, 0.18);
+  const OBJETIVO = new Vector3(-0.02, Y, 0.04);
+  const DIRECCION = OBJETIVO.subtract(LUZ).normalize();
+  const PIVOTE = new Vector3(X, Y + 0.034, Z);
+  const CODO = new Vector3(0.86, Y + 0.33, 0.44);
+  const NUCA = LUZ.subtract(DIRECCION.scale(0.105));
 
+  // --- Materiales -----------------------------------------------------------
+  const esmalte = new PBRMaterial("matEsmalteFlexo", scene);
+  esmalte.albedoColor = new Color3(0.028, 0.03, 0.034);
+  esmalte.roughness = 0.38;
+  esmalte.metallic = 0;
+  // Pintura al horno: el brillo nítido de las luminarias corre por el brazo.
+  esmalte.clearCoat.isEnabled = true;
+  esmalte.clearCoat.intensity = 0.9;
+  esmalte.clearCoat.roughness = 0.1;
+
+  const cromo = new PBRMaterial("matCromoFlexo", scene);
+  cromo.albedoColor = new Color3(0.78, 0.78, 0.8);
+  cromo.metallic = 1;
+  cromo.roughness = 0.18;
+
+  // El interior de la pantalla: blanco reflector que, encendido, brilla más al
+  // fondo —donde está la bombilla— que en la boca.
+  const reflector = new PBRMaterial("matReflectorFlexo", scene);
+  reflector.albedoColor = new Color3(0.86, 0.84, 0.8);
+  reflector.roughness = 0.42;
+  reflector.metallic = 0.35;
+  reflector.emissiveTexture = subirMapa(
+    scene,
+    "texReflectorFlexo",
+    generarDegradadoReflector(64),
+    false,
+    Texture.CLAMP_ADDRESSMODE
+  );
+  reflector.emissiveColor = new Color3(0, 0, 0);
+
+  const vidrio = new PBRMaterial("matBombillaFlexo", scene);
+  vidrio.albedoColor = new Color3(1, 0.96, 0.88);
+  vidrio.roughness = 0.2;
+  vidrio.metallic = 0;
+
+  const led = new PBRMaterial("matPilotoFlexo", scene);
+  led.albedoColor = new Color3(0.08, 0.04, 0.01);
+  led.roughness = 0.3;
+
+  // --- Base -----------------------------------------------------------------
   const base = MeshBuilder.CreateCylinder(
     "baseFlexo",
-    { diameterTop: 0.1, diameterBottom: 0.14, height: 0.02, tessellation: 22 },
+    { diameterTop: 0.105, diameterBottom: 0.145, height: 0.024, tessellation: 40 },
     scene
   );
-  base.position.set(X, ALTO_MESON + 0.01, Z);
-  base.material = matMetal;
+  base.position.set(X, Y + 0.012, Z);
+  base.material = esmalte;
 
-  const brazo = MeshBuilder.CreateCylinder(
-    "brazoFlexo",
-    { diameter: 0.016, height: 0.42, tessellation: 10 },
+  const aro = MeshBuilder.CreateTorus("aroBaseFlexo", { diameter: 0.14, thickness: 0.004, tessellation: 40 }, scene);
+  aro.position.set(X, Y + 0.002, Z);
+  aro.material = cromo;
+
+  const interruptor = MeshBuilder.CreateCylinder(
+    "interruptorFlexo",
+    { diameter: 0.02, height: 0.012, tessellation: 20 },
     scene
   );
-  brazo.position.set(X - 0.07, ALTO_MESON + 0.21, Z - 0.03);
-  brazo.rotation.z = 0.34;
-  brazo.material = matMetal;
+  interruptor.position.set(X - 0.03, Y + 0.028, Z - 0.035);
+  interruptor.material = cromo;
+
+  // Piloto del interruptor: la señal de encendido que se ve aunque la cabeza
+  // mire hacia otro lado.
+  const piloto = MeshBuilder.CreateSphere("pilotoFlexo", { diameter: 0.005, segments: 8 }, scene);
+  piloto.position.set(X + 0.028, Y + 0.0245, Z - 0.038);
+  piloto.material = led;
+
+  const piezas: Mesh[] = [base, aro, interruptor, piloto];
+
+  // --- Brazo ----------------------------------------------------------------
+  const rotula = (nombre: string, punto: Vector3, diametro: number): void => {
+    const esfera = MeshBuilder.CreateSphere(nombre, { diameter: diametro, segments: 16 }, scene);
+    esfera.position.copyFrom(punto);
+    esfera.material = cromo;
+    piezas.push(esfera);
+  };
+  rotula("rotulaBaseFlexo", PIVOTE, 0.024);
+  rotula("rotulaCodoFlexo", CODO, 0.022);
+  rotula("rotulaNucaFlexo", NUCA, 0.02);
+
+  // Dos varillas paralelas por tramo, como los flexos de verdad.
+  const tramo = (nombre: string, a: Vector3, b: Vector3, separacion: number, diametro: number): void => {
+    const lateral = Vector3.Cross(b.subtract(a).normalize(), Vector3.Up()).normalize().scale(separacion / 2);
+    [-1, 1].forEach((lado) => {
+      piezas.push(
+        varilla(scene, `${nombre}_${lado}`, a.add(lateral.scale(lado)), b.add(lateral.scale(lado)), diametro, esmalte)
+      );
+    });
+  };
+  tramo("brazoInferiorFlexo", PIVOTE, CODO, 0.014, 0.0075);
+  tramo("brazoSuperiorFlexo", CODO, NUCA, 0.012, 0.007);
+  // El muelle que compensa el peso del brazo.
+  piezas.push(
+    varilla(
+      scene,
+      "muelleFlexo",
+      PIVOTE.add(new Vector3(0, 0.03, 0.012)),
+      Vector3.Lerp(PIVOTE, CODO, 0.7).add(new Vector3(0, 0, 0.012)),
+      0.005,
+      cromo
+    )
+  );
+
+  // --- Cabeza ---------------------------------------------------------------
+  //
+  // El eje del cilindro es la Y local, con la base ancha abajo: se gira la -Y
+  // local hacia la dirección de la luz, y la boca queda mirando adonde alumbra.
+  const LARGO_CABEZA = 0.125;
+  const orientacion = new Quaternion();
+  Quaternion.FromUnitVectorsToRef(new Vector3(0, -1, 0), DIRECCION, orientacion);
+  const centro = LUZ.add(DIRECCION.scale(0.028 - LARGO_CABEZA / 2));
 
   const pantalla = MeshBuilder.CreateCylinder(
     "pantallaFlexo",
-    { diameterTop: 0.06, diameterBottom: 0.15, height: 0.11, tessellation: 22 },
+    { diameterTop: 0.058, diameterBottom: 0.155, height: LARGO_CABEZA, tessellation: 48, cap: Mesh.CAP_END },
     scene
   );
-  pantalla.position.set(X - 0.19, ALTO_MESON + 0.37, Z - 0.07);
-  pantalla.rotation.z = 2.5;
-  pantalla.material = matMetal;
+  pantalla.position.copyFrom(centro);
+  pantalla.rotationQuaternion = orientacion.clone();
+  pantalla.material = esmalte;
 
-  const matBombilla = new PBRMaterial("matBombillaFlexo", scene);
-  matBombilla.albedoColor = new Color3(1, 0.9, 0.72);
-  matBombilla.emissiveColor = new Color3(1.6, 1.25, 0.78);
-  matBombilla.roughness = 1;
-
-  const bombilla = MeshBuilder.CreateSphere("bombillaFlexo", { diameter: 0.05, segments: 12 }, scene);
-  bombilla.position.set(X - 0.21, ALTO_MESON + 0.33, Z - 0.075);
-  bombilla.material = matBombilla;
-
-  // Cálida y de alcance corto: alumbra el libro y poco más. Es la que hace que
-  // se pueda escribir, y su contraste contra el azul del monitor es lo que da
-  // profundidad a todo el mesón.
-  //
-  // ─── ES UN FOCO Y NO UNA BOMBILLA, Y ESO IMPORTA ────────────────────────
-  //
-  // Un PointLight ilumina en todas direcciones y en Babylon proyecta sombra
-  // con un mapa cúbico: seis texturas por cuadro, caro y de peor calidad. Un
-  // foco alumbra en un cono y le basta una. Como este flexo apunta al libro y
-  // a ningún otro sitio, el cono es además lo que hace de verdad.
-  //
-  // Y hacía falta que ALGO proyectara sombra. Sin una sola sombra proyectada,
-  // la radio, el libro y el monitor se ven pegados sobre el mesón en lugar de
-  // apoyados encima, por muy buenos que sean los materiales.
-  const luz = new SpotLight(
-    "luzFlexo",
-    new Vector3(X - 0.23, ALTO_MESON + 0.32, Z - 0.09),
-    new Vector3(-0.42, -1, -0.5),
-    1.7,
-    2.4,
+  // Por dentro, una segunda superficie con las caras hacia el eje: es la que se
+  // ve al mirar dentro de la boca, y la que se enciende.
+  const interior = MeshBuilder.CreateCylinder(
+    "interiorFlexo",
+    {
+      diameterTop: 0.054,
+      diameterBottom: 0.149,
+      height: LARGO_CABEZA - 0.003,
+      tessellation: 48,
+      cap: Mesh.CAP_END,
+      sideOrientation: Mesh.BACKSIDE,
+    },
     scene
   );
-  luz.diffuse = new Color3(1, 0.82, 0.58);
-  luz.intensity = 5.2;
+  interior.position.copyFrom(centro.subtract(DIRECCION.scale(0.0015)));
+  interior.rotationQuaternion = orientacion.clone();
+  interior.material = reflector;
+
+  const reborde = MeshBuilder.CreateTorus("rebordeFlexo", { diameter: 0.152, thickness: 0.005, tessellation: 48 }, scene);
+  reborde.position.copyFrom(LUZ.add(DIRECCION.scale(0.028)));
+  reborde.rotationQuaternion = orientacion.clone();
+  reborde.material = cromo;
+
+  const bombilla = MeshBuilder.CreateSphere("bombillaFlexo", { diameter: 0.046, segments: 20 }, scene);
+  bombilla.position.copyFrom(LUZ.subtract(DIRECCION.scale(0.035)));
+  bombilla.material = vidrio;
+
+  piezas.push(pantalla, interior, reborde, bombilla);
+
+  // --- La luz ---------------------------------------------------------------
+  //
+  // Un foco y no una bombilla: un PointLight proyecta sombra con un mapa cúbico
+  // —seis texturas por cuadro— y a un foco le basta una. Como el flexo alumbra
+  // en un cono, el cono además es lo que hace de verdad.
+  //
+  // Lleva textura de proyección: el reflector reparte la luz en anillos tenues,
+  // con el centro algo más cálido y el borde deshecho. Sin ella el charco sobre
+  // el mesón es un círculo de borde matemático.
+  // Más baja que el 5,2 anterior: ahora la plana cae en el centro del cono y
+  // no en su borde, y con el post-proceso por fin enganchado a la cámara la
+  // página blanca se quemaba entera.
+  const INTENSIDAD = 3.4;
+  const luz = new SpotLight("luzFlexo", LUZ.clone(), DIRECCION.clone(), 1.45, 2.2, scene);
+  luz.diffuse = new Color3(1, 0.84, 0.62);
+  luz.specular = new Color3(1, 0.9, 0.74);
   luz.range = 2.4;
+  luz.shadowMinZ = 0.03;
+  luz.shadowMaxZ = 2.4;
+  luz.projectionTexture = subirMapa(scene, "texHazFlexo", generarHazFlexo(256), false, Texture.CLAMP_ADDRESSMODE);
+  luz.projectionTextureLightNear = 0.02;
+  luz.projectionTextureLightFar = 2.4;
 
-  return luz;
+  // LA LUZ REBOTADA.
+  //
+  // Lo que el flexo pone sobre la madera vuelve hacia arriba teñido de madera:
+  // es lo que calienta el canto del libro, la base del monitor y la tarjeta de
+  // claves cuando la lámpara se enciende. Babylon no calcula rebotes, así que
+  // se pone a mano: una luz tenue, cálida y sin brillo propio justo sobre el
+  // charco. Acotada a lo que hay cerca, y nunca al propio mesón — la madera no
+  // se ilumina con su propio reflejo.
+  //
+  // Hemisférica y mirando hacia abajo, no puntual. La primera versión era un
+  // PointLight a siete centímetros del papel, y con la caída física de PBR eso
+  // quemaba un círculo blanco en la página. Un rebote no sale de un punto: sale
+  // de todo el charco, así que ilumina parejo las caras que miran hacia la
+  // mesa —el canto del libro, los costados de la base del monitor— y deja
+  // intactas las que miran hacia arriba.
+  const INTENSIDAD_REBOTE = 0.4;
+  const CHARCO = OBJETIVO.add(new Vector3(0, 0.05, 0));
+  const rebote = new HemisphericLight("luzReboteFlexo", new Vector3(0, -1, 0), scene);
+  rebote.diffuse = new Color3(1, 0.7, 0.44);
+  rebote.groundColor = new Color3(0, 0, 0);
+  rebote.specular = new Color3(0, 0, 0);
+  rebote.includedOnlyMeshes = scene.meshes.filter((m) => {
+    if (/^(tapaMeson|cantoMeson|frenteMeson)/.test(m.name) || m.name.includes("Hall") || m.name.startsWith("calle")) {
+      return false;
+    }
+    m.computeWorldMatrix(true);
+    return Vector3.Distance(m.getBoundingInfo().boundingSphere.centerWorld, CHARCO) < 0.95;
+  });
+
+  // --- Encender y apagar ------------------------------------------------------
+  //
+  // No es un interruptor de dos estados: la lámpara tarda un instante en llegar
+  // y al apagarse deja un rescoldo de filamento. Son décimas de segundo, y son
+  // las que hacen que el clic se note en la luz de la sala.
+  let objetivo = 1;
+  let nivel = 1;
+
+  const aplicar = (): void => {
+    luz.intensity = INTENSIDAD * nivel;
+    rebote.intensity = INTENSIDAD_REBOTE * nivel;
+    const brillo = Math.pow(nivel, 1.6);
+    vidrio.emissiveColor.set(3.2 * brillo, 2.55 * brillo, 1.7 * brillo);
+    reflector.emissiveColor.set(0.72 * brillo, 0.58 * brillo, 0.4 * brillo);
+    led.emissiveColor.set(1.4 * nivel, 0.55 * nivel, 0.08 * nivel);
+  };
+  aplicar();
+
+  const observador = scene.onBeforeRenderObservable.add(() => {
+    if (nivel === objetivo) return;
+    const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
+    const tau = objetivo > nivel ? 0.07 : 0.16;
+    nivel += (objetivo - nivel) * (1 - Math.exp(-dt / tau));
+    if (Math.abs(objetivo - nivel) < 0.002) nivel = objetivo;
+    aplicar();
+  });
+  base.onDisposeObservable.addOnce(() => scene.onBeforeRenderObservable.remove(observador));
+
+  const alternar = (): void => {
+    objetivo = objetivo > 0.5 ? 0 : 1;
+    reproducir("boton");
+  };
+
+  // Cualquier pieza de la lámpara la enciende: nadie apunta a un interruptor de
+  // dos centímetros al fondo del mesón.
+  piezas.forEach((pieza) => {
+    pieza.actionManager = new ActionManager(scene);
+    pieza.actionManager.hoverCursor = "pointer";
+    pieza.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnPickTrigger, alternar));
+  });
+
+  const fijar = (encendido: boolean): void => {
+    objetivo = encendido ? 1 : 0;
+    nivel = objetivo;
+    aplicar();
+  };
+
+  return { luz, alternar, fijar, encendido: () => objetivo > 0.5 };
 }

@@ -103,13 +103,18 @@ export const LLAMADAS_RADIO: LlamadaRadio[] = [
     ],
   },
 
-  // ─── 02:35 · La ronda que pide central ──────────────────────────────────
+  // ─── 02:45 · La ronda que pide central ──────────────────────────────────
   //
   // Ésta es la que ata la radio con el libro: no se resuelve respondiendo, se
   // resuelve haciendo la ronda y anotándola.
+  //
+  // Estaba a las 02:35, con la bodega a las 02:38 y la ronda a las 02:40:
+  // tres cosas en cinco minutos de turno, unos cuatro segundos reales. Ahora
+  // la bodega va antes (02:20) y la ronda llega diez minutos después de
+  // pedirla (02:55), que es lo que tarda en hacerse.
   {
     id: "radio-solicita-ronda",
-    minuto: 155,
+    minuto: 165,
     quien: "CENTRAL",
     mensaje:
       "Central a Conserjería. Se solicita ronda de verificación por el sector de " +

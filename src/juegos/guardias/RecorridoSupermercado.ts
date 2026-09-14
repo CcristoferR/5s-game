@@ -11,6 +11,7 @@ import {
   ampliarLucesSupermercado,
   type SupermercadoCargado,
 } from "./EscenaSupermercado";
+import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
 
 // ===========================================================================
 // Escenario 2 — Supermercado, modo recorrido
@@ -48,28 +49,26 @@ export async function crearRecorridoSupermercado(
   scene: Scene,
   onSalir: () => void
 ): Promise<RecorridoSupermercado> {
+  // Lo primero: vaciar lo que dejó el condominio. Ver LimpiezaEscena.
+  limpiarEscena(scene);
+
   scene.clearColor = new Color4(0.09, 0.1, 0.13, 1);
 
-  const supermercado = await cargarSupermercado(scene, { diagnostico: true });
-
-  // Los pasillos se reparten a lo largo del fondo de la sala. Se calculan desde
-  // las medidas reales y no a ojo: si Bitplay manda una versión más grande, los
-  // focos siguen cayendo donde tienen que caer.
-  const pasillos = [-0.28, 0, 0.28].map((f) => supermercado.fondo * f);
-  iluminarSupermercado(scene, supermercado.alto, pasillos);
-  ampliarLucesSupermercado(scene);
-
-  // --- Cámara ---------------------------------------------------------------
+  // La cámara se crea ANTES de cargar el modelo, y no después.
   //
-  // Entra por el frente de la sala mirando hacia dentro, que es por donde
-  // entraría alguien. Empezar en el centro obliga a girarse para entender dónde
-  // se está.
+  // limpiarEscena deja scene.activeCamera en null, y el bucle de render de
+  // main.ts sigue corriendo mientras se descarga el .glb. Sin cámara, cada uno
+  // de esos cuadros lanzaba "No camera defined": la escena quedaba en negro y
+  // no se recuperaba aunque el modelo terminara de cargar.
+  //
+  // Creándola primero, el bucle siempre tiene a qué apuntar. Durante la carga
+  // dibuja una escena vacía, que es exactamente lo que la pantalla de carga
+  // está tapando.
   const camara = new FreeCamera(
     "camaraRecorrido",
-    new Vector3(0, ALTURA_OJO, -supermercado.fondo / 2 + 1.2),
+    new Vector3(0, ALTURA_OJO, 0),
     scene
   );
-  camara.setTarget(new Vector3(0, ALTURA_OJO - 0.15, 0));
   camara.minZ = 0.1;
   camara.speed = 0.14;
   camara.angularSensibility = 3200;
@@ -90,7 +89,33 @@ export async function crearRecorridoSupermercado(
   camara.ellipsoid = new Vector3(0.35, ALTURA_OJO / 2, 0.35);
   camara.ellipsoidOffset = new Vector3(0, ALTURA_OJO / 2, 0);
 
-  scene.activeCamera = camara;
+  usarCamara(scene, camara);
+
+  const supermercado = await cargarSupermercado(scene, { diagnostico: true });
+
+  // Ya con las medidas del modelo, se planta al jugador dentro de la sala.
+  //
+  // Se usa el INTERIOR y no el conjunto: el modelo trae un piso de 13,4 m y un
+  // edificio de 8,3 × 6,1 dentro de él, así que la mitad de esa superficie es
+  // explanada exterior. Colocando desde las medidas del conjunto se aparecía
+  // fuera, detrás del muro trasero.
+  const { interior } = supermercado;
+  camara.position.set(
+    (interior.minX + interior.maxX) / 2,
+    ALTURA_OJO,
+    interior.maxZ - 0.8
+  );
+  camara.setTarget(
+    new Vector3((interior.minX + interior.maxX) / 2, ALTURA_OJO - 0.15, interior.minZ)
+  );
+
+  // Los pasillos se reparten a lo largo del fondo de la sala. Se calculan desde
+  // las medidas reales y no a ojo: si Bitplay manda una versión más grande, los
+  // focos siguen cayendo donde tienen que caer.
+  const pasillos = [-0.28, 0, 0.28].map((f) => supermercado.fondo * f);
+  iluminarSupermercado(scene, supermercado.alto, pasillos);
+  ampliarLucesSupermercado(scene);
+
   camara.attachControl(true);
 
   // --- Post-proceso ---------------------------------------------------------
@@ -119,14 +144,6 @@ export async function crearRecorridoSupermercado(
   window.addEventListener("keydown", alPulsar);
 
   let cerrado = false;
-  const salir = (): void => {
-    if (cerrado) return;
-    cerrado = true;
-    window.removeEventListener("keydown", alPulsar);
-    camara.detachControl();
-    onSalir();
-  };
-
   const ayuda = document.createElement("div");
   ayuda.textContent = "WASD o flechas para caminar · arrastrar para mirar · ESC para volver";
   Object.assign(ayuda.style, {
@@ -145,14 +162,41 @@ export async function crearRecorridoSupermercado(
   });
   document.body.appendChild(ayuda);
 
+  /**
+   * Sale del recorrido y devuelve el menú.
+   *
+   * ─── POR QUÉ DESMONTA TODO ANTES DE AVISAR ────────────────────────────
+   *
+   * Porque antes no lo hacía: soltaba el ratón de la cámara y llamaba al menú
+   * dejando la escena tal cual. El resultado era que el menú se dibujaba
+   * encima del supermercado, sobre su fondo azul, con el cartel de ayuda
+   * todavía pegado abajo — y los quince megas del modelo seguían en memoria.
+   *
+   * El orden importa: primero se suelta el mando, después se desmonta la
+   * escena, después se devuelve el color de fondo del portal, y solo entonces
+   * se avisa. Avisar antes deja al menú montándose sobre una escena que se
+   * está destruyendo debajo.
+   */
+  const salir = (): void => {
+    if (cerrado) return;
+    cerrado = true;
+    window.removeEventListener("keydown", alPulsar);
+    camara.detachControl();
+
+    ayuda.remove();
+    tuberia.dispose();
+    // limpiarEscena deja además una cámara neutra y el fondo del portal, así
+    // que el menú aparece sobre algo dibujable y con su color de siempre.
+    limpiarEscena(scene);
+
+    onSalir();
+  };
+
+
   return {
     supermercado,
-    dispose: () => {
-      salir();
-      ayuda.remove();
-      tuberia.dispose();
-      camara.dispose();
-      supermercado.dispose();
-    },
+    // salir() ya desmonta la escena entera, así que esto es solo el atajo por
+    // si alguien cierra el recorrido desde fuera sin pasar por ESC.
+    dispose: salir,
   };
 }

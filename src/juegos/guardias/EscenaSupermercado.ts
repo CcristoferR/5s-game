@@ -51,6 +51,16 @@ export interface OpcionesSupermercado {
   diagnostico?: boolean;
 }
 
+/** Los cuatro bordes interiores de la sala, ya centrados y en metros. */
+export interface InteriorSala {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  /** Alto libre bajo el techo. */
+  alto: number;
+}
+
 export interface SupermercadoCargado {
   /** Nodo padre de todo: moverlo mueve el escenario entero. */
   raiz: TransformNode;
@@ -59,6 +69,18 @@ export interface SupermercadoCargado {
   ancho: number;
   alto: number;
   fondo: number;
+  /**
+   * Dónde se puede estar de pie.
+   *
+   * ─── POR QUÉ NO BASTA CON LAS MEDIDAS DEL CONJUNTO ──────────────────────
+   *
+   * Porque el modelo trae un piso de 13,37 × 13,37 m y un edificio de solo
+   * 8,3 × 6,1 dentro de él, y encima descentrado: el edificio va de −5,04 a
+   * 3,29 en X. Quien use las medidas del conjunto para colocar una cámara o un
+   * personaje lo deja sobre el piso, sí, pero fuera de los muros — que es
+   * exactamente lo que pasaba al entrar al escenario.
+   */
+  interior: InteriorSala;
   dispose: () => void;
 }
 
@@ -83,13 +105,25 @@ export async function cargarSupermercado(
 
   raiz.scaling.setAll(escala);
   raiz.computeWorldMatrix(true);
-  scene.render();
+  // Antes aquí había un scene.render() para forzar el cálculo de las matrices
+  // de mundo. Era innecesario y además rompía el nivel: los escenarios vacían
+  // la escena al entrar —y eso deja scene.activeCamera en null— así que este
+  // render se ejecutaba SIN CÁMARA y Babylon lanzaba "No camera defined".
+  // De ahí la pantalla en negro al abrir el supermercado o el banco.
+  //
+  // No hace falta: medirConjunto ya llama a computeWorldMatrix(true) sobre cada
+  // malla, que es lo único que se necesitaba de aquel render.
 
   const { minimo, maximo } = medirConjunto(mallas);
   const alturaPiso = detectarSuperficieDelPiso(mallas, minimo, maximo);
+  const edificio = detectarEdificio(mallas, minimo, maximo);
 
-  raiz.position.x -= (minimo.x + maximo.x) / 2;
-  raiz.position.z -= (minimo.z + maximo.z) / 2;
+  // Se centra sobre EL EDIFICIO, no sobre el conjunto. El piso desborda los
+  // muros y además no lo hace por igual en los cuatro lados, así que centrar
+  // sobre el conjunto deja la sala corrida respecto del origen.
+  const centro = edificio ?? { minimumWorld: minimo, maximumWorld: maximo };
+  raiz.position.x -= (centro.minimumWorld.x + centro.maximumWorld.x) / 2;
+  raiz.position.z -= (centro.minimumWorld.z + centro.maximumWorld.z) / 2;
   raiz.position.y -= alturaPiso;
   raiz.computeWorldMatrix(true);
 
@@ -105,6 +139,23 @@ export async function cargarSupermercado(
     }
   });
 
+  // Medio metro de retranqueo desde los muros: el espesor de la tabiquería más
+  // el espacio que necesita cualquiera para no rozarla.
+  const MARGEN = 0.5;
+  const anchoEdificio = edificio
+    ? edificio.maximumWorld.x - edificio.minimumWorld.x
+    : maximo.x - minimo.x;
+  const fondoEdificio = edificio
+    ? edificio.maximumWorld.z - edificio.minimumWorld.z
+    : maximo.z - minimo.z;
+  const interior: InteriorSala = {
+    minX: -anchoEdificio / 2 + MARGEN,
+    maxX: anchoEdificio / 2 - MARGEN,
+    minZ: -fondoEdificio / 2 + MARGEN,
+    maxZ: fondoEdificio / 2 - MARGEN,
+    alto: edificio ? edificio.maximumWorld.y - alturaPiso : maximo.y - minimo.y,
+  };
+
   const ancho = maximo.x - minimo.x;
   const alto = maximo.y - minimo.y;
   const fondo = maximo.z - minimo.z;
@@ -115,6 +166,11 @@ export async function cargarSupermercado(
         2
       )} × ${fondo.toFixed(2)} m`
     );
+    console.log(
+      `[supermercado] interior: X ${interior.minX.toFixed(2)} a ${interior.maxX.toFixed(
+        2
+      )} · Z ${interior.minZ.toFixed(2)} a ${interior.maxZ.toFixed(2)}`
+    );
     console.log("[supermercado] mallas:", mallas.map((m) => m.name).join(", "));
   }
 
@@ -124,6 +180,7 @@ export async function cargarSupermercado(
     ancho,
     alto,
     fondo,
+    interior,
     dispose: () => {
       mallas.forEach((m) => m.dispose());
       raiz.dispose();
@@ -166,6 +223,38 @@ function detectarSuperficieDelPiso(
   });
 
   return alturaSuperior ?? minimo.y;
+}
+
+/**
+ * Encuentra la malla del edificio: muros, techo y estructura.
+ *
+ * Se busca por geometría y no por nombre. Es la que sube prácticamente toda la
+ * altura del modelo —los muros llegan al techo, las góndolas no pasan del
+ * metro— y, entre las que cumplen eso, la de mayor huella en planta. Así sigue
+ * funcionando si Bitplay reexporta el escenario con otros nombres de malla.
+ */
+function detectarEdificio(
+  mallas: AbstractMesh[],
+  minimo: Vector3,
+  maximo: Vector3
+): { minimumWorld: Vector3; maximumWorld: Vector3 } | null {
+  const alturaTotal = maximo.y - minimo.y;
+  let mejorArea = 0;
+  let elegida: { minimumWorld: Vector3; maximumWorld: Vector3 } | null = null;
+
+  mallas.forEach((malla) => {
+    const caja = malla.getBoundingInfo().boundingBox;
+    if (caja.maximumWorld.y - caja.minimumWorld.y < alturaTotal * 0.7) return;
+    const area =
+      (caja.maximumWorld.x - caja.minimumWorld.x) *
+      (caja.maximumWorld.z - caja.minimumWorld.z);
+    if (area > mejorArea) {
+      mejorArea = area;
+      elegida = { minimumWorld: caja.minimumWorld, maximumWorld: caja.maximumWorld };
+    }
+  });
+
+  return elegida;
 }
 
 /** Caja que envuelve a todas las mallas juntas, en coordenadas de mundo. */

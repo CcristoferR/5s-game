@@ -34,22 +34,46 @@
 // que NINGÚN control automático puede detectar — un sistema no sabe si
 // "sujeto sospechoso" es una observación o un juicio. Por eso no salta ningún
 // aviso al escribirla: sale a las 03:20, cuando el supervisor revisa.
+//
+// ─── Y UNA QUINTA, QUE ESTABA EN LA MISMA FRASE ───────────────────────────
+//
+// El mismo párrafo pide que el libro se lleve "detallado", y la sección de
+// rondas insiste: "detallarlas en forma pormenorizada". Una constancia puede
+// no inventar nada ni opinar nada y aun así no servir: "se efectúa ronda, sin
+// novedad" no dice qué se revisó; "ingresa un vehículo" no dice qué patente.
+//
+// Por eso existe la redacción INCOMPLETA. Es la trampa más fácil de caer,
+// porque se lee correcta: todo lo que afirma es verdad. Lo que falla es lo que
+// calla, y eso tampoco lo detecta nadie hasta que alguien necesita el dato.
 
 /** Cómo está redactada una observación. Decide si el punto se sostiene. */
 export type Redaccion =
   /** Lo que se vio, medible y comprobable. Es lo que pide el manual. */
   | "factual"
+  /** Verdadera, pero sin los datos que el hecho exige. */
+  | "incompleta"
   /** Un juicio del guardia disfrazado de observación. */
   | "opinion"
   /** Afirma algo que no consta. El manual lo llama "carecer de realidad". */
   | "inventada";
 
-export interface OpcionRedaccion {
+interface BaseOpcion {
   texto: string;
-  clase: Redaccion;
-  /** Por qué está bien o mal. Lo usa el supervisor a las 03:20. */
+  /** Por qué está bien o mal. */
   explicacion: string;
 }
+
+/**
+ * Una forma de anotar el suceso.
+ *
+ * La incompleta lleva además QUÉ omite. No se deja a una descripción genérica
+ * porque el reparo del supervisor tiene que poder decir "no consigna la
+ * patente", no "le faltan datos": lo segundo no enseña qué había que escribir.
+ * Al estar en el tipo, una opción incompleta sin `omite` no compila.
+ */
+export type OpcionRedaccion =
+  | (BaseOpcion & { clase: "factual" | "opinion" | "inventada" })
+  | (BaseOpcion & { clase: "incompleta"; omite: string });
 
 /** Un suceso del turno, con las tres formas de anotarlo. */
 export interface SucesoTurno {
@@ -86,6 +110,7 @@ export type TipoFalta =
   | "fuera_de_orden"
   | "opinion_registrada"
   | "hecho_inventado"
+  | "novedad_incompleta"
   | "novedad_no_anotada"
   | "ingreso_sin_salida"
   | "inventario_incompleto"
@@ -122,6 +147,10 @@ const FUNDAMENTOS: Record<TipoFalta, string> = {
   opinion_registrada:
     "No se pueden imponer situaciones según la apreciación personal: se registra lo que se observa, no lo que se supone.",
   hecho_inventado: "No se pueden señalar hechos o situaciones que carezcan de realidad.",
+  novedad_incompleta:
+    "El libro se lleva detallado y lo observado se registra en forma pormenorizada: una " +
+    "constancia sin los datos del hecho —quién, qué, dónde, desde cuándo, qué se hizo— no " +
+    "permite reconstruirlo después.",
   novedad_no_anotada:
     "Es una obligación irrenunciable dejar constancia escrita de todo hecho, situación o suceso que se observe.",
   ingreso_sin_salida:
@@ -243,8 +272,9 @@ export function abrirServicio(estado: EstadoLibro, datos: DatosServicio): Estado
  * Se comprueba el ORDEN: una entrada anterior a la última rompe la cronología
  * y eso sí es verificable. Es la única falta que salta en el momento.
  *
- * NO se comprueba la redacción. Elegir una opinión o inventarse un hecho pasa
- * sin que nada avise, y la falta queda anotada en silencio. Es deliberado y es
+ * NO se comprueba la redacción. Elegir una opinión, inventarse un hecho o dejar
+ * fuera los datos pasa sin que nada avise, y la falta queda anotada en
+ * silencio. Es deliberado y es
  * la lección: ningún sistema sabe si "sujeto sospechoso" es lo que se vio o lo
  * que se supuso. Sale a las 03:20, cuando alguien lee el libro.
  */
@@ -280,6 +310,15 @@ export function registrar(
       tipo: "hecho_inventado",
       descripcion: `«${opcionElegida.texto}» afirma algo que no consta.`,
       fundamento: FUNDAMENTOS.hecho_inventado,
+      parrafo,
+    });
+  }
+
+  if (opcionElegida.clase === "incompleta") {
+    faltas.push({
+      tipo: "novedad_incompleta",
+      descripcion: `«${opcionElegida.texto}» no consigna ${opcionElegida.omite}.`,
+      fundamento: FUNDAMENTOS.novedad_incompleta,
       parrafo,
     });
   }
@@ -571,6 +610,10 @@ export function calificar(estado: EstadoLibro): { nota: number; faltas: Falta[] 
     ingreso_sin_salida: 25,
     opinion_registrada: 20,
     novedad_no_anotada: 18,
+    // Por debajo de no anotar, porque la constancia existe y lo que dice es
+    // verdad. Pero por encima de un error de forma: un ingreso sin patente es
+    // un ingreso que después nadie puede cuadrar con su salida.
+    novedad_incompleta: 14,
     intento_de_borrado: 12,
     inventario_incompleto: 12,
     parrafo_mal_citado: 10,

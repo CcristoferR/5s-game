@@ -1,51 +1,34 @@
 import { Scene } from "@babylonjs/core";
-import { mostrarMenuPrincipal, type NivelMenuInfo } from "../ui/MainMenu";
+import {
+  mostrarMenuPrincipal,
+  type NivelMenuInfo,
+} from "../ui/MainMenu";
 import { GameManager } from "../core/GameManager";
-import { estaAprobado } from "./guardias/HistorialTurnos";
-import { cargarConPantalla, type BriefingCarga } from "../ui/PantallaCarga";
-import { crearRecorridoSupermercado } from "./guardias/RecorridoSupermercado";
-import { crearPuestoConserjeria } from "./guardias/PuestoConserjeria";
+import {
+  estaAprobado,
+} from "./guardias/HistorialTurnos";
+import {
+  cargarConPantalla,
+  type BriefingCarga,
+} from "../ui/PantallaCarga";
+import {
+  crearRecorridoSupermercado,
+} from "./guardias/RecorridoSupermercado";
+import {
+  crearPuestoConserjeria,
+} from "./guardias/PuestoConserjeria";
+import {
+  crearRecorridoBanco,
+} from "./guardias/EscenaBanco";
 
 // ===========================================================================
-// Curso de Guardias de Seguridad — menú del curso
+// Curso de Guardias de Seguridad
 // ===========================================================================
-//
-// Primera pieza del segundo curso. Por ahora es solo el menú de escenarios: es
-// lo que cierra la tubería. Hasta hace nada, canjear cualquier curso abría el
-// galpón del 5S; con esto cada curso abre lo suyo. Que detrás todavía no haya
-// un escenario jugable no importa — lo que se estaba probando era que la
-// plataforma distinga dos cursos, y eso ya se comprueba entrando.
-//
-// ─── POR QUÉ REUSA EL MENÚ DEL 5S Y NO TIENE UNO PROPIO ───────────────────
-//
-// Porque MainMenu.ts nunca fue del 5S. Recibe los niveles como dato desde el
-// primer día —`niveles: NivelMenuInfo[]`— y lo único suyo del 5S eran el título
-// y la bajada, que ahora se pasan al llamarlo.
-//
-// Duplicar 800 líneas de menú para cambiar un encabezado dejaría dos pantallas
-// que hay que arreglar dos veces cada vez que aparezca un fallo de interfaz. Y
-// el jugador que termina el 5S y entra a guardias se encuentra la misma
-// pantalla que ya sabe usar, que es lo que se quería.
 
-/**
- * Lo que se lee mientras carga cada escenario.
- *
- * Va aquí y no en briefingsNiveles porque esa tabla es del 5S: sus entradas
- * están indexadas por fase y hablan de clasificar, ordenar y limpiar. Este
- * curso tiene sus propios escenarios y su propio vocabulario.
- */
-const BRIEFINGS: Record<number, BriefingCarga> = {
-  2: {
-    rotulo: "Escenario 02",
-    fase: "Supermercado",
-    traduccion: "Recorrido del escenario",
-    contexto:
-      "El escenario llegó del equipo 3D y todavía no tiene mecánica. Esto es " +
-      "una visita: se entra por el frente de la sala y se recorre a pie para " +
-      "revisar los pasillos, las góndolas y las alturas antes de montar nada " +
-      "encima. Caminar con WASD o las flechas; ESC para volver al menú.",
-    color: "#79a8bd",
-  },
+const BRIEFINGS: Record<
+  number,
+  BriefingCarga
+> = {
   1: {
     rotulo: "Escenario 01",
     fase: "Condominio",
@@ -57,211 +40,252 @@ const BRIEFINGS: Record<number, BriefingCarga> = {
       "hubiera pasado. A las 03:20 pasa el supervisor a revisarlo.",
     color: "#bda079",
   },
+
+  2: {
+    rotulo: "Escenario 02",
+    fase: "Supermercado",
+    traduccion: "Recorrido del escenario",
+    contexto:
+      "Recorre el escenario del supermercado para reconocer el entorno, " +
+      "sus pasillos, góndolas y espacios de circulación.",
+    color: "#79a8bd",
+  },
+
+  3: {
+    rotulo: "Escenario 03",
+    fase: "Banco",
+    traduccion: "Recorrido del escenario",
+    contexto:
+      "Recorre el escenario bancario y familiarízate con sus espacios, " +
+      "accesos, sectores de atención y circulación interna.",
+    color: "#8ba6c9",
+  },
 };
 
-/** Título y bajada de este curso. */
 const ENCABEZADO = {
   titulo: "Guardias de Seguridad",
-  bajada: "Formación y perfeccionamiento · manual de apoyo OS10",
+  bajada:
+    "Formación y perfeccionamiento · manual de apoyo OS10",
 };
 
-/**
- * Los escenarios del curso.
- *
- * ─── EL ORDEN ES DELIBERADO ────────────────────────────────────────────────
- *
- * El condominio va PRIMERO, no último. Es donde el manual tiene sustancia —el
- * libro de novedades ocupa tres páginas con formato completo y prohibiciones
- * explícitas: no arrancar hojas, no usar corrector, anular entre paréntesis— y
- * es el único que no depende del contenido legal que el documento no trae.
- * Hurto, robo y flagrancia solo aparecen como preguntas del cuestionario, sin
- * respuesta: sin eso, el supermercado no se puede calificar.
- *
- * El formato del nombre es "TÉRMINO - Traducción", que es el que MainMenu parte
- * en dos para dibujar la tarjeta. El 5S usa "SEIRI - Clasificar"; aquí el
- * término es el sitio y la traducción lo que se evalúa en él.
- */
 const ESCENARIOS: NivelMenuInfo[] = [
   {
     numero: 1,
-    nombre: "CONDOMINIO - Libro de novedades",
-    // Único desbloqueado. Los otros dos se abren cuando existan: un menú que
-    // deja entrar a una pantalla vacía es peor que uno que dice que falta.
+    nombre:
+      "CONDOMINIO - Libro de novedades",
     desbloqueado: true,
     completado: false,
   },
+
   {
     numero: 2,
-    // Mientras no tenga mecánica se anuncia como lo que es. Prometer en el
-    // menú algo que al entrar no está es peor que decir la verdad.
-    nombre: "SUPERMERCADO - Recorrido del escenario",
-    // Se abre al aprobar el condominio: más abajo se recalcula.
+    nombre:
+      "SUPERMERCADO - Recorrido del escenario",
     desbloqueado: false,
     completado: false,
   },
+
   {
     numero: 3,
-    nombre: "BANCO - Comunicaciones y enlace",
-    desbloqueado: false,
+    nombre:
+      "BANCO - Recorrido del escenario",
+    desbloqueado: true,
     completado: false,
   },
 ];
 
-/**
- * Escenarios de guardias ya terminados, en esta sesión.
- *
- * OBSOLETO: lo reemplazó el historial de turnos, que sí sobrevive a recargar
- * la página. Se deja el comentario porque explica por qué el progreso de este
- * curso no vive en GameManager, que sigue siendo cierto.
- *
- * ─── POR QUÉ NO USA GameManager ───────────────────────────────────────────
- *
- * Porque GameManager guarda los niveles completados en un único Set de
- * números, sin distinguir de qué curso son. Marcar ahí el escenario 1 de
- * guardias marcaría también el Nivel 1 del 5S: subiría el porcentaje de
- * madurez y acercaría el certificado de un curso que la persona no jugó.
- *
- * Esto es un parche a la espera de que GameManager acepte una clave de curso.
- * Se pierde al recargar, que es mejor que corromper el progreso del otro
- * curso — y mientras haya un solo escenario jugable casi no se nota.
- */
-const escenariosCompletados = new Set<number>();
+const escenariosCompletados =
+  new Set<number>();
+
 void escenariosCompletados;
 
-/**
- * Abre el menú del curso.
- *
- * @param scene            Escena ya montada por main.ts. El menú se dibuja
- *                         encima con una capa a pantalla completa, así que le
- *                         da igual qué haya debajo — hoy es el garaje del 5S,
- *                         que queda tapado por el fondo opaco del panel.
- * @param onVolverAlPortal Salir del curso.
- */
 export function abrirMenuGuardias(
   scene: Scene,
   onVolverAlPortal: () => void,
   usuario?: string
 ): void {
-  const gameManager = GameManager.getInstance();
+  const gameManager =
+    GameManager.getInstance();
 
-  // Sin nombre no hay a quién guardarle el turno. "invitado" mantiene el juego
-  // utilizable —se puede jugar y ver la nota— pero deja el historial en un
-  // cajón compartido, que es exactamente lo que es.
-  const quienJuega = usuario?.trim() || "invitado";
+  const quienJuega =
+    usuario?.trim() || "invitado";
 
-  // El segundo escenario se abre al aprobar el primero.
-  //
-  // No es una concesión: recorrer una sala de ventas solo tiene sentido con el
-  // libro de novedades ya practicado, porque lo que se va a evaluar ahí —qué
-  // se observa y cómo se deja escrito— es lo mismo que se aprende en el
-  // condominio. Y así el jugador entra al recorrido sabiendo qué mirar.
-  const condominioAprobado = estaAprobado(quienJuega, 1);
+  const condominioAprobado =
+    estaAprobado(
+      quienJuega,
+      1
+    );
 
-  const escenarios = ESCENARIOS.map((e) => ({
-    ...e,
-    // Del historial guardado, no de una variable que se pierde al recargar. Y
-    // aprobado no es lo mismo que jugado: hace falta la nota mínima.
-    completado: estaAprobado(quienJuega, e.numero),
-    desbloqueado: e.numero === 2 ? condominioAprobado : e.desbloqueado,
-  }));
+  const escenarios =
+    ESCENARIOS.map((e) => ({
+      ...e,
+
+      completado:
+        estaAprobado(
+          quienJuega,
+          e.numero
+        ),
+
+      desbloqueado:
+        e.numero === 2
+          ? condominioAprobado
+          : e.numero === 3
+          ? true
+          : e.desbloqueado,
+    }));
 
   mostrarMenuPrincipal(
     scene,
     escenarios,
     gameManager.getPorcentajeMadurez(),
+
     (numero) => {
-      // TODAVÍA NO HAY ESCENARIOS. Se avisa y se vuelve al menú.
-      //
-      // Es a propósito que esto sea un aviso y no una pantalla a medias: un
-      // nivel vacío se lee como que el juego está roto, y un aviso se lee como
-      // que falta contenido, que es la verdad.
-      // El escenario 1 está jugable de punta a punta: se abre el libro
-      // haciendo clic sobre él, se recorre el turno de 00:00 a 08:00 y se
-      // cierra con el informe del supervisor.
+      // =========================================================
+      // ESCENARIO 1
+      // =========================================================
       if (numero === 1) {
-        // Se arma DETRÁS de la pantalla de carga.
-        //
-        // Montar el puesto —el hall, el mesón, las seis luminarias, las
-        // sombras, los reflejos y el post-proceso— bloquea el hilo principal
-        // un buen rato, y hasta ahora eso se veía: la escena aparecía a
-        // trozos, con las luces entrando después de la geometría.
-        //
-        // Es la misma pantalla que usa el 5S entre fases. Y como la espera
-        // existe igual, se aprovecha para decir de qué va el turno, que es lo
-        // que le hace falta a alguien que entra por primera vez a un puesto de
-        // conserjería sin saber qué se espera de él.
         void cargarConPantalla(
           numero,
-          async () => {
-            crearPuestoConserjeria(scene, quienJuega, () => {
-              // No se marca nada acá: el turno ya quedó registrado al
-              // entregarlo, con su nota y sus faltas. Al volver, el menú lo
-              // lee del historial.
-              abrirMenuGuardias(scene, onVolverAlPortal, usuario);
-            });
 
-            // ESPERAR A QUE LA ESCENA ESTÉ LISTA DE VERDAD.
-            //
-            // crearPuestoConserjeria vuelve en cuanto ha declarado la
-            // geometría, pero en ese momento el trabajo pesado no ha
-            // ocurrido todavía: quedan por compilar los sombreadores de
-            // cada material, por subir las texturas y por resolver el
-            // primer pase de sombras y reflejos.
-            //
-            // Sin esta espera la pantalla de carga se quitaba justo ahí, y
-            // lo que se veía era el puesto apareciendo por partes —como una
-            // segunda carga después de la carga—, que es exactamente lo que
-            // la pantalla existe para tapar. El 5S ya lo hacía así en
-            // construirYEsperar; esto es lo mismo.
-            //
-            // El tope de ocho segundos es un seguro: si un material se
-            // atasca, es preferible entrar con algo sin terminar que dejar
-            // al jugador mirando una pantalla de carga para siempre.
-            const TOPE_MS = 8000;
+          async () => {
+            crearPuestoConserjeria(
+              scene,
+              quienJuega,
+
+              () => {
+                abrirMenuGuardias(
+                  scene,
+                  onVolverAlPortal,
+                  usuario
+                );
+              }
+            );
+
+            const TOPE_MS =
+              8000;
+
             await Promise.race([
-              scene.whenReadyAsync(true),
-              new Promise<void>((listo) => setTimeout(listo, TOPE_MS)),
+              scene.whenReadyAsync(
+                true
+              ),
+
+              new Promise<void>(
+                (listo) =>
+                  setTimeout(
+                    listo,
+                    TOPE_MS
+                  )
+              ),
             ]);
           },
+
           BRIEFINGS[numero]
         );
+
         return;
       }
 
-      // El escenario 2 todavía no tiene mecánica, pero el mapa ya existe: se
-      // entra a recorrerlo. Es el mismo orden que se siguió con el garaje del
-      // 5S — primero comprobar que el escenario funciona, después jugarlo.
+      // =========================================================
+      // ESCENARIO 2
+      // =========================================================
       if (numero === 2) {
         void cargarConPantalla(
           numero,
+
           async () => {
-            await crearRecorridoSupermercado(scene, () => {
-              abrirMenuGuardias(scene, onVolverAlPortal, usuario);
-            });
-            // Misma espera que el escenario 1: crearRecorrido vuelve en cuanto
-            // declaró la geometría, pero faltan los sombreadores y la subida de
-            // las texturas. Sin esto la sala aparece por partes.
-            const TOPE_MS = 10000;
+            await crearRecorridoSupermercado(
+              scene,
+
+              () => {
+                abrirMenuGuardias(
+                  scene,
+                  onVolverAlPortal,
+                  usuario
+                );
+              }
+            );
+
+            const TOPE_MS =
+              10000;
+
             await Promise.race([
-              scene.whenReadyAsync(true),
-              new Promise<void>((listo) => setTimeout(listo, TOPE_MS)),
+              scene.whenReadyAsync(
+                true
+              ),
+
+              new Promise<void>(
+                (listo) =>
+                  setTimeout(
+                    listo,
+                    TOPE_MS
+                  )
+              ),
             ]);
           },
+
           BRIEFINGS[numero]
         );
+
         return;
       }
 
-      window.alert(
-        `El escenario ${numero} todavía está en construcción.\n\n` +
-          "El primero en llegar será el del condominio: turno completo desde el " +
-          "puesto, con el libro de novedades."
+      // =========================================================
+      // ESCENARIO 3 — BANCO
+      // =========================================================
+      if (numero === 3) {
+        void cargarConPantalla(
+          numero,
+
+          async () => {
+            await crearRecorridoBanco(
+              scene,
+
+              () => {
+                abrirMenuGuardias(
+                  scene,
+                  onVolverAlPortal,
+                  usuario
+                );
+              }
+            );
+
+            const TOPE_MS =
+              10000;
+
+            await Promise.race([
+              scene.whenReadyAsync(
+                true
+              ),
+
+              new Promise<void>(
+                (listo) =>
+                  setTimeout(
+                    listo,
+                    TOPE_MS
+                  )
+              ),
+            ]);
+          },
+
+          BRIEFINGS[numero]
+        );
+
+        return;
+      }
+
+      abrirMenuGuardias(
+        scene,
+        onVolverAlPortal,
+        usuario
       );
-      abrirMenuGuardias(scene, onVolverAlPortal, usuario);
     },
-    // Sin certificado ni ranking mientras no haya nada que certificar.
-    () => onVolverAlPortal(),
-    () => onVolverAlPortal(),
+
+    () =>
+      onVolverAlPortal(),
+
+    () =>
+      onVolverAlPortal(),
+
     usuario,
     onVolverAlPortal,
     ENCABEZADO
