@@ -38,6 +38,24 @@ export interface OpcionesAfinado {
   /** Cuánto emite el rótulo. 1 es legible sin quemarse. */
   brilloLetrero?: number;
   /**
+   * Fragmentos de nombre de material que NO son metal, aunque el modelo diga
+   * que sí.
+   *
+   * ─── POR QUÉ LAS LATAS SE VEÍAN NEGRAS ──────────────────────────────────
+   *
+   * Bitplay entregó las tres latas del supermercado con el mapa de
+   * metalicidad blanco entero: metal al cien por cien, etiqueta incluida. En
+   * Maya se ven bien porque su escena tiene una luz de cielo que reflejar.
+   * Aquí no hay entorno, y un metal PBR no tiene color propio —solo refleja
+   * lo que lo rodea—, así que sin nada alrededor sale negro.
+   *
+   * Y la etiqueta impresa de una lata no es metal: es tinta sobre barniz.
+   * Apagando el metal se ilumina como lo que es. Se prefirió a darle a la
+   * escena una sonda de reflejos como la del condominio porque la sonda
+   * cambia la luz de TODO el local, y el problema son tres materiales.
+   */
+  sinMetal?: string[];
+  /**
    * Imprime en consola el nombre de cada material con el tamaño y la altura de
    * su malla.
    *
@@ -56,6 +74,7 @@ export function afinarMateriales(
 ): void {
   const letreros = (opciones.letreros ?? []).map((t) => t.toLowerCase());
   const brillo = opciones.brilloLetrero ?? 1;
+  const sinMetal = (opciones.sinMetal ?? []).map((t) => t.toLowerCase());
 
   // --- Filtrado, sobre todas las texturas del escenario ----------------------
   //
@@ -69,7 +88,7 @@ export function afinarMateriales(
     tex.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
   });
 
-  // --- Los rótulos, encendidos ----------------------------------------------
+  // --- Metales apagados y rótulos encendidos ----------------------------------
   const vistos = new Set<string>();
 
   mallas.forEach((malla) => {
@@ -79,6 +98,13 @@ export function afinarMateriales(
     vistos.add(mat.name);
 
     const nombre = mat.name.toLowerCase();
+
+    if (sinMetal.some((t) => nombre.includes(t))) {
+      // El mapa se queda, porque de él sigue saliendo la rugosidad. El factor
+      // multiplica su canal de metal: en cero lo anula entero.
+      mat.metallic = 0;
+    }
+
     if (!letreros.some((t) => nombre.includes(t))) return;
 
     // Emite su propio color. Se usa la textura de color como emisiva —la misma

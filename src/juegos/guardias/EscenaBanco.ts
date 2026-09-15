@@ -177,7 +177,16 @@ export async function cargarBanco(
   // la altura de su malla: el rótulo es el que está alto y es ancho y plano.
   // Una vez sabido, basta con ponerlo en la lista de abajo.
   afinarMateriales(scene, mallas, {
-    letreros: [],
+    // Las letras del rótulo, ya identificadas.
+    //
+    // Salieron de los nombres de grupo del OBJ: estos materiales van sobre
+    // geometría llamada typeMesh, que es la herramienta Type de Maya, o sea
+    // texto en 3D. Por eso ningún nombre decía "letrero": el exportador los
+    // dejó con el nombre del nodo de sombreado, no con el de la pieza.
+    //
+    // "type" cubre typeOpenPBRSurfaceSG y pasted__typeOpenPBRSurfaceSG de una
+    // vez, que son las dos tandas de letras.
+    letreros: ["type"],
     brilloLetrero: 1.15,
     diagnostico: opciones.diagnostico,
   });

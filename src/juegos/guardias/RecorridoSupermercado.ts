@@ -12,13 +12,20 @@ import {
   type SupermercadoCargado,
 } from "./EscenaSupermercado";
 import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
+import { construirBodega } from "./BodegaSupermercado";
+import { crearDetectorZonas, comprobarPlano, PUERTA_X } from "./ZonasSupermercado";
+import { crearHudRecorrido } from "./HudRecorrido";
+import { crearRelojTurno } from "./RelojTurno";
+import { horaDe } from "./LibroNovedades";
 
 // ===========================================================================
-// Escenario 2 — Supermercado, modo recorrido
+// Escenario 2 — Supermercado
 // ===========================================================================
 //
-// Todavía no es el nivel: es el escenario cargado y recorrible, para poder
-// verlo y decidir sobre él.
+// El nivel se monta por pasos sobre el escenario recorrible. Por ahora tiene
+// lo que hace que el local deje de ser un espacio suelto: cuatro zonas con
+// nombre (ZonasSupermercado, con la bodega que el modelo no traía) y un turno
+// que corre desde las 16:00 (RelojTurno, el mismo del condominio).
 //
 // ─── POR QUÉ ESTO EXISTE ANTES QUE LA MECÁNICA ────────────────────────────
 //
@@ -39,11 +46,25 @@ import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
 
 export interface RecorridoSupermercado {
   supermercado: SupermercadoCargado;
+  /**
+   * Arranca el turno: el reloj y los carteles de zona.
+   *
+   * Aparte de la creación a propósito. Hay que llamarla cuando la pantalla de
+   * carga ya se fue; hacerlo antes es entrar con el turno empezado.
+   */
+  comenzar: () => void;
   dispose: () => void;
 }
 
 /** Altura de los ojos de una persona de pie. */
 const ALTURA_OJO = 1.65;
+
+/** Las 16:00 en minutos desde medianoche: el turno de tarde del local. */
+const INICIO_TURNO = 16 * 60;
+/** Ocho horas, como el turno del condominio. */
+const DURACION_TURNO = 8 * 60;
+/** El color del escenario, el mismo de su pantalla de carga en JuegoGuardias. */
+const ACENTO = "#79a8bd";
 
 export async function crearRecorridoSupermercado(
   scene: Scene,
@@ -91,7 +112,28 @@ export async function crearRecorridoSupermercado(
 
   usarCamara(scene, camara);
 
-  const supermercado = await cargarSupermercado(scene, { diagnostico: true });
+  // ESCALA 2,5. El modelo llega a menos de la mitad de tamaño.
+  //
+  // Medido sobre el propio OBJ: las góndolas salen de 0,72 m y una de verdad
+  // mide 1,80. El mostrador de caja, 0,37 en vez de 1,10. El edificio entero,
+  // 2,58 en vez de los seis y pico de una nave con parapeto y letrero.
+  //
+  // Tres piezas independientes dan factores de 2,4, 2,5 y 3,0: coinciden, así
+  // que el modelo está a escala uniforme y solo hay que multiplicarlo. Si los
+  // factores hubieran salido dispares, el problema sería otro y esto lo
+  // habría tapado.
+  //
+  // De ahí venía lo de "aparezco volando": la cámara estaba a su altura
+  // correcta de 1,65: eran las estanterías las que llegaban a la rodilla. No
+  // había nada que corregir en la cámara.
+  //
+  // Se aplica al cargar y no moviendo la cámara porque de aquí salen también
+  // el interior donde se puede caminar, la altura de las luces y las cajas de
+  // colisión. Tocando solo la cámara, todo eso seguiría en miniatura.
+  const supermercado = await cargarSupermercado(scene, {
+    escala: 2.5,
+    diagnostico: true,
+  });
 
   // Ya con las medidas del modelo, se planta al jugador dentro de la sala.
   //
@@ -99,15 +141,43 @@ export async function crearRecorridoSupermercado(
   // edificio de 8,3 × 6,1 dentro de él, así que la mitad de esa superficie es
   // explanada exterior. Colocando desde las medidas del conjunto se aparecía
   // fuera, detrás del muro trasero.
+  //
+  // Y se le planta recién pasada la puerta de vidrio, no en el centro de la
+  // fachada: el turno empieza entrando al local, y el primer cartel que ve es
+  // el de la entrada.
   const { interior } = supermercado;
-  camara.position.set(
-    (interior.minX + interior.maxX) / 2,
-    ALTURA_OJO,
-    interior.maxZ - 0.8
-  );
+  camara.position.set(PUERTA_X, ALTURA_OJO, interior.maxZ - 0.8);
   camara.setTarget(
     new Vector3((interior.minX + interior.maxX) / 2, ALTURA_OJO - 0.15, interior.minZ)
   );
+
+  // ─── NO SE VUELA ──────────────────────────────────────────────────────
+  //
+  // Una FreeCamera avanza HACIA DONDE MIRA. Con la vista algo levantada y la
+  // tecla de avanzar pulsada, eso es despegar — y no hacía falta ni querer:
+  // bastaba caminar mirando un estante alto para ir subiendo sin darse
+  // cuenta.
+  //
+  // Se fija la altura en cada cuadro en vez de activar la gravedad. La
+  // gravedad resuelve la caída, pero deja el problema al revés: se sigue
+  // pudiendo subir mirando arriba, y luego se cae. Aquí el suelo es uno y
+  // plano, así que clavar la altura es más simple y no falla nunca.
+  //
+  // Mirar arriba y abajo sigue funcionando igual: lo que se anula es el
+  // desplazamiento vertical, no la vista.
+  //
+  // El observador se guarda para quitarlo al salir. Antes no se quitaba: la
+  // escena es la misma para todo el curso, así que cada entrada al
+  // supermercado dejaba uno más escribiendo sobre una cámara ya destruida.
+  const alturaCaminando = camara.position.y;
+  const alturaFija = scene.onBeforeRenderObservable.add(() => {
+    camara.position.y = alturaCaminando;
+  });
+
+  // La bodega no viene en el modelo: se construye. Ver BodegaSupermercado.
+  // Antes de las luces, para que sus materiales entren en la ampliación del
+  // tope de luces que se hace más abajo.
+  const bodega = construirBodega(scene, camara, supermercado);
 
   // Los pasillos se reparten a lo largo del fondo de la sala. Se calculan desde
   // las medidas reales y no a ojo: si Bitplay manda una versión más grande, los
@@ -162,6 +232,50 @@ export async function crearRecorridoSupermercado(
   });
   document.body.appendChild(ayuda);
 
+  // ─── EL TURNO Y LAS ZONAS ─────────────────────────────────────────────
+  //
+  // Se montan aquí pero NO arrancan: lo hace comenzar(), con la pantalla de
+  // carga ya retirada. Montar el escenario y esperar a que compile puede
+  // llevar diez segundos, y con el reloj corriendo por detrás el jugador
+  // entraría con el turno empezado y el cartel de la entrada ya visto por
+  // nadie.
+  const hud = crearHudRecorrido({
+    hora: horaDe(INICIO_TURNO),
+    turno: "Turno 16:00 a 24:00 horas",
+    acento: ACENTO,
+  });
+
+  // El mismo reloj del condominio, a su misma velocidad. Cuenta minutos de
+  // turno desde cero; la hora de pared se suma al mostrarla.
+  const reloj = crearRelojTurno(scene, {
+    minutoFinal: DURACION_TURNO,
+    alAvanzar: (minuto) => hud.ponerHora(horaDe(INICIO_TURNO + minuto)),
+  });
+
+  const zonas = crearDetectorZonas((zona) => hud.anunciarZona(zona.nombre, zona.bajada));
+  let enMarcha = false;
+  /** Un respiro antes del primer cartel: que primero se vea la sala. */
+  let esperaPrimerCartel = 0.8;
+  const seguirZonas = scene.onBeforeRenderObservable.add(() => {
+    if (!enMarcha) return;
+    const dt = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+    if (esperaPrimerCartel > 0) {
+      esperaPrimerCartel -= dt;
+      return;
+    }
+    zonas.actualizar(camara.position.x, camara.position.z, dt);
+  });
+
+  const comenzar = (): void => {
+    if (cerrado || enMarcha) return;
+    enMarcha = true;
+    // Ya con cuadros dibujados, que es cuando las cajas envolventes del
+    // modelo están donde se ven.
+    comprobarPlano(supermercado.mallas);
+    hud.mostrar();
+    reloj.correr(true);
+  };
+
   /**
    * Sale del recorrido y devuelve el menú.
    *
@@ -184,6 +298,11 @@ export async function crearRecorridoSupermercado(
     camara.detachControl();
 
     ayuda.remove();
+    scene.onBeforeRenderObservable.remove(alturaFija);
+    scene.onBeforeRenderObservable.remove(seguirZonas);
+    reloj.dispose();
+    hud.dispose();
+    bodega.dispose();
     tuberia.dispose();
     // limpiarEscena deja además una cámara neutra y el fondo del portal, así
     // que el menú aparece sobre algo dibujable y con su color de siempre.
@@ -195,6 +314,7 @@ export async function crearRecorridoSupermercado(
 
   return {
     supermercado,
+    comenzar,
     // salir() ya desmonta la escena entera, así que esto es solo el atajo por
     // si alguien cierra el recorrido desde fuera sin pasar por ESC.
     dispose: salir,

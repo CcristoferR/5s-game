@@ -80,7 +80,6 @@ from PIL import Image
 MATERIALES = {
     "set1": ("Base", "Edificio: muros y estructura"),
     "set2": ("Letrero", "Letrero colgante"),
-    "set3": ("Estanteria", "Estanterías"),
     "set4": ("Maquina", "Máquina"),
     "set5": ("Cosas Techo", "Instalaciones de techo"),
     "set6": ("Caja", "Caja registradora"),
@@ -91,6 +90,18 @@ MATERIALES = {
     "set11": ("Comidas/Lata01", "Latas 01"),
     "set12": ("Comidas/Cereal", "Cereales"),
     "set13": ("Comidas/Botella", "Botellas"),
+    # Las estanterías. ANTES ERA set3.
+    #
+    # En el reexportado de septiembre el material set3 desapareció y apareció
+    # set14. Que son la misma pieza lo dicen los nombres de grupo del OBJ: el
+    # set14 nuevo va sobre geometría llamada "Estante" y "Estante_con_comida",
+    # igual que iba el set3 viejo.
+    #
+    # No es un detalle menor: un material sin entrada en esta tabla no da
+    # error, sale gris liso. Las estanterías son de las piezas más grandes del
+    # local, así que el fallo se habría visto como "el supermercado perdió las
+    # texturas" sin ninguna pista de por qué.
+    "set14": ("Estanteria", "Estanterías"),
     # El piso llega sin material propio. Se le pone la textura del edificio,
     # que es la única de 2048 px y la pensada para superficies grandes.
     "initialShadingGroup": ("Base", "Piso"),

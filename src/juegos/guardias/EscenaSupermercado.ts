@@ -166,11 +166,15 @@ export async function cargarSupermercado(
   //
   // "Letrero colgante" es el nombre que trae el material dentro del .glb, así
   // que si Bitplay reexporta el escenario conservándolo, esto sigue valiendo.
-  afinarMateriales(scene, mallas, { letreros: ["letrero"], brilloLetrero: 1.15 });
+  //
+  // Y las tres latas pierden el metal con el que vienen: sin entorno que
+  // reflejar se veían negras. Mismo sitio y mismo motivo, sin tocar el .glb.
+  afinarMateriales(scene, mallas, { letreros: ["letrero"], brilloLetrero: 1.15, sinMetal: ["lata"] });
 
   if (opciones.diagnostico) {
     console.log(
-      `[supermercado] ${mallas.length} mallas · ${ancho.toFixed(2)} × ${alto.toFixed(
+      `[supermercado] piso detectado en y=${alturaPiso.toFixed(2)} · ` +
+        `${mallas.length} mallas · ${ancho.toFixed(2)} × ${alto.toFixed(
         2
       )} × ${fondo.toFixed(2)} m`
     );
@@ -210,27 +214,61 @@ function detectarSuperficieDelPiso(
   minimo: Vector3,
   maximo: Vector3
 ): number {
-  const areaPlanta = (maximo.x - minimo.x) * (maximo.z - minimo.z);
+  // EL SUELO ES DONDE SE APOYAN LOS MUEBLES.
+  //
+  // ─── POR QUÉ NO SE BUSCA LA LOSA ──────────────────────────────────────────
+  //
+  // Los dos intentos anteriores partían de encontrar la malla del piso: primero
+  // la más grande que estuviera abajo, después la más grande y delgada. Las dos
+  // fallan con este modelo por la misma razón, y es que el conversor FUSIONA LA
+  // GEOMETRÍA POR MATERIAL. El piso no es una malla: está repartido entre la
+  // del edificio —que además incluye muros y techo, y por eso mide varios
+  // metros de alto— y la del material Base. No hay una losa que encontrar.
+  //
+  // ─── LO QUE SÍ SE PUEDE MEDIR ─────────────────────────────────────────────
+  //
+  // Una estantería, una caja registradora y una máquina expendedora tienen algo
+  // en común que ninguna fusión de materiales altera: SU BASE TOCA EL SUELO.
+  // Así que la altura del piso es la que más se repite entre los puntos más
+  // bajos de los muebles.
+  //
+  // Es más robusto que buscar la losa porque no depende de cómo esté partida la
+  // geometría, ni de que el modelo traiga piso, ni de cómo se llame nada. Si
+  // Bitplay reexporta el escenario con otra organización de materiales, esto
+  // sigue funcionando.
   const alturaTotal = maximo.y - minimo.y;
-  const techoDeBusqueda = minimo.y + alturaTotal * 0.12;
+  const techoDeBusqueda = minimo.y + alturaTotal * 0.5;
 
-  let mejorArea = 0;
-  let alturaSuperior: number | null = null;
+  // Se agrupan las bases en escalones de cinco centímetros: los muebles no se
+  // apoyan todos en la misma cota exacta, pero sí en la misma franja.
+  const ESCALON = 0.05;
+  const cuenta = new Map<number, number>();
 
   mallas.forEach((malla) => {
     const caja = malla.getBoundingInfo().boundingBox;
+    const alto = caja.maximumWorld.y - caja.minimumWorld.y;
+
+    // Fuera lo que es demasiado alto para ser un mueble: eso es el edificio.
+    if (alto > alturaTotal * 0.55) return;
+    // Y fuera lo que está colgado: rótulos e instalaciones de techo.
     if (caja.minimumWorld.y > techoDeBusqueda) return;
-    const area =
-      (caja.maximumWorld.x - caja.minimumWorld.x) *
-      (caja.maximumWorld.z - caja.minimumWorld.z);
-    if (area < areaPlanta * 0.35) return;
-    if (area > mejorArea) {
-      mejorArea = area;
-      alturaSuperior = caja.maximumWorld.y;
+
+    const escalon = Math.round(caja.minimumWorld.y / ESCALON);
+    cuenta.set(escalon, (cuenta.get(escalon) ?? 0) + 1);
+  });
+
+  let mejorEscalon: number | null = null;
+  let masVotos = 0;
+  cuenta.forEach((votos, escalon) => {
+    // A igualdad de votos gana el más bajo: si hay muebles sobre una tarima, el
+    // suelo es el de abajo.
+    if (votos > masVotos || (votos === masVotos && mejorEscalon !== null && escalon < mejorEscalon)) {
+      masVotos = votos;
+      mejorEscalon = escalon;
     }
   });
 
-  return alturaSuperior ?? minimo.y;
+  return mejorEscalon === null ? minimo.y : mejorEscalon * ESCALON;
 }
 
 /**
@@ -337,4 +375,4 @@ export function ampliarLucesSupermercado(scene: Scene): void {
   scene.materials.forEach((mat) => {
     if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = 8;
   });
-}
+} 

@@ -44,10 +44,30 @@ ESCALA = 0.01
 
 MAPAS = ("BaseColor", "Roughness", "Metallic", "Normal")
 
-# Relación entre los materiales genéricos que trae Banco.obj y la carpeta
-# real de texturas del paquete.
+# Relación entre los materiales que trae Banco.obj y la carpeta real de
+# texturas del paquete.
+#
+# ─── ACTUALIZADO AL PAQUETE DE SEPTIEMBRE ────────────────────────────────
+#
+# El reexportado de Bitplay cambió tres cosas, y las tres rompían el mapeo
+# anterior en silencio: el material sin entrada aquí sale gris liso, sin dar
+# ningún error.
+#
+#   1. La carpeta Pilares pasó a llamarse Pilar, y su textura de
+#      Pilates_Pilares_SG a Pilates_set14.
+#   2. Aparecieron dos carpetas nuevas: Barrera y Puerta.
+#   3. Los materiales pasaron de diez a dieciocho.
+#
+# La correspondencia no se adivinó: sale de los nombres de grupo del propio
+# OBJ. Maya conserva ahí cómo se llamaba cada pieza —Mostrador, Sillas,
+# SillaOff, Marco, Monitor— y eso dice qué material va con qué carpeta.
+#
+# EL RÓTULO. Los materiales typeOpenPBRSurfaceSG y pasted__typeOpenPBRSurfaceSG
+# van sobre geometría llamada typeMesh, que es la herramienta Type de Maya:
+# texto en 3D. O sea que ESAS SON LAS LETRAS del letrero. Es el dato que
+# faltaba para poder encenderlo desde EscenaBanco.
 MATERIALES = {
-    # Mostrador
+    # Cuerpo del mostrador
     "set3": {
         "base": "Texturas/Mostrador/Mostrador_Mostrador_SG_BaseColor.1001.png",
         "roughness": "Texturas/Mostrador/Mostrador_Mostrador_SG_Roughness.1001.png",
@@ -55,7 +75,15 @@ MATERIALES = {
         "normal": "Texturas/Mostrador/Mostrador_Mostrador_SG_Normal.1001.png",
     },
 
-    # Estructura metálica de las sillas
+    # Resto del mostrador: llegó partido en dos materiales
+    "set18": {
+        "base": "Texturas/Mostrador/Mostrador_Mostrador_SG_BaseColor.1001.png",
+        "roughness": "Texturas/Mostrador/Mostrador_Mostrador_SG_Roughness.1001.png",
+        "metallic": "Texturas/Mostrador/Mostrador_Mostrador_SG_Metallic.1001.png",
+        "normal": "Texturas/Mostrador/Mostrador_Mostrador_SG_Normal.1001.png",
+    },
+
+    # Estructura metálica de las sillas de espera
     "set4": {
         "base": "Texturas/Sillas/Sillas_Asiento_Metal_SG_BaseColor.1001.png",
         "roughness": "Texturas/Sillas/Sillas_Asiento_Metal_SG_Roughness.1001.png",
@@ -63,7 +91,7 @@ MATERIALES = {
         "normal": "Texturas/Sillas/Sillas_Asiento_Metal_SG_Normal.1001.png",
     },
 
-    # Asientos
+    # Asientos de las sillas de espera
     "set5": {
         "base": "Texturas/Sillas/Sillas_Asientis_SG_BaseColor.1001.png",
         "roughness": "Texturas/Sillas/Sillas_Asientis_SG_Roughness.1001.png",
@@ -71,15 +99,39 @@ MATERIALES = {
         "normal": "Texturas/Sillas/Sillas_Asientis_SG_Normal.1001.png",
     },
 
-    # Pilares
-    "set9": {
-        "base": "Texturas/Pilares/Pilates_Pilares_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Pilares/Pilates_Pilares_SG_Roughness.1001.png",
-        "metallic": "Texturas/Pilares/Pilates_Pilares_SG_Metallic.1001.png",
-        "normal": "Texturas/Pilares/Pilates_Pilares_SG_Normal.1001.png",
+    # Sillas de oficina: tapizado
+    "set6": {
+        "base": "Texturas/Sillas Off/Silla Off_SillaOff_SG_BaseColor.1001.png",
+        "roughness": "Texturas/Sillas Off/Silla Off_SillaOff_SG_Roughness.1001.png",
+        "metallic": "Texturas/Sillas Off/Silla Off_SillaOff_SG_Metallic.1001.png",
+        "normal": "Texturas/Sillas Off/Silla Off_SillaOff_SG_Normal.1001.png",
     },
 
-    # Banco / superficies principales del banco
+    # Sillas de oficina: plástico
+    "set7": {
+        "base": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_BaseColor.1001.png",
+        "roughness": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_Roughness.1001.png",
+        "metallic": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_Metallic.1001.png",
+        "normal": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_Normal.1001.png",
+    },
+
+    # Pilares. OJO: la carpeta pasó de Pilares a Pilar
+    "set17": {
+        "base": "Texturas/Pilar/Pilates_set14_BaseColor.1001.png",
+        "roughness": "Texturas/Pilar/Pilates_set14_Roughness.1001.png",
+        "metallic": "Texturas/Pilar/Pilates_set14_Metallic.1001.png",
+        "normal": "Texturas/Pilar/Pilates_set14_Normal.1001.png",
+    },
+
+    # Más pilares y su remate
+    "set19": {
+        "base": "Texturas/Pilar/Pilates_set14_BaseColor.1001.png",
+        "roughness": "Texturas/Pilar/Pilates_set14_Roughness.1001.png",
+        "metallic": "Texturas/Pilar/Pilates_set14_Metallic.1001.png",
+        "normal": "Texturas/Pilar/Pilates_set14_Normal.1001.png",
+    },
+
+    # Suelo y superficies principales
     "set10": {
         "base": "Texturas/Base/Base Banco_Banco_SG_BaseColor.1001.png",
         "roughness": "Texturas/Base/Base Banco_Banco_SG_Roughness.1001.png",
@@ -87,13 +139,74 @@ MATERIALES = {
         "normal": "Texturas/Base/Base Banco_Banco_SG_Normal.1001.png",
     },
 
-    # Estructuras
+    # Barrera de atención al público (carpeta nueva)
     "set11": {
+        "base": "Texturas/Barrera/Barrera_Barrera_SG_BaseColor.1001.png",
+        "roughness": "Texturas/Barrera/Barrera_Barrera_SG_Roughness.1001.png",
+        "metallic": "Texturas/Barrera/Barrera_Barrera_SG_Metallic.1001.png",
+        "normal": "Texturas/Barrera/Barrera_Barrera_SG_Normal.1001.png",
+    },
+
+    # Marco y puerta de acceso (carpeta nueva)
+    "set13": {
+        "base": "Texturas/Puerta/Puerta_Puerta_Sg_BaseColor.1001.png",
+        "roughness": "Texturas/Puerta/Puerta_Puerta_Sg_Roughness.1001.png",
+        "metallic": "Texturas/Puerta/Puerta_Puerta_Sg_Metallic.1001.png",
+        "normal": "Texturas/Puerta/Puerta_Puerta_Sg_Normal.1001.png",
+    },
+
+    # Perfilería de las ventanas
+    "Palos_ventana_SG": {
         "base": "Texturas/Estructura/Estructura_Estructura1_BaseColor.1001.png",
         "roughness": "Texturas/Estructura/Estructura_Estructura1_Roughness.1001.png",
         "metallic": "Texturas/Estructura/Estructura_Estructura1_Metallic.1001.png",
         "normal": "Texturas/Estructura/Estructura_Estructura1_Normal.1001.png",
     },
+
+    # Estructura del local
+    "aiStandardSurface2SG": {
+        "base": "Texturas/Estructura/Estructura_Estructura1_BaseColor.1001.png",
+        "roughness": "Texturas/Estructura/Estructura_Estructura1_Roughness.1001.png",
+        "metallic": "Texturas/Estructura/Estructura_Estructura1_Metallic.1001.png",
+        "normal": "Texturas/Estructura/Estructura_Estructura1_Normal.1001.png",
+    },
+
+    # Cuerpo del letrero
+    "aiStandardSurface3SG": {
+        "base": "Texturas/Letrero/Cartelito_Letrero_SG1_BaseColor.1001.png",
+        "roughness": "Texturas/Letrero/Cartelito_Letrero_SG1_Roughness.1001.png",
+        "metallic": "Texturas/Letrero/Cartelito_Letrero_SG1_Metallic.1001.png",
+        "normal": "Texturas/Letrero/Cartelito_Letrero_SG1_Normal.1001.png",
+    },
+
+    # LETRAS del rótulo (geometría typeMesh de Maya)
+    "typeOpenPBRSurfaceSG": {
+        "base": "Texturas/Letrero/Cartelito_Letrero_SG1_BaseColor.1001.png",
+        "roughness": "Texturas/Letrero/Cartelito_Letrero_SG1_Roughness.1001.png",
+        "metallic": "Texturas/Letrero/Cartelito_Letrero_SG1_Metallic.1001.png",
+        "normal": "Texturas/Letrero/Cartelito_Letrero_SG1_Normal.1001.png",
+    },
+
+    # Más letras del rótulo
+    "pasted__typeOpenPBRSurfaceSG": {
+        "base": "Texturas/Letrero/Cartelito_Letrero_SG1_BaseColor.1001.png",
+        "roughness": "Texturas/Letrero/Cartelito_Letrero_SG1_Roughness.1001.png",
+        "metallic": "Texturas/Letrero/Cartelito_Letrero_SG1_Metallic.1001.png",
+        "normal": "Texturas/Letrero/Cartelito_Letrero_SG1_Normal.1001.png",
+    },
+
+    # El plano del suelo
+    "initialShadingGroup": {
+        "base": "Texturas/Base/Base Banco_Banco_SG_BaseColor.1001.png",
+        "roughness": "Texturas/Base/Base Banco_Banco_SG_Roughness.1001.png",
+        "metallic": "Texturas/Base/Base Banco_Banco_SG_Metallic.1001.png",
+        "normal": "Texturas/Base/Base Banco_Banco_SG_Normal.1001.png",
+    },
+
+    # Los monitores del mostrador. El paquete no trae textura para ellos, así
+    # que se dejan sin mapear a propósito: el script les pone un color liso
+    # oscuro, que para una pantalla apagada es exactamente lo correcto.
+    # "set12": sin textura
 }
 
 COLOR_FALLBACK = (0.34, 0.36, 0.39, 1.0)

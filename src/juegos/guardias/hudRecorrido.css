@@ -1,0 +1,190 @@
+/* ---------------------------------------------------------------------------
+   Rótulos del recorrido: reloj del turno y nombre de la zona
+   ---------------------------------------------------------------------------
+
+   Oscuro siempre, como la pantalla de carga: va encima de la escena 3D y no
+   sigue el tema claro del portal. Un rótulo claro sobre una sala de ventas
+   iluminada no se leería.
+   --------------------------------------------------------------------------- */
+
+.hudRecorrido {
+  --acento: #79a8bd;
+  position: fixed;
+  inset: 0;
+  /* Por debajo de la pantalla de carga (60), que lo tapa mientras se monta. */
+  z-index: 40;
+  pointer-events: none;
+
+  color: #f5f7f6;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+
+.hudRecorrido--visible {
+  opacity: 1;
+}
+
+/* --- El reloj del turno ---
+
+   La misma pastilla que el reloj del libro del condominio: monoespaciado,
+   borde teñido del color del escenario y el turno debajo. Es un instrumento,
+   no un título. */
+.hudRecorrido__reloj {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 7px 22px 8px;
+
+  border: 1px solid color-mix(in srgb, var(--acento) 38%, transparent);
+  border-radius: 12px;
+  background: rgba(14, 17, 21, 0.72);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(6px);
+}
+
+/* Cifras de ancho fijo: la hora cambia cada segundo real, y con cifras
+   proporcionales la pastilla temblaría cada vez que pasa un 1. */
+.hudRecorrido__hora {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hudRecorrido__turno {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* --- El nombre de la zona ---
+
+   Por encima de la línea de ayuda de los controles, que ocupa el borde
+   inferior. */
+.hudRecorrido__zona {
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  text-align: center;
+  white-space: nowrap;
+
+  opacity: 0;
+  transform: translate(-50%, 10px);
+  transition:
+    opacity 700ms ease,
+    transform 700ms ease;
+}
+
+.hudRecorrido__zona--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition:
+    opacity 420ms ease,
+    transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Cuando llega una zona encima de otra, la que se va no se despide. */
+.hudRecorrido__zona--relevo {
+  transition-duration: 180ms;
+}
+
+/* Sombra difusa detrás de las letras. Sin caja: sobre el piso claro de la
+   sala, el texto blanco solo con su sombra se perdía. */
+.hudRecorrido__zona::before {
+  content: "";
+  position: absolute;
+  inset: -22px -70px;
+  z-index: -1;
+  background: radial-gradient(ellipse at center, rgba(8, 10, 13, 0.55) 0%, transparent 70%);
+}
+
+.hudRecorrido__nombre {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin: 0;
+
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* El espaciado de letras deja aire también DESPUÉS de la última, y el nombre
+   queda corrido a la izquierda respecto de sus filetes. Se descuenta. */
+.hudRecorrido__nombreTexto {
+  margin-right: -0.3em;
+}
+
+/* Los filetes a los lados crecen desde el nombre hacia fuera al aparecer. */
+.hudRecorrido__nombre::before,
+.hudRecorrido__nombre::after {
+  content: "";
+  width: 64px;
+  height: 1px;
+  transform: scaleX(0.35);
+  transition: transform 700ms ease;
+}
+
+.hudRecorrido__nombre::before {
+  background: linear-gradient(90deg, transparent, var(--acento));
+  transform-origin: right center;
+}
+
+.hudRecorrido__nombre::after {
+  background: linear-gradient(90deg, var(--acento), transparent);
+  transform-origin: left center;
+}
+
+.hudRecorrido__zona--visible .hudRecorrido__nombre::before,
+.hudRecorrido__zona--visible .hudRecorrido__nombre::after {
+  transform: scaleX(1);
+}
+
+.hudRecorrido__bajada {
+  margin: 6px 0 0;
+  color: rgba(224, 230, 228, 0.74);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hudRecorrido__zona,
+  .hudRecorrido__zona--visible {
+    transform: translate(-50%, 0);
+  }
+
+  .hudRecorrido__nombre::before,
+  .hudRecorrido__nombre::after {
+    transform: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .hudRecorrido__nombre {
+    font-size: 22px;
+    letter-spacing: 0.22em;
+  }
+
+  .hudRecorrido__nombreTexto {
+    margin-right: -0.22em;
+  }
+}

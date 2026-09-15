@@ -13,6 +13,7 @@ import {
 } from "../ui/PantallaCarga";
 import {
   crearRecorridoSupermercado,
+  type RecorridoSupermercado,
 } from "./guardias/RecorridoSupermercado";
 import {
   crearPuestoConserjeria,
@@ -189,11 +190,15 @@ export function abrirMenuGuardias(
       // ESCENARIO 2
       // =========================================================
       if (numero === 2) {
+        // El turno arranca cuando se levanta la pantalla de carga, no cuando
+        // termina de montarse el escenario. Ver comenzar().
+        let recorrido: RecorridoSupermercado | null = null;
+
         void cargarConPantalla(
           numero,
 
           async () => {
-            await crearRecorridoSupermercado(
+            recorrido = await crearRecorridoSupermercado(
               scene,
 
               () => {
@@ -224,7 +229,7 @@ export function abrirMenuGuardias(
           },
 
           BRIEFINGS[numero]
-        );
+        ).then(() => recorrido?.comenzar());
 
         return;
       }

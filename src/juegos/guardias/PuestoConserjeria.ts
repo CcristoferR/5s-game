@@ -29,14 +29,12 @@ import { mostrarPantallaLibro, type SesionLibro } from "./PantallaLibro";
 import { crearFigura, UNIFORME_SUPERVISOR, ROPA_RESIDENTE } from "./Figura";
 import { crearMonitorCamaras, type MonitorCamaras } from "./MonitorCamaras";
 import { crearPaginasLibro, type PaginasLibro } from "./PaginasLibro";
+import { crearRadioPortatil } from "./RadioPortatil";
 import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
 import { CAMARAS_POR_SUCESO } from "./SucesosCondominio";
 import { materialPintado, materialPintadoNitido } from "../../entities/ObjetosComunes";
 import { texturaGrano, texturaMetalCepillado } from "../../entities/TexturasSuperficie";
-import {
-  superficieCaucho,
-  relievePapel,
-} from "./TexturasPuesto";
+import { relievePapel } from "./TexturasPuesto";
 import {
   generarMadera,
   generarCuero,
@@ -245,6 +243,9 @@ export function crearPuestoConserjeria(
   // de lo que este nivel quiere enseñar.
   radio.actionManager = new ActionManager(scene);
   radio.actionManager.hoverCursor = "pointer";
+  // Recursivo: la radio son muchas piezas colgadas del cargador, y el clic
+  // en la antena o la perilla tiene que atender igual que en el cuerpo.
+  radio.actionManager.isRecursive = true;
   radio.actionManager.registerAction(
     new ExecuteCodeAction(ActionManager.OnPickTrigger, () => libro?.atenderRadio())
   );
@@ -2150,89 +2151,10 @@ function montarZoomMonitor(scene: Scene, camara: FreeCamera, vista: VistaPuesto)
 // ---------------------------------------------------------------------------
 
 function construirRadio(scene: Scene): { radio: Mesh; avisarRadio: (encendido: boolean) => void } {
-  const X = -0.72;
-  const Z = 0.42;
-
-  const caucho = superficieCaucho(scene, "texCauchoRadio");
-
-  const matCuerpo = new PBRMaterial("matCuerpoRadio", scene);
-  matCuerpo.albedoTexture = caucho.color;
-  matCuerpo.bumpTexture = caucho.relieve;
-  matCuerpo.roughness = 0.72;
-  matCuerpo.metallic = 0.1;
-
-  const cuerpo = MeshBuilder.CreateBox("cuerpoRadio", { width: 0.13, height: 0.2, depth: 0.06 }, scene);
-  cuerpo.position.set(X, ALTO_MESON + 0.1, Z);
-  cuerpo.rotation.x = 0.18;
-  cuerpo.material = matCuerpo;
-  cuerpo.receiveShadows = true;
-
-  // Antena.
-  const matMetal = new PBRMaterial("matAntenaRadio", scene);
-  matMetal.albedoColor = new Color3(0.16, 0.16, 0.18);
-  matMetal.roughness = 0.34;
-  matMetal.metallic = 0.85;
-  matMetal.albedoTexture = texturaMetalCepillado(scene);
-
-  const antena = MeshBuilder.CreateCylinder(
-    "antenaRadio",
-    { diameterTop: 0.008, diameterBottom: 0.013, height: 0.17, tessellation: 10 },
-    scene
-  );
-  antena.position.set(X - 0.045, ALTO_MESON + 0.27, Z - 0.01);
-  antena.rotation.x = 0.18;
-  antena.material = matMetal;
-
-  // Rejilla del altavoz. Es el detalle que hace que se lea como radio y no como
-  // un bloque negro.
-  const matRejilla = materialPintado(scene, "matRejillaRadio", 128, 128, (ctx, w, h) => {
-    ctx.fillStyle = "#0b0c0e";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "#1c1f24";
-    for (let y = 6; y < h - 4; y += 9) {
-      for (let x = 6; x < w - 4; x += 9) {
-        ctx.beginPath();
-        ctx.arc(x, y, 2.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  });
-
-  const rejilla = MeshBuilder.CreateBox(
-    "rejillaRadio",
-    { width: 0.1, height: 0.075, depth: 0.008 },
-    scene
-  );
-  rejilla.position.set(X, ALTO_MESON + 0.135, Z - 0.031);
-  rejilla.rotation.x = 0.18;
-  rejilla.material = matRejilla;
-
-  // Piloto. Apagado en reposo; parpadea cuando entra un mensaje.
-  const matPiloto = new PBRMaterial("matPilotoRadio", scene);
-  matPiloto.albedoColor = new Color3(0.2, 0.05, 0.04);
-  matPiloto.emissiveColor = new Color3(0.06, 0.012, 0.01);
-  matPiloto.roughness = 0.25;
-
-  const piloto = MeshBuilder.CreateSphere("pilotoRadio", { diameter: 0.016, segments: 10 }, scene);
-  piloto.position.set(X + 0.042, ALTO_MESON + 0.185, Z - 0.028);
-  piloto.material = matPiloto;
-
-  let avisando = false;
-
-  scene.onBeforeRenderObservable.add(() => {
-    if (!avisando) return;
-    // Latido, no destello. Un parpadeo brusco se confunde con un fallo de
-    // dibujado; uno que respira se lee como un aviso.
-    const pulso = 0.5 + 0.5 * Math.sin(performance.now() / 260);
-    matPiloto.emissiveColor.set(0.25 + pulso * 1.35, 0.04 + pulso * 0.14, 0.03);
-  });
-
-  const avisarRadio = (encendido: boolean): void => {
-    avisando = encendido;
-    if (!encendido) matPiloto.emissiveColor.set(0.06, 0.012, 0.01);
-  };
-
-  return { radio: cuerpo, avisarRadio };
+  // Portátil de servicio en su cargador de mesa (ver RadioPortatil), algo
+  // girada hacia la silla para que la pantalla y el piloto se vean de frente.
+  const radio = crearRadioPortatil(scene, new Vector3(-0.72, ALTO_MESON, 0.42), -0.42);
+  return { radio: radio.raiz, avisarRadio: (encendido) => radio.avisar(encendido) };
 }
 
 // ---------------------------------------------------------------------------
