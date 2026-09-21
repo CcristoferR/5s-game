@@ -111,7 +111,12 @@ export function afinarMateriales(
     // imagen, no una nueva— porque un rótulo retroiluminado brilla justamente
     // con los colores que tiene pintados: el fondo del cartel y las letras.
     mat.emissiveTexture = mat.albedoTexture;
-    mat.emissiveColor = new Color3(brillo, brillo, brillo);
+    // Sin textura, el color del rótulo es su albedo liso —las letras del banco
+    // llegan así desde Maya—, y es ese color el que tiene que brillar. Con la
+    // emisiva en blanco y sin textura que la tiña, saldrían blancas.
+    mat.emissiveColor = mat.albedoTexture
+      ? new Color3(brillo, brillo, brillo)
+      : mat.albedoColor.scale(brillo);
 
     // Y se le baja el brillo especular. Un cartel encendido no refleja la sala:
     // la luz sale de él. Dejarlo pulido le pone encima un reflejo que tapa

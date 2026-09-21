@@ -61,11 +61,11 @@ export async function cargarBanco(
   const ruta = opciones.ruta ?? "/models/banco.glb";
   // POR 2, Y NO POR 0,01.
   //
-  // El GLB ya viene en metros: trimesh deja el paso de centímetros a metros
-  // dentro de la matriz de cada nodo (escala 0,01), y Babylon la aplica al
-  // cargar. Aquí se volvía a multiplicar por 0,01, así que el banco quedaba de
-  // unos cinco centímetros en el origen y el nivel se veía como un fondo azul
-  // vacío: la cámara, a 1,65 m, no tenía nada delante.
+  // El GLB ya viene en metros: convertir_banco.py pasa los centímetros de Maya
+  // a metros en Blender antes de exportar. Aquí se llegó a multiplicar otra
+  // vez por 0,01, y el banco quedaba de unos cinco centímetros en el origen: el
+  // nivel se veía como un fondo azul vacío, porque la cámara, a 1,65 m, no
+  // tenía nada delante.
   //
   // El ×2 es porque el modelo de Maya está hecho a media escala: el mesón mide
   // 66 cm, la puerta 90 y el cielo queda a 1,75 m del piso. A ese tamaño una

@@ -16,6 +16,11 @@ import {
   type RecorridoSupermercado,
 } from "./guardias/RecorridoSupermercado";
 import {
+  DURACION_TURNO,
+  horaDelTurno,
+} from "./guardias/TurnoSupermercado";
+import { MINUTOS_POR_RONDA } from "./guardias/RondasSupermercado";
+import {
   crearPuestoConserjeria,
 } from "./guardias/PuestoConserjeria";
 import {
@@ -45,10 +50,14 @@ const BRIEFINGS: Record<
   2: {
     rotulo: "Escenario 02",
     fase: "Supermercado",
-    traduccion: "Recorrido del escenario",
+    traduccion: "Rondas de verificación",
     contexto:
-      "Recorre el escenario del supermercado para reconocer el entorno, " +
-      "sus pasillos, góndolas y espacios de circulación.",
+      `Turno de tarde, de ${horaDelTurno(0)} a ${horaDelTurno(DURACION_TURNO)}, ` +
+      "en la sala de ventas. Jefatura solicita una ronda de verificación " +
+      `cada ${MINUTOS_POR_RONDA} minutos por las cuatro zonas del local: entrada, góndolas, ` +
+      "cajas y bodega. Mientras tanto, en la sala pasan cosas: Central te " +
+      "avisará por radio dónde mirar, y tú decides qué hacer. No todo lo que " +
+      "parece sospechoso lo es.",
     color: "#79a8bd",
   },
 
@@ -81,7 +90,7 @@ const ESCENARIOS: NivelMenuInfo[] = [
   {
     numero: 2,
     nombre:
-      "SUPERMERCADO - Recorrido del escenario",
+      "SUPERMERCADO - Rondas de verificación",
     desbloqueado: false,
     completado: false,
   },

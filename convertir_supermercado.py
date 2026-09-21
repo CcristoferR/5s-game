@@ -105,10 +105,25 @@ MATERIALES = {
     # El piso llega sin material propio. Se le pone la textura del edificio,
     # que es la única de 2048 px y la pensada para superficies grandes.
     "initialShadingGroup": ("Base", "Piso"),
-    # Un tabique delgado de 5,45 m sin textura asignada en el paquete. Se deja
-    # con color liso: inventarle una sería peor que dejarlo neutro.
-    "aiStandardSurface3SG": (None, "Tabique"),
+    # Las vidrieras de la fachada: los paños de las ventanas y la puerta. No
+    # llevan textura, y durante un tiempo se tomaron por un tabique y salían
+    # como un panel gris opaco. El shader de Maya dice otra cosa: vidrio
+    # celeste casi transparente. Ver VIDRIOS.
+    "aiStandardSurface3SG": (None, "Vidrio de fachada"),
 }
+
+VIDRIOS = {
+    # El shader aiStandardSurface3 del Supermercado.ma: base_color y opacity,
+    # tal cual.
+    "aiStandardSurface3SG": {"color": (0.081, 0.628, 0.705), "opacidad": 0.10},
+}
+"""
+Materiales sin textura que en Maya son transparentes.
+
+glTF no tiene opacidad aparte: va en el cuarto canal del color, con el modo de
+mezcla en BLEND. Sin eso el vidrio sale como un panel liso y tapa lo que hay
+detrás.
+"""
 
 CM_A_M = 0.01
 """El OBJ declara centímetros en su primera línea. El resto del juego usa metros."""
@@ -386,6 +401,12 @@ def convertir(entrada, salida):
             if "normal" in mapas:
                 mat["normalTexture"] = {"index": textura(mapas["normal"])}
             log(f"  {nombre:<22} {descripcion:<30} {len(mapas)} mapas")
+        elif nombre in VIDRIOS:
+            vidrio = VIDRIOS[nombre]
+            mat["pbrMetallicRoughness"]["baseColorFactor"] = [*vidrio["color"], vidrio["opacidad"]]
+            mat["pbrMetallicRoughness"]["roughnessFactor"] = 0.05
+            mat["alphaMode"] = "BLEND"
+            log(f"  {nombre:<22} {descripcion:<30} vidrio al {vidrio['opacidad']:.0%} de opacidad")
         else:
             mat["pbrMetallicRoughness"]["baseColorFactor"] = [0.72, 0.72, 0.74, 1]
             log(f"  {nombre:<22} {descripcion:<30} sin textura (color liso)")

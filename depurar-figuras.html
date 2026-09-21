@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Depurar figuras del nivel 1 (temporal)</title>
+    <style>
+      html, body { margin: 0; overflow: hidden; height: 100%; background: #000; }
+      #renderCanvas { width: 100%; height: 100%; display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <script type="module">
+      import { Engine, Scene, Vector3, Color3, Color4, FreeCamera, HemisphericLight, DirectionalLight, MeshBuilder, PBRMaterial } from "@babylonjs/core";
+      import { crearFigura, ROPA_RESIDENTE, UNIFORME_SUPERVISOR } from "/src/juegos/guardias/Figura.ts";
+
+      const canvas = document.getElementById("renderCanvas");
+      const engine = new Engine(canvas, true, undefined, false);
+      const scene = new Scene(engine);
+      scene.clearColor = new Color4(0.78, 0.8, 0.83, 1);
+
+      const cielo = new HemisphericLight("cielo", new Vector3(0, 1, 0), scene);
+      cielo.intensity = 0.85;
+      const sol = new DirectionalLight("sol", new Vector3(-0.4, -1, -0.6), scene);
+      sol.intensity = 1.1;
+
+      const suelo = MeshBuilder.CreateGround("suelo", { width: 30, height: 30 }, scene);
+      const matSuelo = new PBRMaterial("matSuelo", scene);
+      matSuelo.albedoColor = new Color3(0.45, 0.46, 0.48);
+      matSuelo.roughness = 0.9;
+      matSuelo.metallic = 0;
+      suelo.material = matSuelo;
+
+      const camara = new FreeCamera("camara", new Vector3(0, 1.5, 6), scene);
+      camara.setTarget(new Vector3(0, 0.95, 0));
+      camara.minZ = 0.05;
+
+      const paletas = [UNIFORME_SUPERVISOR, ...ROPA_RESIDENTE];
+      const figuras = paletas.map((paleta, i) => {
+        const f = crearFigura(scene, `estudio${i}`, { paleta, altura: 1.75, fase: i });
+        const x = (i - 2) * 1.1;
+        f.situar(new Vector3(x, 0, 0), new Vector3(x, 0, 5));
+        f.visible(true);
+        return f;
+      });
+
+      engine.runRenderLoop(() => scene.render());
+      await scene.whenReadyAsync(true);
+      window.__estudio = { scene, camara, figuras, Vector3, Color3, crearFigura, ROPA_RESIDENTE };
+      window.__listo = true;
+    </script>
+  </body>
+</html>

@@ -392,8 +392,12 @@ function ruidoPeriodico(x: number, y: number, periodo: number): number {
  * no como un dibujo sobre la tela.
  */
 export function texturaTela(scene: Scene): Texture {
+  // Viva, no solo guardada. La escena es la misma para todo el curso y
+  // limpiarEscena se lleva esta textura junto con las mallas del escenario que
+  // se va: devolver la de antes sería vestir a las figuras del siguiente con
+  // una textura ya destruida.
   const existente = telas.get(scene);
-  if (existente) return existente;
+  if (existente?.getInternalTexture()) return existente;
   const lado = 256;
   const alturas = new Float32Array(lado * lado);
   for (let py = 0; py < lado; py++) {

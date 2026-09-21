@@ -6,8 +6,6 @@ import {
   Vector3,
   PointLight,
   TransformNode,
-  Ray,
-  type AbstractMesh,
   type Camera,
 } from "@babylonjs/core";
 import { materialPintadoNitido } from "../../entities/ObjetosComunes";
@@ -21,6 +19,7 @@ import {
   crearPalletConCarga,
   crearTranspaleta,
   crearEstanteBodega,
+  type PiezaBodega,
 } from "./UtileriaBodega";
 
 // ===========================================================================
@@ -65,14 +64,6 @@ const ESPESOR = 0.1;
 const ALTO_TABIQUE = 3.0;
 const ALTO_VANO = 2.2;
 
-/**
- * La losa medida en el OBJ, por si el rayo no encuentra el piso.
- *
- * Ojo, que no es cero: el edificio apoya en el plano del terreno, pero su losa
- * tiene diecisiete centímetros y el suelo que se pisa está encima.
- */
-const PISO_MEDIDO = 0.16;
-
 /** Dónde está la bodega. La zona "Bodega" sale de aquí. */
 export const PLANTA_BODEGA = {
   /** Cara del tabique que da a la góndola. */
@@ -98,16 +89,43 @@ const RIGIDEZ = 38;
 /** Baja a propósito: al soltarse, la lama se balancea un par de veces. */
 const AMORTIGUACION = 5.5;
 
+/**
+ * Dónde está el centro de la salida de emergencia, a la altura a la que se ve.
+ *
+ * Alto a propósito: por debajo del metro y medio lo tapa el pallet que la
+ * bloquea, y el punto se usa para saber si el jugador la tiene a la vista (ver
+ * SituacionesSupermercado). Apuntando al centro del vano, la respuesta sería
+ * siempre "no se ve" — justamente porque está tapada.
+ */
 export interface Bodega {
+  salidaEmergencia: Vector3;
+  /**
+   * Pone o quita lo que bloquea la salida: el pallet delante y el fleje en la
+   * barra.
+   *
+   * ─── POR QUÉ NO ESTÁ BLOQUEADA DESDE EL PRINCIPIO ───────────────────────
+   *
+   * Porque la ronda obliga a entrar a la bodega, así que el jugador ve esa
+   * puerta en la primera vuelta del turno — y su situación no salta hasta las
+   * 17:15. Con el pallet puesto desde el minuto cero, el jugador mira una
+   * salida tapada a las 16:05, no pasa nada, y cuando hora y media después sí
+   * pasa, lo que ha aprendido es que el juego responde tarde.
+   *
+   * Poniéndolo en su minuto, lo que ve es lo que hay: a las 16:05 la salida
+   * está despejada y a las 17:15 alguien ha dejado un pallet delante y ha
+   * amarrado la barra. Eso es una novedad, y por eso hay algo que reportar.
+   *
+   * No se vuelve a quitar al vencer la ventana: un pallet no se aparta solo.
+   * Lo que vence es el plazo para darse cuenta.
+   */
+  taparSalida(tapada: boolean): void;
   dispose(): void;
 }
 
-export function construirBodega(
-  scene: Scene,
-  camara: Camera,
-  modelo: { raiz: TransformNode; mallas: AbstractMesh[] }
-): Bodega {
-  const piso = medirPiso(scene, modelo);
+/**
+ * @param piso  Altura del suelo de la sala. Ver medirPisoSala: no es cero.
+ */
+export function construirBodega(scene: Scene, camara: Camera, piso: number): Bodega {
   const { minX, maxZ, puertaMinX, puertaMaxX } = PLANTA_BODEGA;
   const interiorX = minX + ESPESOR;
   const frenteZ = maxZ - ESPESOR / 2;
@@ -265,6 +283,94 @@ export function construirBodega(
   letrero.position.set(centroPuerta, piso + 2.6, maxZ + 0.013);
   letrero.isPickable = false;
 
+  // --- Salida de emergencia -----------------------------------------------------
+  //
+  // ─── POR QUÉ EXISTE ───────────────────────────────────────────────────────
+  //
+  // Porque hay una situación del turno que habla de ella (ver
+  // SituacionesSupermercado): la salida tapada y la barra amarrada. Sin puerta
+  // en la escena, ese panel era un texto sobre una pared lisa — el jugador leía
+  // que la salida estaba bloqueada mirando un sitio donde no había salida
+  // ninguna.
+  //
+  // ─── POR QUÉ EN EL MURO DEL FONDO ─────────────────────────────────────────
+  //
+  // Porque es el único de los cuatro que da a la calle Y que se ve de frente
+  // entrando por la cortina. En el muro lateral quedaría de canto: el letrero
+  // verde, que es lo que hace entender de un vistazo qué puerta es esa, se
+  // leería en escorzo desde cualquier sitio donde se pueda estar de pie.
+  //
+  // Eso obliga a acortar el estante metálico, que antes ocupaba el fondo de
+  // lado a lado. Tapando la puerta, el estante la escondería entera.
+  const EMERGENCIA_X = 9.4;
+  const ANCHO_HOJA = 0.92;
+  const ALTO_HOJA = 2.05;
+  /** Donde termina el estante para dejarle sitio a la puerta. */
+  const FIN_ESTANTE = 8.86;
+
+  const pinturaHoja = materialLiso(scene, "matHojaEmergencia", new Color3(0.74, 0.75, 0.76), 0.55, 0.1);
+  const acero = materialLiso(scene, "matHerrajeEmergencia", new Color3(0.58, 0.59, 0.62), 0.35, 0.65);
+  const plastico = materialLiso(scene, "matFlejeEmergencia", new Color3(0.86, 0.66, 0.06), 0.4);
+
+  const yHoja = piso + ALTO_HOJA / 2;
+  const zHoja = FONDO_Z + 0.03;
+  const hoja = fundir(
+    [bloque(scene, "hojaEmergencia", ANCHO_HOJA, ALTO_HOJA, 0.05, EMERGENCIA_X, yHoja, zHoja)],
+    "hojaEmergencia",
+    pinturaHoja
+  );
+
+  const jambaX = ANCHO_HOJA / 2 + 0.04;
+  const marco = fundir(
+    [
+      bloque(scene, "jambaEmergenciaA", 0.07, ALTO_HOJA + 0.12, 0.1, EMERGENCIA_X - jambaX, piso + (ALTO_HOJA + 0.12) / 2, FONDO_Z + 0.05),
+      bloque(scene, "jambaEmergenciaB", 0.07, ALTO_HOJA + 0.12, 0.1, EMERGENCIA_X + jambaX, piso + (ALTO_HOJA + 0.12) / 2, FONDO_Z + 0.05),
+      bloque(scene, "dintelEmergencia", ANCHO_HOJA + 0.22, 0.07, 0.1, EMERGENCIA_X, piso + ALTO_HOJA + 0.09, FONDO_Z + 0.05),
+    ],
+    "marcoEmergencia",
+    acero
+  );
+
+  // La barra antipánico, a la altura a la que se empuja con la cadera, y los
+  // dos soportes en que se apoya.
+  const yBarra = piso + 1.02;
+  const barra = fundir(
+    [
+      bloque(scene, "barraEmergencia", 0.8, 0.055, 0.055, EMERGENCIA_X, yBarra, zHoja + 0.075),
+      bloque(scene, "soporteEmergenciaA", 0.05, 0.1, 0.09, EMERGENCIA_X - 0.34, yBarra, zHoja + 0.045),
+      bloque(scene, "soporteEmergenciaB", 0.05, 0.1, 0.09, EMERGENCIA_X + 0.34, yBarra, zHoja + 0.045),
+    ],
+    "barraEmergencia",
+    acero
+  );
+
+  // El fleje: una cinta que cruza de jamba a jamba por delante de la barra, y
+  // que es lo que impide que la barra baje. Amarillo porque tiene que leerse
+  // como algo que alguien puso, no como parte de la puerta.
+  const fleje = fundir(
+    [
+      bloque(scene, "flejeEmergencia", ANCHO_HOJA + 0.08, 0.022, 0.022, EMERGENCIA_X, yBarra + 0.012, zHoja + 0.105),
+      bloque(scene, "flejeNudoEmergencia", 0.05, 0.05, 0.05, EMERGENCIA_X + 0.26, yBarra + 0.012, zHoja + 0.105),
+    ],
+    "flejeEmergencia",
+    plastico
+  );
+
+  const carteEmergencia = MeshBuilder.CreatePlane("letreroEmergencia", { width: 0.8, height: 0.24 }, scene);
+  carteEmergencia.material = materialPintadoNitido(scene, "matLetreroEmergencia", 400, 120, 3, (ctx, w, h) => {
+    ctx.fillStyle = "#1f7a3a";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "800 34px system-ui, 'Segoe UI', sans-serif";
+    ctx.fillText("SALIDA DE EMERGENCIA", w / 2, h * 0.5);
+  });
+  // Como el de la bodega: un plano de Babylon mira a −Z y el cuarto está a +Z.
+  carteEmergencia.rotation.y = Math.PI;
+  carteEmergencia.position.set(EMERGENCIA_X, piso + ALTO_HOJA + 0.3, FONDO_Z + 0.07);
+  carteEmergencia.isPickable = false;
+
   // --- Cortina de lamas -------------------------------------------------------------
   //
   // Cada lama cuelga de su propio nodo, puesto en el riel: así gira desde
@@ -320,15 +426,41 @@ export function construirBodega(
 
   // --- Carga --------------------------------------------------------------------------
   const cartones = materialesCarton(scene);
-  const piezas = [
-    crearEstanteBodega(scene, cartones, interiorX + 0.08, MURO_X - 0.06, FONDO_Z + 0.05, piso),
+  const piezas: PiezaBodega[] = [
+    // Hasta FIN_ESTANTE y no hasta el muro: el resto del fondo es la puerta.
+    crearEstanteBodega(scene, cartones, interiorX + 0.08, FIN_ESTANTE, FONDO_Z + 0.05, piso),
     crearPalletConCarga(scene, cartones, palletX, palletZ, piso),
     crearTranspaleta(scene, palletX, palletZ + 0.6, piso),
   ];
 
-  [tabiques, dintel, zocalo, perfiles, demarcacion, respaldo, carcasa, difusor, ...piezas.flatMap((p) => p.mallas)].forEach(
-    (malla) => (malla.receiveShadows = true)
-  );
+  // ─── EL PALLET QUE TAPA LA SALIDA ───────────────────────────────────────
+  //
+  // Uno solo, no dos. El cuarto mide 2,20 m de ancho y un pallet cargado ocupa
+  // 1,00: dos en fila contra la puerta y otro en la demarcación dejan un paso
+  // de ocho centímetros, y el jugador se queda sin poder entrar a la bodega —
+  // que es una zona de la ronda obligatoria. Con uno, la salida queda igual de
+  // tapada y se puede llegar hasta metro y medio de ella.
+  //
+  // Va aparte de las otras piezas porque se enciende y se apaga: ver
+  // taparSalida.
+  const estorbo = crearPalletConCarga(scene, cartones, EMERGENCIA_X, FONDO_Z + 0.66, piso);
+  piezas.push(estorbo);
+
+  [
+    tabiques,
+    dintel,
+    zocalo,
+    perfiles,
+    demarcacion,
+    respaldo,
+    carcasa,
+    difusor,
+    hoja,
+    marco,
+    barra,
+    fleje,
+    ...piezas.flatMap((p) => p.mallas),
+  ].forEach((malla) => (malla.receiveShadows = true));
 
   // --- La cortina se aparta al pasar ------------------------------------------------
   //
@@ -362,32 +494,27 @@ export function construirBodega(
     }
   });
 
+  // Empieza despejada. La tapa la situación de las 17:15 (ver ActoresSupermercado).
+  const taparSalida = (tapada: boolean): void => {
+    estorbo.mallas.forEach((m) => (m.isVisible = tapada));
+    // El choque va con lo que se ve: con el pallet escondido pero su caja de
+    // colisión puesta, el jugador chocaría contra el aire delante de la puerta.
+    estorbo.choques.forEach((m) => (m.checkCollisions = tapada));
+    fleje.isVisible = tapada;
+  };
+  taparSalida(false);
+
   return {
+    taparSalida,
+
+    // Por encima del pallet que la tapa —que llega a 1,40— y por debajo del
+    // dintel: la franja de puerta que de verdad se ve desde dentro del cuarto.
+    salidaEmergencia: new Vector3(EMERGENCIA_X, piso + 1.8, FONDO_Z + 0.1),
+
     // Mallas, luz y materiales se los lleva limpiarEscena con el resto del
     // escenario. Lo único que no es de la escena es el observador.
     dispose() {
       scene.onBeforeRenderObservable.remove(observador);
     },
   };
-}
-
-/**
- * Altura del suelo en el centro de la bodega, medida con un rayo.
- *
- * Primero se ponen al día las matrices de mundo del modelo. Recién cargado y
- * centrado, sus mallas siguen con la posición de antes de moverlo, y el rayo
- * las buscaría donde ya no están. Con predicado propio Babylon ignora
- * isPickable, que en el escenario está apagado.
- */
-function medirPiso(scene: Scene, modelo: { raiz: TransformNode; mallas: AbstractMesh[] }): number {
-  modelo.raiz.getChildMeshes(false).forEach((malla) => malla.computeWorldMatrix(true));
-
-  const x = (PLANTA_BODEGA.minX + PLANTA_BODEGA.maxX) / 2;
-  const z = (PLANTA_BODEGA.minZ + PLANTA_BODEGA.maxZ) / 2;
-  const rayo = new Ray(new Vector3(x, 1.5, z), Vector3.Down(), 3);
-  const impacto = scene.pickWithRay(rayo, (malla) => modelo.mallas.includes(malla));
-
-  if (impacto?.hit && impacto.pickedPoint) return impacto.pickedPoint.y;
-  console.warn(`[bodega] el rayo no encontró el piso; se usa la losa medida (${PISO_MEDIDO} m).`);
-  return PISO_MEDIDO;
 }

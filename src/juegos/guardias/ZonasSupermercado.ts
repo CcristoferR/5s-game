@@ -115,6 +115,63 @@ export const ZONAS: readonly Zona[] = [
 ];
 
 /**
+ * Los muebles de la sala, en planta.
+ *
+ * ─── PARA QUÉ ─────────────────────────────────────────────────────────────
+ *
+ * Para que las figuras no los atraviesen. Una figura se mueve interpolando su
+ * posición y no consulta la colisión de la escena, así que hasta ahora
+ * atravesaba góndolas y mostradores sin enterarse. No se notaba porque las
+ * rutas de los ocho clientes están medidas para no rozar nada.
+ *
+ * Deja de no notarse en cuanto una figura va DETRÁS DEL JUGADOR —el retenido
+ * de la línea de cajas— porque entonces su destino lo decide el jugador, y el
+ * jugador puede ponerse al otro lado de un mostrador.
+ *
+ * ─── DE DÓNDE SALEN LOS NÚMEROS ───────────────────────────────────────────
+ *
+ * De la misma tabla que la planta de ClientesSupermercado, medida sobre las
+ * mallas cargadas. Si Bitplay mueve el local hay que revisar las dos.
+ */
+const MUEBLES: readonly Rectangulo[] = [
+  // Las seis góndolas del fondo, de 1,25 m de ancho.
+  ...[-8.96, -5.89, -2.82, 0.25, 3.32, 6.39].map((borde) => ({
+    minX: borde,
+    maxX: borde + 1.25,
+    minZ: -7.11,
+    maxZ: -1.31,
+  })),
+  // La fila delantera, en sus dos tramos.
+  { minX: -8.17, maxX: -2.37, minZ: 1.3, maxZ: 2.55 },
+  { minX: 0.42, maxX: 6.22, minZ: 1.3, maxZ: 2.55 },
+  // El mostrador de caja.
+  { minX: 8.12, maxX: 9.34, minZ: 2.59, maxZ: 5.56 },
+];
+
+/**
+ * Cuánto se inflan los muebles al preguntar si se puede pisar.
+ *
+ * Veinticinco centímetros, que es medio cuerpo. Se comprueba el punto en el
+ * que la figura pone los pies, no su volumen entero, así que sin este margen
+ * se le metería el hombro dentro del mueble antes de frenar.
+ *
+ * Y cabe de sobra: los ocho recorridos dejan medio metro largo hasta cada
+ * estante, así que ninguno se queda atascado por esto.
+ */
+const MARGEN_MUEBLE = 0.25;
+
+/** Si una figura puede plantar los pies ahí sin meterse en un mueble. */
+export function sueloLibre(x: number, z: number): boolean {
+  return !MUEBLES.some(
+    (r) =>
+      x > r.minX - MARGEN_MUEBLE &&
+      x < r.maxX + MARGEN_MUEBLE &&
+      z > r.minZ - MARGEN_MUEBLE &&
+      z < r.maxZ + MARGEN_MUEBLE
+  );
+}
+
+/**
  * Cuánto hay que pasarse del borde de una zona para darla por dejada.
  *
  * ─── POR QUÉ NO BASTA CON EL BORDE ────────────────────────────────────────
@@ -139,6 +196,8 @@ const ESPERA_ANUNCIO = 0.25;
 export interface DetectorZonas {
   /** Cada cuadro, con la posición del jugador y el tiempo transcurrido. */
   actualizar(x: number, z: number, dt: number): void;
+  /** La última zona anunciada. Null hasta el primer anuncio. */
+  actual(): Zona | null;
 }
 
 /**
@@ -177,6 +236,8 @@ export function crearDetectorZonas(alEntrar: (zona: Zona) => void): DetectorZona
         alEntrar(nueva);
       }
     },
+
+    actual: () => actual,
   };
 }
 

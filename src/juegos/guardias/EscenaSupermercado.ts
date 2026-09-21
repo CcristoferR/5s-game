@@ -10,6 +10,7 @@ import {
   HemisphericLight,
   Color3,
   PBRMaterial,
+  Ray,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 import { afinarMateriales } from "./MaterialesModelo";
@@ -198,6 +199,38 @@ export async function cargarSupermercado(
       raiz.dispose();
     },
   };
+}
+
+/** La losa medida en el OBJ, por si el rayo no encuentra el piso. */
+const PISO_MEDIDO = 0.16;
+
+/**
+ * Altura del suelo que se pisa, medida con un rayo.
+ *
+ * ─── POR QUÉ NO ES CERO ───────────────────────────────────────────────────
+ *
+ * El modelo queda apoyado en y = 0 por la base de los muebles (ver
+ * detectarSuperficieDelPiso), pero la losa del edificio asoma dieciséis
+ * centímetros por encima de esa cota. Lo que se levanta o camina sobre el
+ * suelo —los tabiques de la bodega, los clientes— se coloca desde aquí: desde
+ * cero quedaría con los pies hundidos en la losa.
+ *
+ * Primero se ponen al día las matrices de mundo del modelo. Recién cargado y
+ * centrado, sus mallas siguen con la posición de antes de moverlo, y el rayo
+ * las buscaría donde ya no están. Con predicado propio Babylon ignora
+ * isPickable, que en el escenario está apagado.
+ */
+export function medirPisoSala(scene: Scene, modelo: Pick<SupermercadoCargado, "raiz" | "mallas">): number {
+  modelo.raiz.getChildMeshes(false).forEach((malla) => malla.computeWorldMatrix(true));
+
+  // En el cruce del pasillo transversal, donde no hay mueble que el rayo pueda
+  // tocar antes que el piso.
+  const rayo = new Ray(new Vector3(0, 1.5, 0), Vector3.Down(), 3);
+  const impacto = scene.pickWithRay(rayo, (malla) => modelo.mallas.includes(malla));
+
+  if (impacto?.hit && impacto.pickedPoint) return impacto.pickedPoint.y;
+  console.warn(`[supermercado] el rayo no encontró el piso; se usa la losa medida (${PISO_MEDIDO} m).`);
+  return PISO_MEDIDO;
 }
 
 /**

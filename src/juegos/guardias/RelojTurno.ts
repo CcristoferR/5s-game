@@ -107,6 +107,23 @@ export interface OpcionesReloj {
   /** Último minuto del turno. Al llegar, el reloj se detiene solo. */
   minutoFinal: number;
   /**
+   * Minutos de turno por segundo real. Si falta, los del condominio.
+   *
+   * ─── POR QUÉ CADA ESCENARIO LLEVA LA SUYA ─────────────────────────────
+   *
+   * Porque el ritmo que le va a uno no le va al otro. El condominio es un
+   * puesto sentado: el trabajo es leer, decidir y escribir, y entre novedad y
+   * novedad no hay que ir a ninguna parte. El supermercado es lo contrario
+   * —hay que CAMINAR hasta donde pasan las cosas—, y a la velocidad del
+   * condominio el jugador no llega: mientras cruza la sala detrás de un
+   * cliente se le abre la situación de la caja, y mientras atiende esa se le
+   * vence la ronda.
+   *
+   * Un minuto de turno tiene que durar lo que cuesta cruzar la sala, y la sala
+   * del supermercado mide veinte metros.
+   */
+  minutosPorSegundo?: number;
+  /**
    * Minutos en los que el turno TIENE que frenar.
    *
    * ─── POR QUÉ EL RELOJ LOS CONOCE ────────────────────────────────────────
@@ -159,7 +176,8 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
       return;
     }
 
-    minutoExacto += dt * MINUTOS_POR_SEGUNDO * (adelantando ? FACTOR_ADELANTO : 1);
+    const velocidad = opciones.minutosPorSegundo ?? MINUTOS_POR_SEGUNDO;
+    minutoExacto += dt * velocidad * (adelantando ? FACTOR_ADELANTO : 1);
 
     // Frenada en el próximo hito. Se comprueba SIEMPRE, no solo adelantando:
     // aunque a velocidad normal un cuadro nunca salta un minuto entero, hacer

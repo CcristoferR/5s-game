@@ -13,11 +13,12 @@ los materiales PBR usando las texturas reales del paquete.
 
 USO
 ---
-1) Instala/abre Blender 4.x.
-2) Cambia CARPETA_BANCO y ARCHIVO_SALIDA.
+1) Instala/abre Blender 4.x o 5.x.
+2) Cambia CARPETA_BANCO y ARCHIVO_SALIDA, o pásalos después de "--".
 3) Ejecuta desde terminal:
 
     blender --background --python convertir_banco.py
+    blender --background --python convertir_banco.py -- <carpeta_banco> <salida.glb>
 
 Al terminar debe existir:
     .../public/models/banco.glb
@@ -36,7 +37,8 @@ import sys
 # CONFIGURACIÓN
 # ---------------------------------------------------------------------------
 
-CARPETA_BANCO = r"C:\Users\Cristofer Alvarado\Desktop\Banco"
+# El paquete de septiembre (14/09). El de agosto sigue en Desktop\Banco.
+CARPETA_BANCO = r"C:\Users\Cristofer Alvarado\Desktop\wetransfer_banco-y-supermercado_2026-09-14_2331\Banco"
 ARCHIVO_SALIDA = r"C:\Users\Cristofer Alvarado\Desktop\5s-game\public\models\banco.glb"
 
 # Maya/OBJ viene en centímetros.
@@ -58,155 +60,66 @@ MAPAS = ("BaseColor", "Roughness", "Metallic", "Normal")
 #   2. Aparecieron dos carpetas nuevas: Barrera y Puerta.
 #   3. Los materiales pasaron de diez a dieciocho.
 #
-# La correspondencia no se adivinó: sale de los nombres de grupo del propio
-# OBJ. Maya conserva ahí cómo se llamaba cada pieza —Mostrador, Sillas,
-# SillaOff, Marco, Monitor— y eso dice qué material va con qué carpeta.
+# ─── DE DÓNDE SALE LA TABLA ──────────────────────────────────────────────
+#
+# De las CONEXIONES del Banco.ma: qué nodo de textura entra en el shader de
+# cada grupo de sombreado. Es la asignación real, la que Bitplay ve en Maya.
+#
+# Una primera versión se dedujo de los nombres de grupo del OBJ y se equivocó
+# en tres, que la escena del .ma desmiente sin dudas:
+#
+#   · set11 es la ESTRUCTURA (losa, cielo y techo), no la barrera. Convertido
+#     así, el edificio entero salía con la textura roja de la barrera.
+#   · set19 es la BARRERA de fila (seis postes y dos cintas), no un pilar.
+#   · set18 son las cuatro PLACAS de sobre el mostrador, no el mostrador.
+#
+# Y cuatro materiales no llevan textura en Maya, solo color: las letras del
+# rótulo, los números de las placas, los perfiles de ventana y el vidrio. Se
+# les pone su color original en vez de pintarlos con una textura ajena.
 #
 # EL RÓTULO. Los materiales typeOpenPBRSurfaceSG y pasted__typeOpenPBRSurfaceSG
 # van sobre geometría llamada typeMesh, que es la herramienta Type de Maya:
-# texto en 3D. O sea que ESAS SON LAS LETRAS del letrero. Es el dato que
-# faltaba para poder encenderlo desde EscenaBanco.
+# texto en 3D. O sea que ESAS SON LAS LETRAS del letrero. EscenaBanco las
+# enciende buscando "type" en el nombre del material.
+
+
+def _mapas(prefijo):
+    """Los cuatro mapas de un material, a partir de su prefijo en Texturas/."""
+    return {
+        "base": f"Texturas/{prefijo}_BaseColor.1001.png",
+        "roughness": f"Texturas/{prefijo}_Roughness.1001.png",
+        "metallic": f"Texturas/{prefijo}_Metallic.1001.png",
+        "normal": f"Texturas/{prefijo}_Normal.1001.png",
+    }
+
+
 MATERIALES = {
-    # Cuerpo del mostrador
-    "set3": {
-        "base": "Texturas/Mostrador/Mostrador_Mostrador_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Mostrador/Mostrador_Mostrador_SG_Roughness.1001.png",
-        "metallic": "Texturas/Mostrador/Mostrador_Mostrador_SG_Metallic.1001.png",
-        "normal": "Texturas/Mostrador/Mostrador_Mostrador_SG_Normal.1001.png",
-    },
+    "set3": _mapas("Mostrador/Mostrador_Mostrador_SG"),  # Mostrador
+    "set4": _mapas("Sillas/Sillas_Asiento_Metal_SG"),  # Sillas de espera: estructura
+    "set5": _mapas("Sillas/Sillas_Asientis_SG"),  # Sillas de espera: asientos
+    "set6": _mapas("Sillas Off/Silla Off_SillaOff_SG"),  # Sillas de oficina: tapizado
+    "set7": _mapas("Sillas Off/Silla Off_Silla_Plastico_SG"),  # Sillas de oficina: plástico
+    "set10": _mapas("Base/Base Banco_Banco_SG"),  # Suelo y muros
+    "set11": _mapas("Estructura/Estructura_Estructura1"),  # Losa, cielo y techo
+    "set13": _mapas("Puerta/Puerta_Puerta_Sg"),  # Marco, hoja y manilla de la puerta
+    "set17": _mapas("Pilar/Pilates_set14"),  # Pilares
+    "set18": _mapas("Letrero/Cartelito_Letrero_SG1"),  # Placas sobre el mostrador
+    "set19": _mapas("Barrera/Barrera_Barrera_SG"),  # Barrera de fila: postes y cintas
+    "initialShadingGroup": _mapas("Base/Base Banco_Banco_SG"),  # Plano del suelo
 
-    # Resto del mostrador: llegó partido en dos materiales
-    "set18": {
-        "base": "Texturas/Mostrador/Mostrador_Mostrador_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Mostrador/Mostrador_Mostrador_SG_Roughness.1001.png",
-        "metallic": "Texturas/Mostrador/Mostrador_Mostrador_SG_Metallic.1001.png",
-        "normal": "Texturas/Mostrador/Mostrador_Mostrador_SG_Normal.1001.png",
-    },
+    # Sin textura en Maya: su color original.
+    "typeOpenPBRSurfaceSG": {"color": (0.538, 0.538, 0.200), "roughness": 0.5},  # Letras del rótulo
+    "pasted__typeOpenPBRSurfaceSG": {"color": (0.538, 0.538, 0.200), "roughness": 0.5},  # Segunda capa
+    "aiStandardSurface3SG": {"color": (0.708, 0.800, 0.800), "roughness": 0.5},  # Números de las placas
+    # Blanco en Maya. Un punto por debajo: a 1,0 se quema con la luz de la sala.
+    "Palos_ventana_SG": {"color": (0.92, 0.92, 0.92), "roughness": 0.5},  # Perfiles de ventana
 
-    # Estructura metálica de las sillas de espera
-    "set4": {
-        "base": "Texturas/Sillas/Sillas_Asiento_Metal_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Sillas/Sillas_Asiento_Metal_SG_Roughness.1001.png",
-        "metallic": "Texturas/Sillas/Sillas_Asiento_Metal_SG_Metallic.1001.png",
-        "normal": "Texturas/Sillas/Sillas_Asiento_Metal_SG_Normal.1001.png",
-    },
+    # Los monitores y la tele. En Maya llevan una textura de pantalla
+    # (Interior_Monitor_SG) que el paquete no incluye: color liso oscuro, que
+    # para una pantalla apagada es lo correcto.
+    "set12": {"color": (0.05, 0.055, 0.06), "roughness": 0.35},
 
-    # Asientos de las sillas de espera
-    "set5": {
-        "base": "Texturas/Sillas/Sillas_Asientis_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Sillas/Sillas_Asientis_SG_Roughness.1001.png",
-        "metallic": "Texturas/Sillas/Sillas_Asientis_SG_Metallic.1001.png",
-        "normal": "Texturas/Sillas/Sillas_Asientis_SG_Normal.1001.png",
-    },
-
-    # Sillas de oficina: tapizado
-    "set6": {
-        "base": "Texturas/Sillas Off/Silla Off_SillaOff_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Sillas Off/Silla Off_SillaOff_SG_Roughness.1001.png",
-        "metallic": "Texturas/Sillas Off/Silla Off_SillaOff_SG_Metallic.1001.png",
-        "normal": "Texturas/Sillas Off/Silla Off_SillaOff_SG_Normal.1001.png",
-    },
-
-    # Sillas de oficina: plástico
-    "set7": {
-        "base": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_Roughness.1001.png",
-        "metallic": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_Metallic.1001.png",
-        "normal": "Texturas/Sillas Off/Silla Off_Silla_Plastico_SG_Normal.1001.png",
-    },
-
-    # Pilares. OJO: la carpeta pasó de Pilares a Pilar
-    "set17": {
-        "base": "Texturas/Pilar/Pilates_set14_BaseColor.1001.png",
-        "roughness": "Texturas/Pilar/Pilates_set14_Roughness.1001.png",
-        "metallic": "Texturas/Pilar/Pilates_set14_Metallic.1001.png",
-        "normal": "Texturas/Pilar/Pilates_set14_Normal.1001.png",
-    },
-
-    # Más pilares y su remate
-    "set19": {
-        "base": "Texturas/Pilar/Pilates_set14_BaseColor.1001.png",
-        "roughness": "Texturas/Pilar/Pilates_set14_Roughness.1001.png",
-        "metallic": "Texturas/Pilar/Pilates_set14_Metallic.1001.png",
-        "normal": "Texturas/Pilar/Pilates_set14_Normal.1001.png",
-    },
-
-    # Suelo y superficies principales
-    "set10": {
-        "base": "Texturas/Base/Base Banco_Banco_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Base/Base Banco_Banco_SG_Roughness.1001.png",
-        "metallic": "Texturas/Base/Base Banco_Banco_SG_Metallic.1001.png",
-        "normal": "Texturas/Base/Base Banco_Banco_SG_Normal.1001.png",
-    },
-
-    # Barrera de atención al público (carpeta nueva)
-    "set11": {
-        "base": "Texturas/Barrera/Barrera_Barrera_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Barrera/Barrera_Barrera_SG_Roughness.1001.png",
-        "metallic": "Texturas/Barrera/Barrera_Barrera_SG_Metallic.1001.png",
-        "normal": "Texturas/Barrera/Barrera_Barrera_SG_Normal.1001.png",
-    },
-
-    # Marco y puerta de acceso (carpeta nueva)
-    "set13": {
-        "base": "Texturas/Puerta/Puerta_Puerta_Sg_BaseColor.1001.png",
-        "roughness": "Texturas/Puerta/Puerta_Puerta_Sg_Roughness.1001.png",
-        "metallic": "Texturas/Puerta/Puerta_Puerta_Sg_Metallic.1001.png",
-        "normal": "Texturas/Puerta/Puerta_Puerta_Sg_Normal.1001.png",
-    },
-
-    # Perfilería de las ventanas
-    "Palos_ventana_SG": {
-        "base": "Texturas/Estructura/Estructura_Estructura1_BaseColor.1001.png",
-        "roughness": "Texturas/Estructura/Estructura_Estructura1_Roughness.1001.png",
-        "metallic": "Texturas/Estructura/Estructura_Estructura1_Metallic.1001.png",
-        "normal": "Texturas/Estructura/Estructura_Estructura1_Normal.1001.png",
-    },
-
-    # Estructura del local
-    "aiStandardSurface2SG": {
-        "base": "Texturas/Estructura/Estructura_Estructura1_BaseColor.1001.png",
-        "roughness": "Texturas/Estructura/Estructura_Estructura1_Roughness.1001.png",
-        "metallic": "Texturas/Estructura/Estructura_Estructura1_Metallic.1001.png",
-        "normal": "Texturas/Estructura/Estructura_Estructura1_Normal.1001.png",
-    },
-
-    # Cuerpo del letrero
-    "aiStandardSurface3SG": {
-        "base": "Texturas/Letrero/Cartelito_Letrero_SG1_BaseColor.1001.png",
-        "roughness": "Texturas/Letrero/Cartelito_Letrero_SG1_Roughness.1001.png",
-        "metallic": "Texturas/Letrero/Cartelito_Letrero_SG1_Metallic.1001.png",
-        "normal": "Texturas/Letrero/Cartelito_Letrero_SG1_Normal.1001.png",
-    },
-
-    # LETRAS del rótulo (geometría typeMesh de Maya)
-    "typeOpenPBRSurfaceSG": {
-        "base": "Texturas/Letrero/Cartelito_Letrero_SG1_BaseColor.1001.png",
-        "roughness": "Texturas/Letrero/Cartelito_Letrero_SG1_Roughness.1001.png",
-        "metallic": "Texturas/Letrero/Cartelito_Letrero_SG1_Metallic.1001.png",
-        "normal": "Texturas/Letrero/Cartelito_Letrero_SG1_Normal.1001.png",
-    },
-
-    # Más letras del rótulo
-    "pasted__typeOpenPBRSurfaceSG": {
-        "base": "Texturas/Letrero/Cartelito_Letrero_SG1_BaseColor.1001.png",
-        "roughness": "Texturas/Letrero/Cartelito_Letrero_SG1_Roughness.1001.png",
-        "metallic": "Texturas/Letrero/Cartelito_Letrero_SG1_Metallic.1001.png",
-        "normal": "Texturas/Letrero/Cartelito_Letrero_SG1_Normal.1001.png",
-    },
-
-    # El plano del suelo
-    "initialShadingGroup": {
-        "base": "Texturas/Base/Base Banco_Banco_SG_BaseColor.1001.png",
-        "roughness": "Texturas/Base/Base Banco_Banco_SG_Roughness.1001.png",
-        "metallic": "Texturas/Base/Base Banco_Banco_SG_Metallic.1001.png",
-        "normal": "Texturas/Base/Base Banco_Banco_SG_Normal.1001.png",
-    },
-
-    # Los monitores del mostrador. El paquete no trae textura para ellos, así
-    # que se dejan sin mapear a propósito: el script les pone un color liso
-    # oscuro, que para una pantalla apagada es exactamente lo correcto.
-    # "set12": sin textura
+    # aiStandardSurface2SG es el vidrio: no pasa por la tabla, ver material_vidrio.
 }
 
 COLOR_FALLBACK = (0.34, 0.36, 0.39, 1.0)
@@ -256,10 +169,12 @@ def material_vidrio(material):
     principled = arbol.nodes.new("ShaderNodeBsdfPrincipled")
     principled.location = (150, 0)
 
-    principled.inputs["Base Color"].default_value = (0.38, 0.55, 0.72, 1.0)
+    # Los valores del shader Vidrio de Maya: azul grisáceo muy claro y 15 % de
+    # opacidad.
+    principled.inputs["Base Color"].default_value = (0.62, 0.68, 0.80, 1.0)
     principled.inputs["Roughness"].default_value = 0.06
     if "Alpha" in principled.inputs:
-        principled.inputs["Alpha"].default_value = 0.22
+        principled.inputs["Alpha"].default_value = 0.15
 
     try:
         material.surface_render_method = "DITHERED"
@@ -294,17 +209,17 @@ def construir_material(material, carpeta_banco):
     arbol.links.new(principled.outputs["BSDF"], salida.inputs["Surface"])
 
     if rutas is None:
-        # Materiales auxiliares sin mapas en el OBJ.
-        if original == "Puerta_Sg":
-            principled.inputs["Base Color"].default_value = (0.18, 0.12, 0.07, 1.0)
-            principled.inputs["Roughness"].default_value = 0.72
-        elif original == "typeOpenPBRSurfaceSG":
-            principled.inputs["Base Color"].default_value = (0.32, 0.51, 0.72, 1.0)
-            principled.inputs["Roughness"].default_value = 0.55
-        else:
-            principled.inputs["Base Color"].default_value = COLOR_FALLBACK
-            principled.inputs["Roughness"].default_value = 0.82
-        return "color de respaldo"
+        # Un material que no está en la tabla sale gris liso sin dar ningún
+        # error. Se avisa en voz alta: así se colaron los tres materiales
+        # cruzados de la primera versión.
+        principled.inputs["Base Color"].default_value = COLOR_FALLBACK
+        principled.inputs["Roughness"].default_value = 0.82
+        return "COLOR DE RESPALDO: no está en la tabla MATERIALES"
+
+    if "color" in rutas:
+        principled.inputs["Base Color"].default_value = (*rutas["color"], 1.0)
+        principled.inputs["Roughness"].default_value = rutas.get("roughness", 0.82)
+        return "color liso de Maya"
 
     encontradas = []
 
@@ -421,14 +336,17 @@ def aplicar_materiales(objetos, carpeta_banco):
 def centrar_y_apoyar(objetos):
     minimo, maximo = medir_objetos(objetos)
 
+    # En Blender el eje vertical es Z: el importador ya pasó el OBJ, que viene
+    # con Y hacia arriba, a su sistema. Tomar Y como altura centraba el modelo
+    # a lo alto y lo apoyaba de costado.
     centro_x = (minimo.x + maximo.x) / 2.0
-    centro_z = (minimo.z + maximo.z) / 2.0
-    piso = minimo.y
+    centro_y = (minimo.y + maximo.y) / 2.0
+    piso = minimo.z
 
     for objeto in objetos:
         objeto.location.x -= centro_x
-        objeto.location.z -= centro_z
-        objeto.location.y -= piso
+        objeto.location.y -= centro_y
+        objeto.location.z -= piso
 
     # Recalcular después de centrar.
     bpy.context.view_layer.update()
@@ -436,9 +354,9 @@ def centrar_y_apoyar(objetos):
     minimo2, maximo2 = medir_objetos(objetos)
     log(
         "Dimensiones finales: "
-        f"{maximo2.x - minimo2.x:.2f} x "
-        f"{maximo2.y - minimo2.y:.2f} x "
-        f"{maximo2.z - minimo2.z:.2f} m"
+        f"{maximo2.x - minimo2.x:.2f} de ancho x "
+        f"{maximo2.z - minimo2.z:.2f} de alto x "
+        f"{maximo2.y - minimo2.y:.2f} de fondo (m)"
     )
 
 
@@ -495,12 +413,22 @@ def exportar_glb(ruta_salida):
         )
 
 
+def rutas_de_trabajo():
+    """Carpeta y salida: las que vengan después de "--", o las de arriba."""
+    argumentos = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    carpeta = argumentos[0] if len(argumentos) > 0 else CARPETA_BANCO
+    salida = argumentos[1] if len(argumentos) > 1 else ARCHIVO_SALIDA
+    return carpeta, salida
+
+
 def main():
     log("=== CONVERSOR BANCO -> GLB ===")
 
-    ruta_obj = os.path.join(CARPETA_BANCO, "Banco.obj")
-    ruta_mtl = os.path.join(CARPETA_BANCO, "Banco.mtl")
-    ruta_texturas = os.path.join(CARPETA_BANCO, "Texturas")
+    carpeta_banco, archivo_salida = rutas_de_trabajo()
+    log(f"Paquete: {carpeta_banco}")
+    ruta_obj = os.path.join(carpeta_banco, "Banco.obj")
+    ruta_mtl = os.path.join(carpeta_banco, "Banco.mtl")
+    ruta_texturas = os.path.join(carpeta_banco, "Texturas")
 
     if not os.path.isfile(ruta_obj):
         log("ERROR: no encuentro " + ruta_obj)
@@ -533,13 +461,13 @@ def main():
         return 1
 
     convertir_a_metros(objetos)
-    aplicar_materiales(objetos, CARPETA_BANCO)
+    aplicar_materiales(objetos, carpeta_banco)
     centrar_y_apoyar(objetos)
-    exportar_glb(ARCHIVO_SALIDA)
+    exportar_glb(archivo_salida)
 
-    if os.path.isfile(ARCHIVO_SALIDA):
-        peso = os.path.getsize(ARCHIVO_SALIDA) / (1024 * 1024)
-        log(f"GLB generado: {ARCHIVO_SALIDA}")
+    if os.path.isfile(archivo_salida):
+        peso = os.path.getsize(archivo_salida) / (1024 * 1024)
+        log(f"GLB generado: {archivo_salida}")
         log(f"Peso: {peso:.1f} MB")
         return 0
 

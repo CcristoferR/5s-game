@@ -26,8 +26,9 @@ import {
   altoDeTexto,
   desvanecer,
   afinarGui,
+  conAlfa,
+  crearBotonTurno as botonTurno,
 } from "../../ui/EstiloUI";
-import { reproducir } from "../../core/Sonido";
 import {
   libroVacio,
   abrirServicio,
@@ -117,71 +118,6 @@ const ANCHO_REGISTRO = ANCHO_CONTENIDO - 18;
 const RAIL = 2;
 /** Aire entre el raíl y el contenido. */
 const SANGRIA = 16;
-
-/** Un color de la paleta con otra opacidad. Acepta "#rrggbb" y "rgb(a)(…)". */
-function conAlfa(color: string, alfa: number): string {
-  if (/^#[0-9a-f]{6}$/i.test(color)) {
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-    return `rgba(${r},${g},${b},${alfa})`;
-  }
-  const partes = color.match(/rgba?\(([^)]+)\)/)?.[1].split(",").map((p) => p.trim());
-  return partes && partes.length >= 3 ? `rgba(${partes[0]},${partes[1]},${partes[2]},${alfa})` : color;
-}
-
-/**
- * Botón de los paneles del turno.
- *
- * ─── POR QUÉ NO EL PRINCIPAL DEL SISTEMA ──────────────────────────────────
- *
- * El botón principal del sistema es un bloque casi blanco, pensado para los
- * menús que tapan la escena entera. Aquí los paneles se apoyan sobre el libro
- * en penumbra, y un rectángulo blanco en una sala de noche es lo más luminoso
- * del cuadro: tira de la vista más que el propio libro y cansa en un turno que
- * se juega mirando esa zona durante minutos.
- *
- * Así que el peso lo lleva el color de acento, a baja opacidad, con su borde:
- * se reconoce como la acción principal sin encandilar. El secundario va solo
- * con borde. Leen los colores de PALETA, así que siguen al tema claro.
- */
-function botonTurno(
-  nombre: string,
-  texto: string,
-  ancho: number,
-  variante: "principal" | "secundario",
-  acento: () => string = () => PALETA.dato
-): Button {
-  const principal = variante === "principal";
-  const boton = Button.CreateSimpleButton(nombre, texto);
-  boton.width = ancho + "px";
-  boton.height = "46px";
-  boton.fontSize = TEXTO.menor;
-  boton.fontWeight = "600";
-  boton.cornerRadius = 12;
-  boton.thickness = 1;
-  boton.hoverCursor = "pointer";
-  neutralizarAnimaciones(boton);
-
-  const reposo = (): void => {
-    boton.background = principal ? conAlfa(acento(), 0.2) : "transparent";
-    boton.color = principal ? conAlfa(acento(), 0.5) : PALETA.borde;
-  };
-  const encima = (): void => {
-    boton.background = principal ? conAlfa(acento(), 0.32) : PALETA.tarjetaSuave;
-    boton.color = principal ? conAlfa(acento(), 0.8) : PALETA.tenue;
-  };
-  reposo();
-
-  if (boton.textBlock) {
-    boton.textBlock.color = principal ? PALETA.titulo : PALETA.cuerpo;
-    boton.textBlock.isHitTestVisible = false;
-  }
-  boton.onPointerEnterObservable.add(encima);
-  boton.onPointerOutObservable.add(reposo);
-  boton.onPointerUpObservable.add(() => reproducir("boton"));
-  return boton;
-}
 
 /**
  * La acción de una fila que pide algo —responder la radio, anotar una

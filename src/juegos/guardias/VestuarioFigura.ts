@@ -1,4 +1,4 @@
-import { Scene, Mesh, MeshBuilder, PBRMaterial, Color3, TransformNode } from "@babylonjs/core";
+import { Scene, Mesh, MeshBuilder, PBRMaterial, Color3, TransformNode, Vector3 } from "@babylonjs/core";
 import { loft, capsula, cabezaEsculpida, peloEsculpido, texturaTela, type Anillo } from "./ModeladoFigura";
 import type { PaletaFigura, Prenda } from "./Figura";
 
@@ -17,6 +17,10 @@ import type { PaletaFigura, Prenda } from "./Figura";
 // calle y cada uno con su silueta: parka con capucha y mochila, abrigo largo
 // con bolso, chaqueta con gorro de lana, gabardina con paraguas cerrado — es
 // Puerto Montt y llueve.
+//
+// En el supermercado es una tarde de compras: polerón con la capucha caída y
+// bolsillo canguro, camisa metida en el pantalón con cinturón, y el canasto
+// del local colgando de la mano.
 
 /** Medidas de una figura de 1,75 m. La altura se ajusta escalando la raíz. */
 export const MEDIDAS = {
@@ -47,6 +51,11 @@ export interface Esqueleto {
   caderas: TransformNode[];
   rodillas: TransformNode[];
   tobillos: TransformNode[];
+  /**
+   * Lo que cuelga de una mano —el canasto— y de cuál. Lo pone vestir; Figura
+   * lo mantiene a plomo y deja ese brazo casi quieto.
+   */
+  carga?: { nodo: TransformNode; brazo: number };
 }
 
 /** El tronco de cada prenda, de la cadera al cuello. */
@@ -62,18 +71,27 @@ function tronco(prenda: Prenda): Anillo[] {
     { y: 0.55, x: 0.078, delante: 0.068, atras: 0.064 },
     { y: 0.585, x: 0.064, delante: 0.06, atras: 0.058 },
   ];
-  const holgura = { uniforme: 0, parka: 0.02, abrigo: 0.012, chaqueta: 0.008 }[prenda];
+  const holgura = { uniforme: 0, camisa: 0, parka: 0.02, abrigo: 0.012, chaqueta: 0.008, poleron: 0.016 }[prenda];
   const anillos = base.map((a, i) => {
     const h = i >= base.length - 2 ? holgura * 0.4 : holgura;
     return { ...a, x: a.x + h, delante: a.delante + h, atras: (a.atras ?? a.delante) + h };
   });
   // Faldones: la parka baja a la mitad del muslo y el abrigo casi a la rodilla,
   // con vuelo para que las piernas quepan al caminar.
-  if (prenda === "parka") anillos.unshift({ y: -0.17, x: 0.186, delante: 0.128, atras: 0.134 });
+  //
+  // Y casi rectos por los costados, que es como cae un abrigo. Con sección de
+  // óvalo la tela se estrechaba justo detrás y delante de cada pierna, y al
+  // dar el paso el muslo la atravesaba: de perfil se veía un parche del color
+  // del pantalón en mitad del faldón.
+  if (prenda === "parka" || prenda === "abrigo") anillos.slice(0, 2).forEach((a) => (a.forma = 2.6));
+  if (prenda === "parka") anillos.unshift({ y: -0.17, x: 0.186, delante: 0.128, atras: 0.134, forma: 3.2 });
   if (prenda === "abrigo") {
-    anillos.unshift({ y: -0.2, x: 0.184, delante: 0.13, atras: 0.136 });
-    anillos.unshift({ y: -0.34, x: 0.2, delante: 0.152, atras: 0.156 });
+    anillos.unshift({ y: -0.2, x: 0.184, delante: 0.13, atras: 0.136, forma: 3.2 });
+    anillos.unshift({ y: -0.34, x: 0.2, delante: 0.152, atras: 0.156, forma: 3.2 });
   }
+  // El polerón acaba en un elástico bajo la cintura, que recoge la tela. Por lo
+  // mismo que los faldones, recogido pero no ovalado.
+  if (prenda === "poleron") anillos.unshift({ y: -0.13, x: 0.176, delante: 0.117, atras: 0.123, forma: 3 });
   return anillos;
 }
 
@@ -82,8 +100,10 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   const piezas: Mesh[] = [];
   const tela = texturaTela(scene);
 
+  const creados: PBRMaterial[] = [];
   const mat = (sufijo: string, color: Color3, rugosidad: number, o: { tela?: boolean; brillo?: number; metal?: number } = {}): PBRMaterial => {
     const m = new PBRMaterial(`mat${nombre}_${sufijo}`, scene);
+    creados.push(m);
     m.albedoColor = color;
     m.roughness = rugosidad;
     m.metallic = o.metal ?? 0;
@@ -188,6 +208,51 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
     caja("radio", 0.05, 0.09, 0.03, esq.cuerpo, matOscuro, -0.1, 0.36, frente(0.36) + 0.012);
     const antena = poner(MeshBuilder.CreateCylinder(`${nombre}_antena`, { diameter: 0.008, height: 0.07, tessellation: 8 }, scene), esq.cuerpo, matOscuro, -0.115, 0.44, frente(0.36) + 0.012);
     antena.rotation.z = 0.1;
+  } else if (prenda === "camisa") {
+    // Cuello con sus dos puntas, botonadura y la camisa metida en el pantalón:
+    // la pretina sube hasta el cinturón y tapa el faldón.
+    poner(loft(scene, `${nombre}_cuelloCamisa`, [
+      { y: 0.552, x: 0.086, delante: 0.078, atras: 0.072 },
+      { y: 0.575, x: 0.08, delante: 0.074, atras: 0.07 },
+      { y: 0.598, x: 0.074, delante: 0.067, atras: 0.066 },
+      { y: 0.604, x: 0.07, delante: 0.063, atras: 0.063 },
+    ], { lados: 24 }), esq.cuerpo, matRopa);
+    [-1, 1].forEach((lado) => {
+      const punta = caja(`puntaCuello_${lado}`, 0.036, 0.034, 0.005, esq.cuerpo, matRopa, lado * 0.024, 0.538, frente(0.538) + 0.004);
+      punta.rotation.z = lado * 0.62;
+      punta.rotation.x = -0.2;
+    });
+    [0.14, 0.24, 0.34, 0.44].forEach((y, k) => bola(`botonCamisa_${k}`, esq.cuerpo, matDetalle, 0, y, frente(y) + 0.002, 0.011, 0.011, 0.005));
+    poner(loft(scene, `${nombre}_pretina`, [
+      { y: -0.08, x: 0.167, delante: 0.11, atras: 0.116 },
+      { y: 0.04, x: 0.161, delante: 0.104, atras: 0.108 },
+      { y: 0.075, x: 0.16, delante: 0.103, atras: 0.106 },
+    ], { lados: 28 }), esq.cuerpo, matPantalon);
+    poner(loft(scene, `${nombre}_cinturon`, [
+      { y: 0.07, x: 0.163, delante: 0.106, atras: 0.109 },
+      { y: 0.105, x: 0.161, delante: 0.105, atras: 0.107 },
+    ], { lados: 28 }), esq.cuerpo, matOscuro);
+    caja("hebilla", 0.04, 0.03, 0.007, esq.cuerpo, matDorado, 0, 0.0875, 0.109);
+  } else if (prenda === "poleron") {
+    // Sin cremallera: se pone por la cabeza. De lejos lo delata la capucha
+    // caída en la espalda; de cerca, el bolsillo canguro y los cordones.
+    poner(loft(scene, `${nombre}_capucha`, [
+      { y: 0.43, x: 0.11, delante: 0.045, cz: -0.115 },
+      { y: 0.5, x: 0.13, delante: 0.062, cz: -0.125 },
+      { y: 0.565, x: 0.115, delante: 0.058, cz: -0.115 },
+      { y: 0.59, x: 0.07, delante: 0.035, cz: -0.1 },
+    ], { lados: 18, tapaAbajo: true, tapaArriba: true, uVueltas: 2, vPorMetro: 5 }), esq.cuerpo, matRopa);
+    poner(loft(scene, `${nombre}_bolsillo`, [0, 0.03, 0.14, 0.17].map((y, k) => ({
+      y,
+      x: k < 2 ? 0.125 : 0.1,
+      delante: 0.009,
+      cz: frente(y) - 0.001,
+      forma: 4,
+    })), { lados: 16, tapaAbajo: true, tapaArriba: true, uVueltas: 2, vPorMetro: 5 }), esq.cuerpo, matRopa);
+    [-1, 1].forEach((lado) => {
+      const cordon = caja(`cordon_${lado}`, 0.006, 0.13, 0.006, esq.cuerpo, matDetalle, lado * 0.034, 0.47, frente(0.47) + 0.006);
+      cordon.rotation.x = -0.12;
+    });
   } else {
     // Cremallera de arriba abajo: la línea que parte en dos la ropa de calle.
     const alto = anillosTronco[anillosTronco.length - 2].y - anillosTronco[0].y;
@@ -228,8 +293,18 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   }
   if (paleta.accesorio === "bolso") {
     caja("bolso", 0.07, 0.19, 0.25, esq.cuerpo, matOscuro, 0.215, -0.08, 0.01);
-    const tira = caja("tiraBolso", 0.024, 0.72, 0.01, esq.cuerpo, matOscuro, 0.02, 0.22, frente(0.28) + 0.006);
-    tira.rotation.z = 0.5;
+    // La tira sube por el pecho desde el bolso, pasa por encima del hombro
+    // contrario y baja por la espalda. Antes solo iba por delante y terminaba
+    // en el aire: de espaldas, su punta asomaba sobre el hombro como una antena.
+    const zDelante = frente(0.28) + 0.006;
+    const zDetras =
+      Math.min(...anillosTronco.filter((a) => a.y > -0.05 && a.y < 0.52).map((a) => (a.cz ?? 0) - (a.atras ?? a.delante))) - 0.006;
+    [zDelante, zDetras].forEach((z, k) => {
+      const tira = caja(`tiraBolso_${k}`, 0.024, 0.635, 0.01, esq.cuerpo, matOscuro, 0.0325, 0.25, z);
+      tira.rotation.z = 0.556;
+    });
+    const sobreHombro = caja("tiraBolsoHombro", 0.024, 0.01, zDelante - zDetras + 0.01, esq.cuerpo, matOscuro, -0.135, 0.517, (zDelante + zDetras) / 2);
+    sobreHombro.rotation.z = 0.61;
   }
 
   // --- Cabeza ---------------------------------------------------------------
@@ -283,7 +358,7 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   }
 
   // --- Brazos y manos -----------------------------------------------------
-  const grueso = prenda === "parka" ? 0.012 : prenda === "uniforme" ? 0 : 0.006;
+  const grueso = { uniforme: 0, camisa: 0, parka: 0.012, abrigo: 0.006, chaqueta: 0.006, poleron: 0.01 }[prenda];
   [0, 1].forEach((i) => {
     const lado = i === 0 ? -1 : 1;
     poner(capsula(scene, `${nombre}_brazo_${lado}`, MEDIDAS.brazo, 0.05 + grueso, 0.043 + grueso, { bulto: 0.004, fondo: 0.95 }), esq.hombros[i], matRopa);
@@ -328,11 +403,52 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
       { y: -0.02, x: 0.008, delante: 0.008 },
     ], { lados: 8, tapaArriba: true, vPorMetro: 6 }), nodo, mat("telaParaguas", new Color3(0.03, 0.04, 0.08), 0.5, { tela: true }));
   }
+  if (paleta.accesorio === "canasto") {
+    // El canasto del local, en la mano derecha. Cuelga de su propio nodo en el
+    // puño, y es Figura quien lo mantiene a plomo mientras el brazo se mueve.
+    const i = 1;
+    const asa = new TransformNode(`${nombre}_asaCanasto`, scene);
+    asa.parent = esq.codos[i];
+    asa.position.set(0.004, -MEDIDAS.antebrazo - 0.085, 0.01);
+    esq.carga = { nodo: asa, brazo: i };
+
+    // Abierto por arriba y se ve el interior: sin descartar caras traseras y
+    // con la luz por los dos lados.
+    const plastico = mat("canasto", new Color3(0.5, 0.045, 0.04), 0.42);
+    plastico.backFaceCulling = false;
+    plastico.twoSidedLighting = true;
+    // A lo largo de la marcha, más ancho de boca que de fondo.
+    poner(loft(scene, `${nombre}_canasto`, [
+      { y: -0.43, x: 0.082, delante: 0.15, forma: 5 },
+      { y: -0.41, x: 0.088, delante: 0.162, forma: 5 },
+      { y: -0.22, x: 0.1, delante: 0.184, forma: 5 },
+      { y: -0.2, x: 0.106, delante: 0.192, forma: 5 },
+    ], { lados: 32, tapaAbajo: true }), asa, plastico);
+    // Las dos asas, levantadas y juntas en la mano.
+    [-1, 1].forEach((s) => {
+      const camino = [
+        new Vector3(s * 0.1, -0.2, -0.11),
+        new Vector3(s * 0.06, -0.07, -0.08),
+        new Vector3(s * 0.012, -0.008, -0.04),
+        new Vector3(s * 0.012, -0.008, 0.04),
+        new Vector3(s * 0.06, -0.07, 0.08),
+        new Vector3(s * 0.1, -0.2, 0.11),
+      ];
+      poner(MeshBuilder.CreateTube(`${nombre}_asaCanasto_${s}`, { path: camino, radius: 0.0065, tessellation: 8, cap: Mesh.CAP_ALL }, scene), asa, plastico);
+    });
+    // Vacío de fábrica. Lo que lleva dentro lo pone Figura, compra a compra
+    // (ver la opción compras): el canasto que se llena es el de quien paga, y
+    // el del cliente de la parka verde tiene que seguir vacío toda la tarde.
+    // Con una leche y un cereal de serie, su canasto nunca lo estuvo.
+  }
 
   // --- Piernas y zapatos --------------------------------------------------
   [0, 1].forEach((i) => {
     const lado = i === 0 ? -1 : 1;
-    poner(capsula(scene, `${nombre}_muslo_${lado}`, MEDIDAS.muslo, 0.086, 0.057, { bulto: 0.004, fondo: 0.96 }), esq.caderas[i], matPantalon);
+    // El muslo nace más fino y engorda por debajo de la cadera. Con todo el
+    // grueso arriba, su remate asomaba por los costados de la chaqueta a la
+    // altura de la cadera, como un parche del color del pantalón.
+    poner(capsula(scene, `${nombre}_muslo_${lado}`, MEDIDAS.muslo, 0.07, 0.057, { bulto: 0.012, dondeBulto: 0.62, fondo: 0.96 }), esq.caderas[i], matPantalon);
     poner(capsula(scene, `${nombre}_canilla_${lado}`, MEDIDAS.canilla - 0.01, 0.058, 0.046, { bulto: 0.006, dondeBulto: 0.72, fondo: 0.97 }), esq.rodillas[i], matPantalon);
 
     // El zapato se modela a lo largo de Y y se tumba: Y pasa a ser el largo
@@ -362,6 +478,13 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
       [MEDIDAS.punta - 0.002, 0.01, 0.004, 0.004, -0.069],
     ]);
   });
+
+  // Los materiales de base se crean todos de entrada, pero no todas las
+  // figuras los usan: el dorado es del uniforme y de la camisa, y el negro, de
+  // quien lleva correas, botones o cinturón. Los que no quedaron en ninguna
+  // pieza se van ya: sin malla que se los lleve, ni Figura ni limpiarEscena
+  // los encontrarían después.
+  creados.filter((m) => !piezas.some((p) => p.material === m)).forEach((m) => m.dispose());
 
   return piezas;
 }

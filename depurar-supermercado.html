@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Depurar supermercado (temporal)</title>
+    <style>
+      html, body { margin: 0; overflow: hidden; height: 100%; font-family: system-ui, sans-serif; background: #000; }
+      #renderCanvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <script type="module">
+      import { Engine, Scene, Vector3, Ray, VertexBuffer } from "@babylonjs/core";
+      import { crearRecorridoSupermercado } from "/src/juegos/guardias/RecorridoSupermercado.ts";
+
+      const canvas = document.getElementById("renderCanvas");
+      const engine = new Engine(canvas, true, undefined, false);
+      const scene = new Scene(engine);
+      engine.runRenderLoop(() => {
+        if (scene.activeCamera) scene.render();
+      });
+
+      const montar = async () => {
+        window.__listo = false;
+        const recorrido = await crearRecorridoSupermercado(scene, () => {
+          window.__salio = true;
+        });
+        await Promise.race([scene.whenReadyAsync(true), new Promise((r) => setTimeout(r, 15000))]);
+        recorrido.comenzar();
+        window.__depurar = { scene, engine, recorrido, camara: scene.activeCamera, Vector3, Ray, VertexBuffer };
+        window.__listo = true;
+      };
+      // Salir y volver a entrar sin recargar: la escena es la misma, como en el portal.
+      window.__reentrar = async () => {
+        window.__depurar.recorrido.dispose();
+        window.__salio = false;
+        await montar();
+      };
+      await montar();
+    </script>
+  </body>
+</html>
