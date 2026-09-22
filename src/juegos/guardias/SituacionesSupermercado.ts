@@ -14,7 +14,7 @@ import type { OpcionSituacion, ClaseRespuesta } from "./PanelesSupermercado";
 // Las inocentes son las que rompen el instinto de atrapar al malo. Sin ellas,
 // el jugador aprende que todo lo que le señalan es un delito y acierta
 // interviniendo siempre. Con ellas tiene que mirar de verdad: la señora que
-// hace señas al principio y la que hace señas a las 17:08 hacen el mismo
+// hace señas al principio y la que hace señas a las 17:06 hacen el mismo
 // gesto, y lo que cambia es lo que pasa DETRÁS de la segunda.
 //
 // Por eso están emparejadas a propósito con una real cada una:
@@ -54,7 +54,7 @@ import type { OpcionSituacion, ClaseRespuesta } from "./PanelesSupermercado";
 //
 // ─── POR QUÉ ESTOS MINUTOS ───────────────────────────────────────────────
 //
-// 6, 25, 42, 58, 68, 84, 94 y 106, y ninguno cae en una apertura de ronda (0,
+// 6, 25, 42, 58, 66, 84, 94 y 106, y ninguno cae en una apertura de ronda (0,
 // 30, 60, 90).
 // Si cayeran juntos, el jugador recibiría en el mismo instante el repintado de
 // la lista de la ronda nueva y un panel encima, y no sabría cuál de los dos
@@ -195,7 +195,7 @@ export const SITUACIONES: readonly Situacion[] = [
   // que quedarse mirando congela el momento, y que la respuesta correcta no es
   // siempre la sospecha. Todo antes de que haya nada que perder.
   //
-  // Y es la mitad de una pareja. A las 17:08 otra mujer le va a hacer las
+  // Y es la mitad de una pareja. A las 17:06 otra mujer le va a hacer las
   // mismas señas desde el mismo sitio, y la diferencia estará detrás de ella.
   {
     id: "clienta-pregunta",
@@ -212,6 +212,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "observar",
         texto: "Hacerle un gesto de que espere y seguir con tu ronda.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "La dejaste esperando sin atenderla.",
         explicacion:
           "Atender a quien pregunta también es el puesto. Un guardia de sala es la persona a la " +
           "que se le pregunta dónde está algo, y dejarla con la mano en alto no protege nada: la " +
@@ -232,6 +234,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "avisar",
         texto: "Avisar a Central de que una clienta insiste en llamarte.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Avisaste de una clienta que solo preguntaba.",
         explicacion:
           "No hay nada que avisar. La radio está para las novedades, y una clienta que quiere " +
           "preguntar algo no lo es: si cada cosa normal sube por radio, cuando suba una de verdad " +
@@ -262,6 +266,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Acercarte y pedirle que te muestre lo que acaba de guardarse bajo la parka.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Lo abordaste antes de que pasara las cajas.",
         explicacion:
           "Pedirle que te muestre algo puedes pedírselo, y él puede negarse: exigirlo o meterle " +
           "mano a la ropa ya es un registro, y eso es de las policías, no tuyo. Pero sobre todo " +
@@ -284,6 +290,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "avisar",
         texto: "Ir hasta la oficina a dar aviso a jefatura de lo que acabas de ver.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Fuiste a la oficina y se te fue.",
         // Y es lo que pasa: mientras vas y vuelves, se va.
         despues: "El de la parka verde acaba de salir por la puerta sin pagar. Nadie lo estaba mirando.",
         explicacion:
@@ -362,6 +370,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "observar",
         texto: "Dejarlo salir y anotar en el informe lo que viste en el pasillo.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Lo dejaste salir con el producto.",
         explicacion:
           "Observar era lo correcto mientras el hecho no estaba completo. Ya lo está: lo viste " +
           "tomarlo, esconderlo y pasar el último punto de pago sin detenerse. Dejarlo salir ahora " +
@@ -398,6 +408,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Llevarlo a la oficina, recuperar el producto y dejarlo marchar.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Lo soltaste sin llamar a Carabineros.",
         explicacion:
           "Recuperar el producto no es el error: estás en flagrancia y es la evidencia, puedes " +
           "hacerlo. El error es lo que falta detrás, y dónde lo haces. Soltarlo sin avisar a nadie " +
@@ -431,6 +443,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Acercarte y pedirle que no deje el canasto en el pasillo.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Interrumpiste a un cliente al teléfono.",
         explicacion:
           "No está haciendo nada que haya que corregir. Es su canasto, con sus compras, a dos " +
           "metros de él. Interrumpir a alguien en mitad de una llamada por eso no protege nada, y " +
@@ -450,6 +464,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "avisar",
         texto: "Avisar a Central de un canasto abandonado en el pasillo.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Avisaste de un canasto que tenía dueño.",
         explicacion:
           "Avisar de un canasto abandonado con su dueño al lado, hablando por teléfono, es dar " +
           "una novedad que no es. Cada aviso falso le quita peso al siguiente, y Central tiene " +
@@ -490,6 +506,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "observar",
         texto: "Anotarlo mentalmente y terminar la ronda sin decir nada por ahora.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Viste las anulaciones y no avisaste.",
         explicacion:
           "Mirar sin informar no es prudencia, es omisión. Lo que viste ya es una novedad, y una " +
           "novedad que no se transmite es, para el servicio, una novedad que no ocurrió. Además " +
@@ -499,6 +517,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Acercarte a la caja y pedirle explicaciones delante del cliente siguiente.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Encaraste a la cajera delante de clientes.",
         explicacion:
           "Encararla convierte un procedimiento interno en un conflicto personal delante de los " +
           "clientes, y la avisa: lo que quede por anular se anula antes de que nadie revise nada. " +
@@ -526,9 +546,11 @@ export const SITUACIONES: readonly Situacion[] = [
     // hasta la góndola se come diez minutos de turno antes de que él haga
     // nada. Con la ventana de siempre, a las 17:12 y de dieciocho minutos, se
     // cerraba con la mano de él todavía camino de la chaqueta: el jugador lo
-    // veía todo menos el final, y el panel no llegaba a salir nunca.
-    minuto: 68,
-    ventana: 24,
+    // veía todo menos el final, y el panel no llegaba a salir nunca. Y ahora
+    // llegan desde la esquina del edificio por la vereda, que son quince metros
+    // más: por eso las 17:06 y veintiséis minutos.
+    minuto: 66,
+    ventana: 26,
     zona: "entrada",
     pista: { de: "central", texto: "Revisa el frente de la sala, junto a la entrada." },
     siSePierde:
@@ -543,6 +565,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Ir hacia ella a atenderla, como a cualquiera que te llama.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Caíste en la distracción y se lo llevó.",
         explicacion:
           "Es lo que los dos esperan que hagas. Una maniobra de distracción funciona así: uno te " +
           "ocupa y el otro trabaja, y el que te ocupa hace algo tan normal —llamarte, " +
@@ -563,6 +587,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "observar",
         texto: "Dejarla esperando y quedarte tú solo mirando al hombre.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Lo vigilaste solo, sin avisar a Central.",
         explicacion:
           "Mirarlo es la mitad correcta, y en el pasillo de la parka bastaba. Aquí no: son dos, y " +
           "uno de ellos está para ponerse entre tú y el otro. En cuanto ella se te acerque o él " +
@@ -591,6 +617,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "avisar",
         texto: "Dar aviso a jefatura y continuar la ronda por donde ibas.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Dejaste la salida tapada para después.",
         explicacion:
           "El aviso es correcto y el momento no: la salida sigue bloqueada mientras el aviso " +
           "sube, se atiende y baja. Si en esos minutos hay un amago de incendio, esa es la puerta " +
@@ -601,6 +629,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "observar",
         texto: "Tomar nota para incluirlo en el informe al cierre del turno.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Dejaste la salida tapada hasta el cierre.",
         explicacion:
           "Un informe al cierre del turno llega horas tarde para una vía de evacuación. Lo que " +
           "está en juego aquí no es un dato que registrar, es la salida de la gente que está " +
@@ -641,6 +671,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Preguntarle si piensa llevar lo que tiene en la mano.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Trataste de sospechosa a una clienta.",
         explicacion:
           "Leer una etiqueta no es sospechoso, es comprar: se mira el precio, los ingredientes, " +
           "la fecha. Ir a preguntarle si lo va a llevar es tratarla como sospechosa por algo que " +
@@ -650,6 +682,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "avisar",
         texto: "Avisar a Central de una clienta que manipula productos.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Avisaste de una clienta que solo leía.",
         explicacion:
           "No hay novedad que dar. Lo que hizo con el producto es justo lo contrario de lo que " +
           "hizo el de la parka: lo devolvió al estante. Un aviso por esto solo le enseña a " +
@@ -687,6 +721,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "intervenir",
         texto: "Abrir la mochila para ver de quién es y poder devolvérsela a su dueño.",
         correcta: false,
+        error: "sinMotivo",
+        enBreve: "Abriste un bulto abandonado.",
         explicacion:
           "Un bulto abandonado no se abre ni se mueve. No sabes qué hay dentro, y el gesto de " +
           "abrirlo es exactamente el que no se debe hacer si lo que hay dentro es lo que nadie " +
@@ -707,6 +743,8 @@ export const SITUACIONES: readonly Situacion[] = [
         clase: "observar",
         texto: "Quedarte vigilándola por si el dueño vuelve a buscarla en un rato.",
         correcta: false,
+        error: "dejarPasar",
+        enBreve: "Te quedaste junto al bulto sin avisar.",
         explicacion:
           "Aquí observar se queda corto, y además te pone a ti al lado del bulto, que es el peor " +
           "sitio de todo el local. Mirar sirve cuando el riesgo es que se te escape un detalle; " +
@@ -716,9 +754,17 @@ export const SITUACIONES: readonly Situacion[] = [
   },
 ];
 
+/**
+ * Una decisión del jugador: qué situación era, qué eligió, qué correspondía y
+ * cuándo. Es lo que se califica al final y lo que queda en el historial.
+ */
 export interface RespuestaSituacion {
   situacion: Situacion;
   opcion: OpcionSituacion;
+  /** La que era: la correcta de esa situación. */
+  correspondia: OpcionSituacion;
+  /** Minuto del turno en que se respondió. */
+  minuto: number;
 }
 
 /**
@@ -808,8 +854,8 @@ export interface Situaciones {
    * una sola vez.
    */
   avanzar(minuto: number, dt: number): Situacion | null;
-  /** Lo que el jugador respondió. */
-  resolver(situacion: Situacion, opcion: OpcionSituacion): void;
+  /** Lo que el jugador respondió, y en qué minuto del turno. */
+  resolver(situacion: Situacion, opcion: OpcionSituacion, minuto: number): void;
   atendidas(): readonly RespuestaSituacion[];
   /** Las que pasaron sin que las viera. Se lee al cerrar el turno. */
   perdidas(): Situacion[];
@@ -927,11 +973,14 @@ export function crearSituaciones(
       return saltando;
     },
 
-    resolver(situacion, opcion) {
+    resolver(situacion, opcion, minuto) {
       // Una sola respuesta por situación: el panel no se puede reabrir, pero
       // un doble clic sobre dos opciones distintas sí llegaría dos veces.
       if (respuestas.some((r) => r.situacion.id === situacion.id)) return;
-      respuestas.push({ situacion, opcion });
+      // Siempre hay una correcta por situación; si faltara, la elegida hace
+      // de referencia antes que romper el registro del turno.
+      const correspondia = situacion.opciones.find((o) => o.correcta) ?? opcion;
+      respuestas.push({ situacion, opcion, correspondia, minuto });
     },
 
     atendidas: () => respuestas,

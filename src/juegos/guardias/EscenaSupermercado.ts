@@ -86,6 +86,29 @@ export interface SupermercadoCargado {
   dispose: () => void;
 }
 
+/**
+ * Las mallas de producto de las góndolas: se dibujan igual, pero no chocan.
+ *
+ * ─── POR QUÉ NO CHOCAN ─────────────────────────────────────────────────────
+ *
+ * Porque eran lo más caro de todo el nivel y no hacían nada. Cada una es un
+ * solo bloque con todos los productos de su clase repartidos por el local —la
+ * de botellas tiene sesenta mil vértices—, así que su caja envolvente abarca
+ * la sala entera y el choque de la cámara las tenía que recorrer triángulo a
+ * triángulo en cada paso. Medido: caminar por un pasillo costaba 25,8 ms por
+ * cuadro solo en eso; sin ellas, 0,21.
+ *
+ * Y no hacían nada porque las góndolas ya lo hacen. Medido también: los
+ * productos quedan ocho centímetros o más por dentro del estante por cada
+ * lado y por debajo de su tope (1,798 contra 1,80), así que la cámara choca
+ * con el estante antes de poder rozar un producto. Y para la vista pasa lo
+ * mismo: de 208 rayos de un pasillo al de al lado, el estante solo tapa 202,
+ * y estante más productos, los mismos 202.
+ *
+ * Son los nombres con que vienen en el .glb.
+ */
+const PRODUCTOS = new Set(["Botellas", "Leches", "Latas 01", "Latas 02", "Latas 03", "Cereales", "Pastas"]);
+
 export async function cargarSupermercado(
   scene: Scene,
   opciones: OpcionesSupermercado = {}
@@ -134,7 +157,7 @@ export async function cargarSupermercado(
     // clic sobre una góndola le robe el evento a lo que sí es interactivo.
     malla.isPickable = false;
     malla.receiveShadows = true;
-    malla.checkCollisions = true;
+    malla.checkCollisions = !PRODUCTOS.has(malla.name);
 
     if (opciones.shadowGenerator && malla instanceof Mesh) {
       opciones.shadowGenerator.addShadowCaster(malla, false);
@@ -171,6 +194,15 @@ export async function cargarSupermercado(
   // Y las tres latas pierden el metal con el que vienen: sin entorno que
   // reflejar se veían negras. Mismo sitio y mismo motivo, sin tocar el .glb.
   afinarMateriales(scene, mallas, { letreros: ["letrero"], brilloLetrero: 1.15, sinMetal: ["lata"] });
+
+  // ─── EL MODELO NO SE MUEVE MÁS ─────────────────────────────────────────
+  //
+  // Ya está escalado, centrado y apoyado en el piso. A partir de aquí nadie lo
+  // mueve, así que se le congela la matriz de mundo: Babylon deja de
+  // recalcularla —y con ella la caja envolvente— en cada cuadro para cuarenta
+  // mallas que están quietas. No cambia nada de lo que se ve: la matriz
+  // congelada es exactamente la que tienen ahora.
+  mallas.forEach((malla) => malla.freezeWorldMatrix());
 
   if (opciones.diagnostico) {
     console.log(

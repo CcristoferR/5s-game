@@ -3,9 +3,10 @@ import { crearFigura, type Figura, type PaletaFigura } from "./Figura";
 import type { OpcionSituacion } from "./PanelesSupermercado";
 import type { Clientes } from "./ClientesSupermercado";
 import type { Bodega } from "./BodegaSupermercado";
-import { PUERTA_X, sueloLibre } from "./ZonasSupermercado";
+import { PUERTA_X, sueloLibre, FUERA_PUERTA, ESQUINA_IZQUIERDA, ESQUINA_DERECHA } from "./ZonasSupermercado";
 import type { Oficina } from "./OficinaSupermercado";
 import { crearActoresSala } from "./ActoresSala";
+import { crearBillete, type Productos } from "./ProductosSupermercado";
 
 // ===========================================================================
 // Lo que de verdad ocurre en la sala cuando ocurre una situación
@@ -125,12 +126,13 @@ export function crearActores(
   clientes: Clientes,
   bodega: Bodega,
   oficina: Oficina,
-  piso: number
+  piso: number,
+  productos: Productos = {}
 ): Actores {
   const figuras: Figura[] = [];
   // Las de sala —las tres inocentes y la distracción— van aparte. Ver
   // ActoresSala.
-  const sala = crearActoresSala(scene, camara, clientes, piso);
+  const sala = crearActoresSala(scene, camara, clientes, piso, productos);
 
   // --- La cajera ------------------------------------------------------------
   //
@@ -147,6 +149,8 @@ export function crearActores(
     // reconocer el valor, hay que ver que sale de la caja y acaba en el
     // delantal.
     producto: { color: new Color3(0.74, 0.84, 0.66), medidas: [0.17, 0.09, 0.012] },
+    // Un billete de diez mil de verdad, con su azul y su retrato.
+    plantilla: crearBillete(scene, "billeteCajera"),
   });
   figuras.push(cajera);
   const puestoCajera = new Vector3(CAJERA_X, piso, CAJERA_Z);
@@ -189,10 +193,8 @@ export function crearActores(
   // cliente cualquiera que empieza su compra. La mochila dejaba de ser un bulto
   // abandonado y pasaba a ser el bolso de alguien que está ahí mismo.
   //
-  // Se le quita de la escena justo en el vano, antes del vidrio. No cruza el
-  // cristal —una figura atravesando la puerta rompe la sala, igual que un
-  // cliente atravesando una góndola— y el momento en que desaparece queda
-  // enmarcado por el vano y a contraluz, que es donde menos se nota.
+  // Ahora la puerta se abre sola: sale por ella y se va por la vereda. Ver
+  // FUERA_PUERTA en ZonasSupermercado.
   const SE_VA = new Vector3(PUERTA_X, piso, 6.95);
   hombre.situar(ESPERA, new Vector3(ESPERA.x, piso + 1.2, 2.55));
   hombre.mirarHacia(new Vector3(ESPERA.x, piso + 1.15, 2.55));
@@ -220,9 +222,12 @@ export function crearActores(
     new Vector3(6.9, piso, 0.4),
     new Vector3(7.25, piso, 2.9),
   ];
+  // Y sigue: sale, camina por la vereda y dobla la esquina de la derecha.
   const SALIDA_A_PUERTA = [
     new Vector3(5.2, piso, 5.6),
     new Vector3(PUERTA_X, piso, 6.95),
+    new Vector3(FUERA_PUERTA.x, piso, FUERA_PUERTA.z),
+    new Vector3(ESQUINA_DERECHA.x, piso, ESQUINA_DERECHA.z),
   ];
   // ─── SI LO RETIENES, SE QUEDA CONTIGO ─────────────────────────────────────
   //
@@ -395,8 +400,200 @@ export function crearActores(
     fase = "soltada";
     // Algo más rápido que como vino: el que deja un bulto y se va no se
     // entretiene, y esa prisa es la mitad de lo que hace que se note.
-    hombre.caminar([SE_VA], 1.25, () => hombre.visible(false));
+    hombre.caminar(
+      [SE_VA, new Vector3(FUERA_PUERTA.x, piso, FUERA_PUERTA.z), new Vector3(ESQUINA_IZQUIERDA.x, piso, ESQUINA_IZQUIERDA.z)],
+      1.25,
+      () => hombre.visible(false)
+    );
   });
+
+  /** Arma el actor de una situación. Ver de(). */
+  const armar = (id: string): ActorSituacion | null => {
+    switch (id) {
+      case "producto-bajo-la-chaqueta":
+        return {
+          empezar: () => clientes.actuar("parkaVerde", "guardar"),
+          terminar: (opcion) => {
+            // ─── SI NADIE LO MIRA, SE VA ─────────────────────────────────
+            //
+            // Sin nadie mirando (la ventana venció) o con el guardia camino
+            // de la oficina (avisar), sale sin pagar por la línea de cajas.
+            // Es lo que la explicación de avisar le dice al jugador que
+            // puede pasar, y lo que Central le cuenta después si se lo
+            // perdió: con esto, además, lo ve pasar.
+            //
+            // Con intervenir devuelve el producto y sigue su compra; con
+            // observar, lo que venga lo decide la situación encadenada.
+            if (opcion === null || opcion.clase === "avisar") {
+              if (fugaFase !== "quieto") return;
+              fugaFase = "hacia-puerta";
+              clientes.actuar("parkaVerde", null);
+              clientes.cederElPaso("parkaVerde", false);
+              clientes.mandarA("parkaVerde", [...SALIDA_A_CAJA, ...SALIDA_A_PUERTA], 1.15, () => {
+                fugaFase = "fuera";
+                clientes.esconder("parkaVerde");
+              });
+              return;
+            }
+            clientes.actuar("parkaVerde", null);
+          },
+          enSuMomento: () => clientes.enElRemate("parkaVerde"),
+          // Null mientras no se le esté viendo el gesto: si no, el panel
+          // salta contando el rato que llevas mirando a alguien que todavía
+          // venía andando por el pasillo, y se abre para hablarte de un hurto
+          // que no ha ocurrido delante de ti.
+          punto: () => (clientes.enPlenoGesto("parkaVerde") ? clientes.puntoDe("parkaVerde") : null),
+        };
+
+      case "sale-sin-pagar":
+        return {
+          empezar: () => {
+            if (fugaFase !== "quieto") return;
+            fugaFase = "hacia-caja";
+            // Más rápido que paseando: el que lleva algo encima no se
+            // entretiene, y esa prisa es parte de lo que hay que ver.
+            clientes.mandarA("parkaVerde", SALIDA_A_CAJA, 1.15, () => {
+              fugaFase = "en-caja";
+              esperaCaja = DUDA_EN_CAJA;
+            });
+          },
+          terminar: (opcion) => {
+            if (
+              fugaFase === "quieto" ||
+              fugaFase === "retenido" ||
+              fugaFase === "en-oficina" ||
+              fugaFase === "fuera"
+            ) {
+              return;
+            }
+            // Solo lo detiene abordarlo BIEN. Las dos opciones de esta
+            // situación son de clase "intervenir" —ver el comentario de la
+            // tabla— así que aquí hay que mirar cuál de las dos: quitarle el
+            // producto y soltarlo también es intervenir, y termina con él en
+            // la calle igual que dejarlo salir.
+            if (opcion?.clase === "intervenir" && opcion.correcta) {
+              fugaFase = "retenido";
+              migas.length = 0;
+              ultimaMiga = null;
+              clientes.mandarA("parkaVerde", [], 1.0);
+              clientes.mirarA("parkaVerde", camara.globalPosition);
+              return;
+            }
+            fugaFase = "hacia-puerta";
+            // Por lo mismo que al entrar en la oficina: si te quedas en su
+            // camino de salida, con la cortesía puesta no sale nunca y la
+            // situación se queda a medias para siempre.
+            clientes.cederElPaso("parkaVerde", false);
+            clientes.mandarA("parkaVerde", SALIDA_A_PUERTA, 1.2, () => {
+              fugaFase = "fuera";
+              clientes.esconder("parkaVerde");
+            });
+          },
+          // Cruzar la línea de cajas no tiene remate: o la está pasando o no.
+          enSuMomento: () => true,
+          // Salió por la puerta sin que lo miraras: ya no hay nada que ver.
+          terminada: () => fugaFase === "fuera",
+          punto: () => {
+            // ─── SE MIRA DÓNDE ESTÁ, NO SI "YA LLEGÓ" ───────────────────
+            //
+            // Esto estuvo pidiendo que hubiera alcanzado su punto de la caja
+            // —que la fase fuera "en-caja"— y era frágil de una forma que
+            // solo se ve jugando: él le cede el paso al jugador y no se le
+            // acerca a menos de ochenta centímetros, así que un jugador
+            // plantado justo donde él va a pararse le deja clavado a un
+            // palmo del destino. No "llegaba" nunca, la fase no cambiaba, y
+            // su propia situación no saltaba. Vigilarlo de cerca —que es lo
+            // que el panel anterior te acaba de pedir— rompía el remate.
+            //
+            // Con la posición no puede pasar: si está en la franja de la
+            // línea de cajas, está pasando la línea de cajas, se haya
+            // detenido donde se haya detenido.
+            if (
+              fugaFase === "quieto" ||
+              fugaFase === "retenido" ||
+              fugaFase === "en-oficina" ||
+              fugaFase === "fuera"
+            ) {
+              return null;
+            }
+            const p = clientes.puntoDe("parkaVerde");
+            if (!p) return null;
+            // Pasado el extremo de la fila delantera (X 6,22) y a la altura
+            // del mostrador. Antes de eso va por el pasillo transversal y es
+            // un cliente más; pasado Z 5,2 ya está cruzando la entrada.
+            if (p.x < 6.5 || p.z < 1.2 || p.z > 5.2) return null;
+            return p;
+          },
+        };
+
+      case "anulaciones-en-caja":
+        return {
+          empezar: () => cajera.gesticular("guardar"),
+          terminar: () => cajera.gesticular(null),
+          enSuMomento: () => cajera.remateALaVista(),
+          punto: () => {
+            if (!cajera.gestoALaVista()) return null;
+            const p = cajera.raiz.position;
+            // A la altura de los hombros: el pecho lo tapa el mostrador
+            // desde media zona de cajas.
+            return new Vector3(p.x, p.y + 1.42, p.z);
+          },
+        };
+
+      case "salida-de-emergencia-bloqueada":
+        return {
+          // Alguien deja el pallet delante y amarra la barra. Hasta este
+          // minuto la salida estaba despejada, y por eso hay novedad.
+          // Una puerta tapada no tiene momento: lo está desde que la tapan.
+          enSuMomento: () => true,
+          empezar: () => bodega.taparSalida(true),
+          // No se destapa al vencer la ventana: un pallet no se aparta solo.
+          // Lo que se acaba es el plazo para darse cuenta, no el problema.
+          terminar: () => undefined,
+          punto: () => bodega.salidaEmergencia,
+        };
+
+      case "mochila-en-el-acceso":
+        return {
+          empezar: () => {
+            if (fase !== "quieto") return;
+            fase = "yendo";
+            hombre.caminar([DEJA], 1.0, () => {
+              hombre.mirarHacia(new Vector3(MOCHILA.x, piso + 0.25, MOCHILA.z));
+              fase = "dejando";
+              // Lo que tarda en agacharse, dejarla y enderezarse. No hay
+              // animación de agacharse; este par de segundos parado de cara
+              // al suelo es lo que la sugiere.
+              esperaSuelta = 2.2;
+            });
+          },
+          // No se "termina": una mochila abandonada no se recoge sola porque
+          // se acabe la ventana. Se queda ahí el resto del turno, que es lo
+          // que la hace incómoda.
+          // HASTA QUE LA HAYA SOLTADO. Es el mismo fallo que el del gesto a
+          // medias: el panel saltaba mientras él seguía andando hacia la
+          // puerta con la mochila puesta, y preguntaba por un bulto
+          // abandonado que todavía llevaba a la espalda.
+          enSuMomento: () => fase === "soltada" && enElSuelo >= 1.5,
+          terminar: () => undefined,
+          punto: () => {
+            // Ya en el suelo: lo que hay que ver es el bulto.
+            if (fase === "soltada") return new Vector3(MOCHILA.x, piso + 0.3, MOCHILA.z);
+            // Mientras la está dejando, él. Pero no antes: yendo hacia la
+            // puerta con la mochila puesta es un cliente más, y preguntar
+            // por un bulto abandonado mirando a alguien que lo lleva a la
+            // espalda no tiene sentido.
+            if (fase !== "dejando") return null;
+            const p = hombre.raiz.position;
+            return new Vector3(p.x, p.y + 1.3, p.z);
+          },
+        };
+
+      default:
+        return sala.de(id);
+    }
+  };
+  const armados = new Map<string, ActorSituacion | null>();
 
   return {
     congelar(quietos) {
@@ -406,189 +603,12 @@ export function crearActores(
     },
 
     de(id) {
-      switch (id) {
-        case "producto-bajo-la-chaqueta":
-          return {
-            empezar: () => clientes.actuar("parkaVerde", "guardar"),
-            terminar: (opcion) => {
-              // ─── SI NADIE LO MIRA, SE VA ─────────────────────────────────
-              //
-              // Sin nadie mirando (la ventana venció) o con el guardia camino
-              // de la oficina (avisar), sale sin pagar por la línea de cajas.
-              // Es lo que la explicación de avisar le dice al jugador que
-              // puede pasar, y lo que Central le cuenta después si se lo
-              // perdió: con esto, además, lo ve pasar.
-              //
-              // Con intervenir devuelve el producto y sigue su compra; con
-              // observar, lo que venga lo decide la situación encadenada.
-              if (opcion === null || opcion.clase === "avisar") {
-                if (fugaFase !== "quieto") return;
-                fugaFase = "hacia-puerta";
-                clientes.actuar("parkaVerde", null);
-                clientes.cederElPaso("parkaVerde", false);
-                clientes.mandarA("parkaVerde", [...SALIDA_A_CAJA, ...SALIDA_A_PUERTA], 1.15, () => {
-                  fugaFase = "fuera";
-                  clientes.esconder("parkaVerde");
-                });
-                return;
-              }
-              clientes.actuar("parkaVerde", null);
-            },
-            enSuMomento: () => clientes.enElRemate("parkaVerde"),
-            // Null mientras no se le esté viendo el gesto: si no, el panel
-            // salta contando el rato que llevas mirando a alguien que todavía
-            // venía andando por el pasillo, y se abre para hablarte de un hurto
-            // que no ha ocurrido delante de ti.
-            punto: () => (clientes.enPlenoGesto("parkaVerde") ? clientes.puntoDe("parkaVerde") : null),
-          };
-
-        case "sale-sin-pagar":
-          return {
-            empezar: () => {
-              if (fugaFase !== "quieto") return;
-              fugaFase = "hacia-caja";
-              // Más rápido que paseando: el que lleva algo encima no se
-              // entretiene, y esa prisa es parte de lo que hay que ver.
-              clientes.mandarA("parkaVerde", SALIDA_A_CAJA, 1.15, () => {
-                fugaFase = "en-caja";
-                esperaCaja = DUDA_EN_CAJA;
-              });
-            },
-            terminar: (opcion) => {
-              if (
-                fugaFase === "quieto" ||
-                fugaFase === "retenido" ||
-                fugaFase === "en-oficina" ||
-                fugaFase === "fuera"
-              ) {
-                return;
-              }
-              // Solo lo detiene abordarlo BIEN. Las dos opciones de esta
-              // situación son de clase "intervenir" —ver el comentario de la
-              // tabla— así que aquí hay que mirar cuál de las dos: quitarle el
-              // producto y soltarlo también es intervenir, y termina con él en
-              // la calle igual que dejarlo salir.
-              if (opcion?.clase === "intervenir" && opcion.correcta) {
-                fugaFase = "retenido";
-                migas.length = 0;
-                ultimaMiga = null;
-                clientes.mandarA("parkaVerde", [], 1.0);
-                clientes.mirarA("parkaVerde", camara.globalPosition);
-                return;
-              }
-              fugaFase = "hacia-puerta";
-              // Por lo mismo que al entrar en la oficina: si te quedas en su
-              // camino de salida, con la cortesía puesta no sale nunca y la
-              // situación se queda a medias para siempre.
-              clientes.cederElPaso("parkaVerde", false);
-              clientes.mandarA("parkaVerde", SALIDA_A_PUERTA, 1.2, () => {
-                fugaFase = "fuera";
-                clientes.esconder("parkaVerde");
-              });
-            },
-            // Cruzar la línea de cajas no tiene remate: o la está pasando o no.
-            enSuMomento: () => true,
-            // Salió por la puerta sin que lo miraras: ya no hay nada que ver.
-            terminada: () => fugaFase === "fuera",
-            punto: () => {
-              // ─── SE MIRA DÓNDE ESTÁ, NO SI "YA LLEGÓ" ───────────────────
-              //
-              // Esto estuvo pidiendo que hubiera alcanzado su punto de la caja
-              // —que la fase fuera "en-caja"— y era frágil de una forma que
-              // solo se ve jugando: él le cede el paso al jugador y no se le
-              // acerca a menos de ochenta centímetros, así que un jugador
-              // plantado justo donde él va a pararse le deja clavado a un
-              // palmo del destino. No "llegaba" nunca, la fase no cambiaba, y
-              // su propia situación no saltaba. Vigilarlo de cerca —que es lo
-              // que el panel anterior te acaba de pedir— rompía el remate.
-              //
-              // Con la posición no puede pasar: si está en la franja de la
-              // línea de cajas, está pasando la línea de cajas, se haya
-              // detenido donde se haya detenido.
-              if (
-                fugaFase === "quieto" ||
-                fugaFase === "retenido" ||
-                fugaFase === "en-oficina" ||
-                fugaFase === "fuera"
-              ) {
-                return null;
-              }
-              const p = clientes.puntoDe("parkaVerde");
-              if (!p) return null;
-              // Pasado el extremo de la fila delantera (X 6,22) y a la altura
-              // del mostrador. Antes de eso va por el pasillo transversal y es
-              // un cliente más; pasado Z 5,2 ya está cruzando la entrada.
-              if (p.x < 6.5 || p.z < 1.2 || p.z > 5.2) return null;
-              return p;
-            },
-          };
-
-        case "anulaciones-en-caja":
-          return {
-            empezar: () => cajera.gesticular("guardar"),
-            terminar: () => cajera.gesticular(null),
-            enSuMomento: () => cajera.remateALaVista(),
-            punto: () => {
-              if (!cajera.gestoALaVista()) return null;
-              const p = cajera.raiz.position;
-              // A la altura de los hombros: el pecho lo tapa el mostrador
-              // desde media zona de cajas.
-              return new Vector3(p.x, p.y + 1.42, p.z);
-            },
-          };
-
-        case "salida-de-emergencia-bloqueada":
-          return {
-            // Alguien deja el pallet delante y amarra la barra. Hasta este
-            // minuto la salida estaba despejada, y por eso hay novedad.
-            // Una puerta tapada no tiene momento: lo está desde que la tapan.
-            enSuMomento: () => true,
-            empezar: () => bodega.taparSalida(true),
-            // No se destapa al vencer la ventana: un pallet no se aparta solo.
-            // Lo que se acaba es el plazo para darse cuenta, no el problema.
-            terminar: () => undefined,
-            punto: () => bodega.salidaEmergencia,
-          };
-
-        case "mochila-en-el-acceso":
-          return {
-            empezar: () => {
-              if (fase !== "quieto") return;
-              fase = "yendo";
-              hombre.caminar([DEJA], 1.0, () => {
-                hombre.mirarHacia(new Vector3(MOCHILA.x, piso + 0.25, MOCHILA.z));
-                fase = "dejando";
-                // Lo que tarda en agacharse, dejarla y enderezarse. No hay
-                // animación de agacharse; este par de segundos parado de cara
-                // al suelo es lo que la sugiere.
-                esperaSuelta = 2.2;
-              });
-            },
-            // No se "termina": una mochila abandonada no se recoge sola porque
-            // se acabe la ventana. Se queda ahí el resto del turno, que es lo
-            // que la hace incómoda.
-            // HASTA QUE LA HAYA SOLTADO. Es el mismo fallo que el del gesto a
-            // medias: el panel saltaba mientras él seguía andando hacia la
-            // puerta con la mochila puesta, y preguntaba por un bulto
-            // abandonado que todavía llevaba a la espalda.
-            enSuMomento: () => fase === "soltada" && enElSuelo >= 1.5,
-            terminar: () => undefined,
-            punto: () => {
-              // Ya en el suelo: lo que hay que ver es el bulto.
-              if (fase === "soltada") return new Vector3(MOCHILA.x, piso + 0.3, MOCHILA.z);
-              // Mientras la está dejando, él. Pero no antes: yendo hacia la
-              // puerta con la mochila puesta es un cliente más, y preguntar
-              // por un bulto abandonado mirando a alguien que lo lleva a la
-              // espalda no tiene sentido.
-              if (fase !== "dejando") return null;
-              const p = hombre.raiz.position;
-              return new Vector3(p.x, p.y + 1.3, p.z);
-            },
-          };
-
-        default:
-          return sala.de(id);
-      }
+      // Uno por situación, armado la primera vez que se pide y guardado. Se
+      // pregunta por él varias veces por cuadro —si se le ve, si ya pasó lo
+      // que importa, si ya se fue— y armarlo cada vez eran varios objetos y
+      // closures nuevos por situación y por cuadro, todos de usar y tirar.
+      if (!armados.has(id)) armados.set(id, armar(id));
+      return armados.get(id) ?? null;
     },
 
     dispose() {

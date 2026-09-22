@@ -124,6 +124,22 @@ export interface OpcionesReloj {
    */
   minutosPorSegundo?: number;
   /**
+   * Lo más que puede avanzar el reloj en un cuadro, en segundos. Por defecto
+   * una décima.
+   *
+   * ─── POR QUÉ SE PUEDE CAMBIAR ───────────────────────────────────────────
+   *
+   * Porque tiene que ir a la par con lo que se mueve en la escena. Las figuras
+   * topan su paso en cinco centésimas: si el equipo va lento —menos de veinte
+   * cuadros por segundo— ellas se frenan y el reloj con un tope de una décima
+   * no, y el turno corre al doble que la gente. En el supermercado eso rompía
+   * las situaciones: la pareja de la distracción tardaba en cruzar la sala el
+   * doble de minutos de turno, y su ventana se cerraba antes de que él
+   * terminara el gesto. Con el mismo tope, si el equipo va lento, va lento
+   * todo junto.
+   */
+  pasoMaximo?: number;
+  /**
    * Minutos en los que el turno TIENE que frenar.
    *
    * ─── POR QUÉ EL RELOJ LOS CONOCE ────────────────────────────────────────
@@ -167,7 +183,7 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
 
     // Se acota el paso: si la pestaña estuvo en segundo plano, el navegador
     // devuelve un delta enorme y el turno saltaría media hora de golpe.
-    const dt = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+    const dt = Math.min(opciones.pasoMaximo ?? 0.1, scene.getEngine().getDeltaTime() / 1000);
 
     // La pausa por novedad se consume primero. El turno no avanza mientras
     // dura, y se descuenta con el mismo reloj real que todo lo demás.

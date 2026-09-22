@@ -63,6 +63,35 @@ export interface RecuentoTurno {
   situaciones: readonly FilaSituacion[];
   /** El pie de esa segunda tarjeta. */
   notaSituaciones: string;
+  /** La nota y los dos montones de errores. Va en la última tarjeta. */
+  informe: InformeTurno;
+}
+
+/** Un error en su columna del informe. */
+export interface ErrorEnInforme {
+  hora: string;
+  actividad: string;
+  enBreve: string;
+}
+
+/**
+ * La última tarjeta del turno: la nota, la frase y los dos montones.
+ *
+ * Es la del condominio —rótulo de aprobado o no, la nota grande, el mínimo—
+ * con las faltas partidas en dos columnas, porque aquí hay dos maneras de
+ * equivocarse y se corrigen distinto.
+ */
+export interface InformeTurno {
+  nota: number;
+  aprobado: boolean;
+  minimo: number;
+  /** Si el turno quedó guardado en el historial de este equipo. */
+  guardado: boolean;
+  frase: string;
+  dejastePasar: readonly ErrorEnInforme[];
+  sinMotivo: readonly ErrorEnInforme[];
+  descuentos: { dejarPasar: number; sinMotivo: number; ronda: number };
+  rondas: { completas: number; total: number };
 }
 
 /** Una situación del turno, ya cerrada, tal como sale en el recuento. */
@@ -95,7 +124,22 @@ export interface OpcionSituacion {
    * elegiste tiene una consecuencia que se ve en la sala.
    */
   despues?: string;
+  /**
+   * De qué lado se equivoca quien elige esto. Solo en las incorrectas.
+   *
+   *   · dejarPasar: hizo de menos. Había algo que atender y no lo atendió.
+   *   · sinMotivo:  hizo de más. Abordó, señaló o tocó lo que no correspondía.
+   *
+   * Son los dos montones del informe final, y no pesan lo mismo: ver
+   * CalificacionSupermercado.
+   */
+  error?: TipoError;
+  /** El error en una línea, para la columna del informe final. */
+  enBreve?: string;
 }
+
+/** Los dos lados por los que se falla. Ver OpcionSituacion.error. */
+export type TipoError = "dejarPasar" | "sinMotivo";
 
 export interface SituacionEnPanel {
   /** "16:25 · CLIENTE EN PASILLO". */
@@ -391,8 +435,116 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
       crearParrafo("notaRecuentoSituaciones", recuento.notaSituaciones, ANCHO_CONTENIDO, TEXTO.menor, PALETA.tenue)
     );
 
-    botonAbajo(tarjeta, "btnTerminarTurno", "Terminar el turno", alTerminar);
+    botonAbajo(tarjeta, "btnVerNota", "Ver la nota", () =>
+      setTimeout(() => mostrarInforme(recuento.informe, alTerminar), 0)
+    );
     // Las filas y la nota se estiman por lo alto; se encoge a lo que ocuparon.
+    ajustarAlContenido(tarjeta, columna, 94);
+  }
+
+  /**
+   * La última tarjeta: la nota, la frase que la resume y los dos montones.
+   *
+   * ─── POR QUÉ DOS COLUMNAS ───────────────────────────────────────────────
+   *
+   * Porque son dos problemas opuestos y una lista sola los mezcla. Quien deja
+   * pasar tiene que aprender a actuar; quien aborda sin motivo, a mirar antes.
+   * Dos turnos con 70 pueden venir de lados contrarios, y lo que el alumno
+   * tiene que ver de un vistazo es de cuál viene el suyo.
+   */
+  function mostrarInforme(informe: InformeTurno, alTerminar: () => void): void {
+    const color = informe.aprobado ? PALETA.acierto : PALETA.error;
+    const HUECO = 32;
+    const ANCHO_COLUMNA = (ANCHO_CONTENIDO - HUECO) / 2;
+    const leyenda =
+      `Dejar pasar resta ${informe.descuentos.dejarPasar}; abordar sin motivo, ${informe.descuentos.sinMotivo}, ` +
+      `porque molestar a un inocente es peor que dejar escapar un hurto. Cada ronda incompleta resta ` +
+      `${informe.descuentos.ronda}: hiciste ${informe.rondas.completas} de ${informe.rondas.total}.`;
+    const minimo = informe.guardado
+      ? `Mínimo para aprobar: ${informe.minimo}. El turno queda registrado en tu historial.`
+      : `Mínimo para aprobar: ${informe.minimo}. No se pudo guardar el turno en este equipo.`;
+
+    /** Lo que ocupa una columna, para dimensionar la tarjeta antes de dibujarla. */
+    const altoColumna = (errores: readonly ErrorEnInforme[]): number =>
+      22 +
+      (errores.length === 0
+        ? 30
+        : errores.reduce(
+            (t, e) =>
+              t +
+              altoDeTexto(`${e.hora} · ${e.actividad}`, ANCHO_COLUMNA, TEXTO.menor) +
+              altoDeTexto(e.enBreve, ANCHO_COLUMNA, TEXTO.menor) +
+              12,
+            0
+          ));
+    const alto =
+      MARCO_VERTICAL +
+      28 +
+      altoDeTexto(minimo, ANCHO_CONTENIDO, TEXTO.menor) +
+      altoDeTexto(`${informe.nota} / 100`, ANCHO_CONTENIDO, TEXTO.mayor) +
+      14 +
+      altoDeTexto(informe.frase, ANCHO_CONTENIDO, TEXTO.destacado) +
+      37 +
+      Math.max(altoColumna(informe.dejastePasar), altoColumna(informe.sinMotivo)) +
+      32 +
+      altoDeTexto(leyenda, ANCHO_CONTENIDO, TEXTO.menor);
+    const { tarjeta, columna } = armarCapa("Informe", alto, color);
+
+    columna.addControl(crearRotulo("rotuloInforme", informe.aprobado ? "TURNO APROBADO" : "TURNO NO APROBADO", color));
+    columna.addControl(crearEspacio("aireRotuloInforme", 10));
+    columna.addControl(
+      crearParrafo("notaInforme", `${informe.nota} / 100`, ANCHO_CONTENIDO, TEXTO.mayor, color, "600")
+    );
+    columna.addControl(crearEspacio("aireMinimoInforme", 4));
+    columna.addControl(crearParrafo("minimoInforme", minimo, ANCHO_CONTENIDO, TEXTO.menor, PALETA.tenue));
+    columna.addControl(crearEspacio("aireFraseInforme", 14));
+    columna.addControl(
+      crearParrafo("fraseInforme", informe.frase, ANCHO_CONTENIDO, TEXTO.destacado, PALETA.titulo, "600")
+    );
+    columna.addControl(crearEspacio("aireDivisorInforme", 18));
+    columna.addControl(crearDivisor("divisorInforme", ANCHO_CONTENIDO));
+    columna.addControl(crearEspacio("airePostDivisorInforme", 18));
+
+    // Las dos columnas, lado a lado.
+    const fila = new StackPanel("columnasInforme");
+    fila.isVertical = false;
+    fila.width = ANCHO_CONTENIDO + "px";
+    fila.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    fila.adaptHeightToChildren = true;
+
+    const montar = (clave: string, titulo: string, descuento: number, errores: readonly ErrorEnInforme[], vacio: string): StackPanel => {
+      const col = new StackPanel(`columna${clave}`);
+      col.isVertical = true;
+      col.width = ANCHO_COLUMNA + "px";
+      col.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+      col.addControl(
+        crearRotulo(`rotulo${clave}`, `${titulo} · −${descuento} c/u`, errores.length > 0 ? PALETA.error : PALETA.acierto)
+      );
+      col.addControl(crearEspacio(`aireRotulo${clave}`, 8));
+      if (errores.length === 0) {
+        col.addControl(crearParrafo(`vacio${clave}`, vacio, ANCHO_COLUMNA, TEXTO.menor, PALETA.acierto, "600"));
+      }
+      errores.forEach((e, i) => {
+        col.addControl(
+          crearParrafo(`que${clave}_${i}`, `${e.hora} · ${e.actividad}`, ANCHO_COLUMNA, TEXTO.menor, PALETA.cuerpo, "600")
+        );
+        col.addControl(crearParrafo(`breve${clave}_${i}`, e.enBreve, ANCHO_COLUMNA, TEXTO.menor, PALETA.tenue));
+        col.addControl(crearEspacio(`aire${clave}_${i}`, 12));
+      });
+      return col;
+    };
+    fila.addControl(montar("DejastePasar", "DEJASTE PASAR", informe.descuentos.dejarPasar, informe.dejastePasar, "Nada se te pasó."));
+    const hueco = new Rectangle("huecoColumnasInforme");
+    hueco.width = HUECO + "px";
+    hueco.thickness = 0;
+    fila.addControl(hueco);
+    fila.addControl(montar("SinMotivo", "ABORDASTE SIN MOTIVO", informe.descuentos.sinMotivo, informe.sinMotivo, "A nadie."));
+    columna.addControl(fila);
+
+    columna.addControl(crearEspacio("aireLeyendaInforme", 14));
+    columna.addControl(crearParrafo("leyendaInforme", leyenda, ANCHO_CONTENIDO, TEXTO.menor, PALETA.tenue));
+
+    botonAbajo(tarjeta, "btnTerminarTurno", "Terminar el turno", alTerminar);
     ajustarAlContenido(tarjeta, columna, 94);
   }
 
@@ -613,7 +765,9 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
       columna.addControl(crearParrafo("notaRecuento", recuento.nota, ANCHO_CONTENIDO, TEXTO.menor, PALETA.tenue));
 
       if (recuento.situaciones.length === 0) {
-        botonAbajo(tarjeta, "btnTerminarTurno", "Terminar el turno", alTerminar);
+        botonAbajo(tarjeta, "btnVerNota", "Ver la nota", () =>
+          setTimeout(() => mostrarInforme(recuento.informe, alTerminar), 0)
+        );
         return;
       }
       botonAbajo(tarjeta, "btnVerSituaciones", "Ver las situaciones", () =>

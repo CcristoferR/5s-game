@@ -1,6 +1,7 @@
 import { Scene, Vector3, Color3, type Camera } from "@babylonjs/core";
 import { sueloLibre } from "./ZonasSupermercado";
 import { crearFigura, type Figura, type PaletaFigura, type Gesto } from "./Figura";
+import type { Productos, TipoProducto } from "./ProductosSupermercado";
 
 // ===========================================================================
 // Los clientes de la sala de ventas
@@ -120,7 +121,7 @@ interface Cliente {
    * pone: una caja invisible colgando de la muñeca de ocho personas es ocho
    * mallas por nada.
    */
-  producto?: { color: Color3; medidas: [number, number, number] };
+  producto?: { color: Color3; medidas: [number, number, number]; tipo?: TipoProducto };
   /**
    * Lo que se le va acumulando en el canasto. Solo quien viene a comprar.
    *
@@ -163,7 +164,7 @@ const CLIENTES: readonly Cliente[] = [
       { x: -7.15, z: -4.4, pausa: 7, mira: { x: -7.71, z: -4.4 } },
       { x: -6.5, z: -6.2, pausa: 6, mira: { x: -5.89, z: -6.2 } },
     ],
-    producto: { color: new Color3(0.72, 0.28, 0.2), medidas: [0.12, 0.17, 0.08] },
+    producto: { color: new Color3(0.72, 0.28, 0.2), medidas: [0.12, 0.17, 0.08], tipo: "leche" },
     compras: { color: new Color3(0.72, 0.28, 0.2), cuantas: 4 },
     // El de la situación del teléfono: a las 16:42 deja el canasto en el
     // suelo y se aparta a contestar. Ver ActoresSupermercado.
@@ -194,7 +195,7 @@ const CLIENTES: readonly Cliente[] = [
     ],
     // Un frasco: lo que se lee de cerca. Es de la situación inocente del
     // tercer pasillo —lo coge, lo lee y lo devuelve—, y de ninguna otra cosa.
-    producto: { color: new Color3(0.86, 0.8, 0.62), medidas: [0.08, 0.13, 0.08] },
+    producto: { color: new Color3(0.86, 0.8, 0.62), medidas: [0.08, 0.13, 0.08], tipo: "cereal" },
   },
 
   // Cuarto pasillo. Parka verde oliva con la capucha a la espalda, y canasto.
@@ -237,7 +238,7 @@ const CLIENTES: readonly Cliente[] = [
     // algo que antes no estaba y después tampoco. Amarillo porque es lo que
     // más se recorta contra la parka verde oliva y contra el blanco del
     // estante.
-    producto: { color: new Color3(0.93, 0.74, 0.12), medidas: [0.15, 0.2, 0.09] },
+    producto: { color: new Color3(0.93, 0.74, 0.12), medidas: [0.15, 0.2, 0.09], tipo: "lata" },
   },
 
   // Último pasillo. El joven alto del polerón mostaza: el que más rápido va y
@@ -325,7 +326,7 @@ const CLIENTES: readonly Cliente[] = [
       { x: -4.6, z: 3.15, pausa: 7, mira: { x: -4.6, z: 2.55 } },
       { x: -5.8, z: 4.4, pausa: 6, mira: { x: -5.8, z: 2.55 } },
     ],
-    producto: { color: new Color3(0.85, 0.7, 0.24), medidas: [0.12, 0.17, 0.08] },
+    producto: { color: new Color3(0.85, 0.7, 0.24), medidas: [0.12, 0.17, 0.08], tipo: "lata" },
     compras: { color: new Color3(0.85, 0.7, 0.24), cuantas: 4 },
   },
 
@@ -353,7 +354,7 @@ const CLIENTES: readonly Cliente[] = [
       { x: 4.6, z: 3.1, pausa: 7, mira: { x: 4.6, z: 2.55 } },
       { x: 2.9, z: 4.2, pausa: 6, mira: { x: 2.9, z: 2.55 } },
     ],
-    producto: { color: new Color3(0.24, 0.42, 0.62), medidas: [0.12, 0.17, 0.08] },
+    producto: { color: new Color3(0.24, 0.42, 0.62), medidas: [0.12, 0.17, 0.08], tipo: "pasta" },
     compras: { color: new Color3(0.24, 0.42, 0.62), cuantas: 4 },
   },
 
@@ -514,7 +515,11 @@ export interface Clientes {
  * @param camara  La del jugador. Es a quien le ceden el paso: ver Figura.
  * @param piso    Altura del suelo de la sala. Ver medirPisoSala: no es cero.
  */
-export function crearClientes(scene: Scene, camara: Camera, piso: number): Clientes {
+/**
+ * @param productos  Los productos de verdad de la góndola, para las manos y los
+ *                   canastos. Sin ellos, cajas lisas del color de la tabla.
+ */
+export function crearClientes(scene: Scene, camara: Camera, piso: number, productos: Productos = {}): Clientes {
   const punto = (p: Parada): Vector3 => new Vector3(p.x, piso, p.z);
   /** El punto del estante, ya a la altura a la que se le va la vista. */
   const estante = (p: Parada): Vector3 =>
@@ -532,7 +537,12 @@ export function crearClientes(scene: Scene, camara: Camera, piso: number): Clien
       cederPasoA: () => (sinCortesia.has(cliente.nombre) ? null : camara.globalPosition),
       sueloLibre,
       producto: cliente.producto,
-      compras: cliente.compras,
+      plantilla: cliente.producto?.tipo ? productos[cliente.producto.tipo] : undefined,
+      // Lo que se echa al canasto es lo mismo que coge del estante.
+      compras: cliente.compras && {
+        ...cliente.compras,
+        plantilla: cliente.producto?.tipo ? productos[cliente.producto.tipo] : undefined,
+      },
       telefono: cliente.telefono,
     });
     // Ya de cara a su estante, no a la parada siguiente: los que arrancan más

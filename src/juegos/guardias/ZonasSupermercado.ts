@@ -35,6 +35,21 @@ import { PLANTA_BODEGA } from "./BodegaSupermercado";
 /** Centro de la puerta de vidrio, en X. El turno empieza entrando por ella. */
 export const PUERTA_X = 3.03;
 
+// ─── POR DÓNDE SE VA LA GENTE ────────────────────────────────────────────
+//
+// Quien se va del local no desaparece en el umbral: sale por la puerta, que se
+// le abre, camina por la vereda del local y se pierde al doblar la esquina del
+// edificio. Desde dentro no hay forma de ver esa esquina —las vidrieras miran
+// al frente y el muro tapa los costados—, así que es ahí donde se le quita de
+// la escena. Y la gente que llega, llega por el mismo camino.
+
+/** Justo fuera de la puerta, en la vereda del local. */
+export const FUERA_PUERTA = { x: PUERTA_X, z: 8.3 };
+/** Pasada la esquina izquierda del edificio, sobre la vereda del local. */
+export const ESQUINA_IZQUIERDA = { x: -11.9, z: 8.55 };
+/** Pasada la esquina derecha. */
+export const ESQUINA_DERECHA = { x: 12.1, z: 8.55 };
+
 /**
  * Borde entre la entrada y las góndolas: quince centímetros por delante de la
  * fila delantera. Justo en su cara, el cartel saldría con el hombro ya rozando

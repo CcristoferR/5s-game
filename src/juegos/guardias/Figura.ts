@@ -210,6 +210,13 @@ export interface OpcionesFigura {
    */
   producto?: { color: Color3; medidas: [number, number, number] };
   /**
+   * Un producto de verdad para la mano, en vez de la caja lisa de `producto`:
+   * una copia de los de la góndola (ver ProductosSupermercado). Se clona; la
+   * plantilla no se toca, y su material —que es el de la góndola— tampoco se
+   * desecha con la figura.
+   */
+  plantilla?: Mesh;
+  /**
    * Lo que se le va acumulando en el canasto cada vez que compra algo.
    *
    * ─── POR QUÉ IMPORTA QUE SE LLENE ───────────────────────────────────────
@@ -221,7 +228,7 @@ export interface OpcionesFigura {
    *
    * Un guardia de sala aprende a mirar los canastos antes que las caras.
    */
-  compras?: { color: Color3; cuantas: number };
+  compras?: { color: Color3; cuantas: number; plantilla?: Mesh };
   /**
    * Si lleva teléfono. Solo lo saca con el gesto "telefono".
    *
@@ -670,7 +677,19 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   let enLaMano: Mesh | null = null;
   /** Dónde va el producto en la mano, en el marco del antebrazo. */
   const palma = new Vector3(0, -MEDIDAS.antebrazo - 0.02, 0.06);
-  if (opciones.producto) {
+  /**
+   * Copias de productos de la góndola: se desechan con la figura, pero su
+   * material no, que es el de la góndola.
+   */
+  const ajenas: Mesh[] = [];
+  if (opciones.plantilla) {
+    enLaMano = opciones.plantilla.clone(`${nombre}_enLaMano`, esq.codos[brazoLibre]) as Mesh;
+    enLaMano.setEnabled(true);
+    enLaMano.position.copyFrom(palma);
+    enLaMano.isVisible = false;
+    enLaMano.isPickable = false;
+    ajenas.push(enLaMano);
+  } else if (opciones.producto) {
     const [ancho, alto, fondo] = opciones.producto.medidas;
     enLaMano = MeshBuilder.CreateBox(`${nombre}_enLaMano`, { width: ancho, height: alto, depth: fondo }, scene);
     const matProducto = new PBRMaterial(`${nombre}_matEnLaMano`, scene);
@@ -714,7 +733,29 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   // encima del borde: metidas del todo no se verían desde la altura a la que
   // mira alguien de pie, y entonces no contarían para nada.
   const compras: Mesh[] = [];
-  if (opciones.compras && carga) {
+  if (opciones.compras?.plantilla && carga) {
+    // Productos de verdad, repartidos por el fondo del canasto y asomando por
+    // la boca según su alto: una leche asoma, una lata casi no.
+    const plantilla = opciones.compras.plantilla;
+    const alto = plantilla.getBoundingInfo().boundingBox.extendSize.y * 2;
+    const sitios: [number, number, number][] = [
+      [-0.02, 0, -0.1],
+      [0.025, 0, 0.09],
+      [-0.015, 0.05, 0.0],
+      [0.03, 0.04, -0.045],
+    ];
+    for (let i = 0; i < opciones.compras.cuantas; i++) {
+      const copia = plantilla.clone(nombre + "_compra_" + i, carga.nodo) as Mesh;
+      copia.setEnabled(true);
+      const [x, sube, z] = sitios[i % sitios.length];
+      copia.position.set(x, -0.42 + alto / 2 + sube, z);
+      copia.rotation.set(0.06 * ((i % 2) * 2 - 1), 0.4 * i, 0.05);
+      copia.isVisible = false;
+      copia.isPickable = false;
+      compras.push(copia);
+      ajenas.push(copia);
+    }
+  } else if (opciones.compras && carga) {
     const matCompra = new PBRMaterial(nombre + "_matCompras", scene);
     matCompra.albedoColor = opciones.compras.color;
     matCompra.metallic = 0;
@@ -1196,6 +1237,9 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       // Si estaba en el suelo ya no cuelga de la figura, y raiz.dispose no lo
       // alcanzaría.
       if (carga && cargaSuelta) carga.nodo.dispose();
+      ajenas.forEach((m) => {
+        if (!m.isDisposed()) m.dispose(false, false);
+      });
       // Los materiales son de esta figura y se van con ella. Las texturas no:
       // la de la tela es una sola para todas (ver texturaTela).
       const materiales = new Set(piezas.map((m) => m.material).filter((m): m is Material => m !== null));

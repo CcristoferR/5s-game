@@ -216,7 +216,11 @@ export function abrirMenuGuardias(
                   onVolverAlPortal,
                   usuario
                 );
-              }
+              },
+
+              // Con quien se guarda el turno en el historial, como el
+              // condominio: es lo que deja marcar el escenario aprobado.
+              quienJuega
             );
 
             const TOPE_MS =

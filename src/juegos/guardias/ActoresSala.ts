@@ -2,7 +2,8 @@ import { Scene, Vector3, Color3, type Camera } from "@babylonjs/core";
 import { crearFigura, type Figura, type PaletaFigura } from "./Figura";
 import type { Clientes } from "./ClientesSupermercado";
 import type { ActorSituacion } from "./ActoresSupermercado";
-import { PUERTA_X, sueloLibre } from "./ZonasSupermercado";
+import { PUERTA_X, sueloLibre, FUERA_PUERTA, ESQUINA_IZQUIERDA, ESQUINA_DERECHA } from "./ZonasSupermercado";
+import type { Productos } from "./ProductosSupermercado";
 
 // ===========================================================================
 // Los actores de las situaciones de sala: las tres inocentes y la distracción
@@ -15,7 +16,7 @@ import { PUERTA_X, sueloLibre } from "./ZonasSupermercado";
 //
 // ─── LAS DOS SEÑAS, DESDE EL MISMO SITIO ─────────────────────────────────
 //
-// La señora que pregunta (16:06) y la mujer de la distracción (17:08) hacen
+// La señora que pregunta (16:06) y la mujer de la distracción (17:06) hacen
 // señas desde el mismo punto del frente de la sala, con el mismo gesto. Es a
 // propósito: la primera enseña que alguien que te llama es alguien que te
 // llama, y la segunda enseña a mirar también lo que hay DETRÁS de quien te
@@ -116,10 +117,14 @@ export function crearActoresSala(
   scene: Scene,
   camara: Camera,
   clientes: Clientes,
-  piso: number
+  piso: number,
+  productos: Productos = {}
 ): ActoresSala {
   const en = (p: { x: number; z: number }): Vector3 => new Vector3(p.x, piso, p.z);
   const umbral = new Vector3(PUERTA_X, piso, UMBRAL_Z);
+  const afuera = en(FUERA_PUERTA);
+  const esquinaIzq = en(ESQUINA_IZQUIERDA);
+  const esquinaDer = en(ESQUINA_DERECHA);
   const ojoJugador = (): Vector3 => camara.globalPosition.clone();
   /** Lo que hay que tener a la vista de una figura: su pecho. */
   const pecho = (f: Figura, altura: number): Vector3 => {
@@ -164,8 +169,9 @@ export function crearActoresSala(
   const ALTURA_HOMBRE = 1.8;
   const mujer = persona("mujerSenas", MUJER_SEÑAS, ALTURA_MUJER, 5.4);
   const complice = persona("hombreDistraccion", HOMBRE_DISTRACCION, ALTURA_HOMBRE, 8.8, {
-    // Una botella chica, oscura: cabe en el bolsillo de una chaqueta.
+    // Una lata de la fila delantera, que es la góndola que tiene delante.
     producto: { color: new Color3(0.18, 0.1, 0.07), medidas: [0.07, 0.18, 0.07] },
+    plantilla: productos.lata,
   });
   let parejaFase: "fuera" | "entrando" | "actuando" | "yendose" | "idos" = "fuera";
   let esperaMujer = 0;
@@ -191,9 +197,9 @@ export function crearActoresSala(
     if (parejaFase === "entrando" && esperaMujer > 0) {
       esperaMujer -= dt;
       if (esperaMujer <= 0) {
-        mujer.situar(umbral, en(SEÑAS));
+        mujer.situar(esquinaDer, afuera);
         mujer.visible(true);
-        mujer.caminar([en({ x: 1.6, z: 5.2 }), en(SEÑAS)], 1.0, () => {
+        mujer.caminar([afuera, umbral, en({ x: 1.6, z: 5.2 }), en(SEÑAS)], 1.1, () => {
           mujer.gesticular("llamar");
         });
       }
@@ -202,7 +208,7 @@ export function crearActoresSala(
     if (parejaFase === "yendose" && esperaComplice > 0) {
       esperaComplice -= dt;
       if (esperaComplice <= 0) {
-        complice.caminar([en({ x: -1.0, z: 4.0 }), en({ x: 1.0, z: 4.9 }), umbral], 1.15, () => {
+        complice.caminar([en({ x: -1.0, z: 4.0 }), en({ x: 1.0, z: 4.9 }), umbral, afuera, esquinaIzq], 1.15, () => {
           complice.visible(false);
           parejaFase = "idos";
         });
@@ -244,6 +250,118 @@ export function crearActoresSala(
     }
   });
 
+  /** Arma el actor de una situación. Ver de(). */
+  const armar = (id: string): ActorSituacion | null => {
+    switch (id) {
+      case "clienta-pregunta":
+        return {
+          empezar: () => {
+            if (señoraFase !== "quieta") return;
+            señoraFase = "llamando";
+            señora.gesticular("llamar");
+          },
+          terminar: (opcion) => {
+            if (señoraFase !== "llamando") return;
+            señora.gesticular(null);
+            // Atendida, se va a comprar: le dijiste dónde estaba lo que
+            // buscaba. Sin atender, se cansa y se va del local.
+            if (opcion?.correcta) {
+              señoraFase = "comprando";
+              señora.caminar(AL_PASILLO_2.map(en), 0.8, () => {
+                señora.mirarHacia(new Vector3(ESTANTE_PASILLO_2.x, piso + 1.15, ESTANTE_PASILLO_2.z));
+              });
+              return;
+            }
+            señoraFase = "yendose";
+            señora.caminar([en({ x: 0.0, z: 4.6 }), umbral, afuera, esquinaDer], 0.9, () => {
+              señora.visible(false);
+              señoraFase = "fuera";
+            });
+          },
+          punto: () => (señora.gestoALaVista() ? pecho(señora, ALTURA_SEÑORA) : null),
+          enSuMomento: () => señora.remateALaVista(),
+        };
+
+      case "maniobra-de-distraccion":
+        return {
+          empezar: () => {
+            if (parejaFase !== "fuera") return;
+            parejaFase = "entrando";
+            complice.situar(esquinaDer, afuera);
+            complice.visible(true);
+            complice.caminar(
+              [afuera, umbral, en({ x: 1.0, z: 4.9 }), en({ x: -1.0, z: 4.0 }), en(HURTO_FRENTE)],
+              1.15,
+              () => {
+                complice.mirarHacia(new Vector3(HURTO_FRENTE.x, piso + 1.15, ESTANTE_FRENTE_Z));
+                complice.gesticular("guardar");
+                parejaFase = "actuando";
+              }
+            );
+            esperaMujer = 1.8;
+          },
+          terminar: () => {
+            if (parejaFase !== "actuando" && parejaFase !== "entrando") return;
+            parejaFase = "yendose";
+            complice.gesticular(null);
+            mujer.gesticular(null);
+            esperaMujer = 0;
+            mujer.caminar([en({ x: 0.0, z: 4.6 }), umbral, afuera, esquinaIzq], 1.1, () => mujer.visible(false));
+            esperaComplice = 1.5;
+          },
+          // Lo que hay que ver es a ÉL, no a ella: ella es lo que te llama,
+          // él es lo que pasa. Quien solo mira a la que hace señas no llega
+          // a ver nada, que es exactamente como funciona la maniobra.
+          punto: () =>
+            parejaFase === "actuando" && complice.gestoALaVista() ? pecho(complice, ALTURA_HOMBRE) : null,
+          enSuMomento: () => complice.remateALaVista(),
+          terminada: () => parejaFase === "idos",
+        };
+
+      case "canasto-y-telefono":
+        return {
+          empezar: () => {
+            if (telefonoFase !== "nada") return;
+            telefonoFase = "llegando";
+            clientes.retener("camisaCeleste");
+          },
+          terminar: () => {
+            if (telefonoFase === "nada" || telefonoFase === "volviendo") return;
+            // Si se le acaba la ventana a medio apartarse, igual vuelve.
+            telefonoFase = "volviendo";
+            clientes.retener("camisaCeleste");
+            esperaColgar = 1.2;
+            if (!junto) {
+              clientes.soltar("camisaCeleste");
+              telefonoFase = "nada";
+            }
+          },
+          // Solo con el canasto en el suelo y el teléfono en la oreja: antes
+          // de eso es un cliente parado en su pasillo.
+          punto: () => {
+            if (telefonoFase !== "hablando") return null;
+            if (!clientes.enPlenoGesto("camisaCeleste")) return null;
+            return clientes.puntoDe("camisaCeleste");
+          },
+          enSuMomento: () => clientes.enElRemate("camisaCeleste"),
+        };
+
+      case "mira-mucho-un-producto":
+        return {
+          empezar: () => clientes.actuar("abrigoCamel", "leer"),
+          terminar: () => clientes.actuar("abrigoCamel", null),
+          punto: () => (clientes.enPlenoGesto("abrigoCamel") ? clientes.puntoDe("abrigoCamel") : null),
+          // Cuando la mano vuelve vacía del estante. Es lo único que la
+          // distingue del hurto, y por eso es lo que hay que haber visto.
+          enSuMomento: () => clientes.enElRemate("abrigoCamel"),
+        };
+
+      default:
+        return null;
+    }
+  };
+  const armados = new Map<string, ActorSituacion | null>();
+
   return {
     congelar(quietos) {
       congelados = quietos;
@@ -251,113 +369,12 @@ export function crearActoresSala(
     },
 
     de(id) {
-      switch (id) {
-        case "clienta-pregunta":
-          return {
-            empezar: () => {
-              if (señoraFase !== "quieta") return;
-              señoraFase = "llamando";
-              señora.gesticular("llamar");
-            },
-            terminar: (opcion) => {
-              if (señoraFase !== "llamando") return;
-              señora.gesticular(null);
-              // Atendida, se va a comprar: le dijiste dónde estaba lo que
-              // buscaba. Sin atender, se cansa y se va del local.
-              if (opcion?.correcta) {
-                señoraFase = "comprando";
-                señora.caminar(AL_PASILLO_2.map(en), 0.8, () => {
-                  señora.mirarHacia(new Vector3(ESTANTE_PASILLO_2.x, piso + 1.15, ESTANTE_PASILLO_2.z));
-                });
-                return;
-              }
-              señoraFase = "yendose";
-              señora.caminar([en({ x: 0.0, z: 4.6 }), umbral], 0.9, () => {
-                señora.visible(false);
-                señoraFase = "fuera";
-              });
-            },
-            punto: () => (señora.gestoALaVista() ? pecho(señora, ALTURA_SEÑORA) : null),
-            enSuMomento: () => señora.remateALaVista(),
-          };
-
-        case "maniobra-de-distraccion":
-          return {
-            empezar: () => {
-              if (parejaFase !== "fuera") return;
-              parejaFase = "entrando";
-              complice.situar(umbral, en(HURTO_FRENTE));
-              complice.visible(true);
-              complice.caminar(
-                [en({ x: 1.0, z: 4.9 }), en({ x: -1.0, z: 4.0 }), en(HURTO_FRENTE)],
-                1.15,
-                () => {
-                  complice.mirarHacia(new Vector3(HURTO_FRENTE.x, piso + 1.15, ESTANTE_FRENTE_Z));
-                  complice.gesticular("guardar");
-                  parejaFase = "actuando";
-                }
-              );
-              esperaMujer = 1.8;
-            },
-            terminar: () => {
-              if (parejaFase !== "actuando" && parejaFase !== "entrando") return;
-              parejaFase = "yendose";
-              complice.gesticular(null);
-              mujer.gesticular(null);
-              esperaMujer = 0;
-              mujer.caminar([en({ x: 0.0, z: 4.6 }), umbral], 1.1, () => mujer.visible(false));
-              esperaComplice = 1.5;
-            },
-            // Lo que hay que ver es a ÉL, no a ella: ella es lo que te llama,
-            // él es lo que pasa. Quien solo mira a la que hace señas no llega
-            // a ver nada, que es exactamente como funciona la maniobra.
-            punto: () =>
-              parejaFase === "actuando" && complice.gestoALaVista() ? pecho(complice, ALTURA_HOMBRE) : null,
-            enSuMomento: () => complice.remateALaVista(),
-            terminada: () => parejaFase === "idos",
-          };
-
-        case "canasto-y-telefono":
-          return {
-            empezar: () => {
-              if (telefonoFase !== "nada") return;
-              telefonoFase = "llegando";
-              clientes.retener("camisaCeleste");
-            },
-            terminar: () => {
-              if (telefonoFase === "nada" || telefonoFase === "volviendo") return;
-              // Si se le acaba la ventana a medio apartarse, igual vuelve.
-              telefonoFase = "volviendo";
-              clientes.retener("camisaCeleste");
-              esperaColgar = 1.2;
-              if (!junto) {
-                clientes.soltar("camisaCeleste");
-                telefonoFase = "nada";
-              }
-            },
-            // Solo con el canasto en el suelo y el teléfono en la oreja: antes
-            // de eso es un cliente parado en su pasillo.
-            punto: () => {
-              if (telefonoFase !== "hablando") return null;
-              if (!clientes.enPlenoGesto("camisaCeleste")) return null;
-              return clientes.puntoDe("camisaCeleste");
-            },
-            enSuMomento: () => clientes.enElRemate("camisaCeleste"),
-          };
-
-        case "mira-mucho-un-producto":
-          return {
-            empezar: () => clientes.actuar("abrigoCamel", "leer"),
-            terminar: () => clientes.actuar("abrigoCamel", null),
-            punto: () => (clientes.enPlenoGesto("abrigoCamel") ? clientes.puntoDe("abrigoCamel") : null),
-            // Cuando la mano vuelve vacía del estante. Es lo único que la
-            // distingue del hurto, y por eso es lo que hay que haber visto.
-            enSuMomento: () => clientes.enElRemate("abrigoCamel"),
-          };
-
-        default:
-          return null;
-      }
+      // Uno por situación, armado la primera vez que se pide y guardado. Se
+      // pregunta por él varias veces por cuadro —si se le ve, si ya pasó lo
+      // que importa, si ya se fue— y armarlo cada vez eran varios objetos y
+      // closures nuevos por situación y por cuadro, todos de usar y tirar.
+      if (!armados.has(id)) armados.set(id, armar(id));
+      return armados.get(id) ?? null;
     },
 
     dispose() {

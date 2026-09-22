@@ -27,6 +27,9 @@ import { crearSituaciones, type Situacion } from "./SituacionesSupermercado";
 import type { OpcionSituacion } from "./PanelesSupermercado";
 import { crearActores } from "./ActoresSupermercado";
 import { colgarLetrerosPasillos } from "./PasillosSupermercado";
+import { construirExterior } from "./ExteriorSupermercado";
+import { extraerProductos } from "./ProductosSupermercado";
+import { construirFachada } from "./FachadaSupermercado";
 import {
   DURACION_TURNO,
   ETIQUETA_TURNO,
@@ -35,7 +38,9 @@ import {
   NOTA_RECUENTO_SITUACIONES,
   horaDelTurno,
 } from "./TurnoSupermercado";
-import type { FilaSituacion } from "./PanelesSupermercado";
+import type { FilaSituacion, ErrorEnInforme } from "./PanelesSupermercado";
+import { calificarTurno, DESCUENTOS, type ErrorTurno } from "./CalificacionSupermercado";
+import { registrarTurno, NOTA_APROBACION } from "./HistorialTurnos";
 import { reproducir } from "../../core/Sonido";
 
 // ===========================================================================
@@ -108,9 +113,14 @@ const ACENTO = "#79a8bd";
  */
 const AVISO_RONDA_MS = 3200;
 
+/**
+ * @param usuario  Quien juega. Es con quien se guarda el turno en el historial,
+ *                 igual que el condominio. Sin nombre, "invitado".
+ */
 export async function crearRecorridoSupermercado(
   scene: Scene,
-  onSalir: () => void
+  onSalir: () => void,
+  usuario = "invitado"
 ): Promise<RecorridoSupermercado> {
   // Lo primero: vaciar lo que dejó el condominio. Ver LimpiezaEscena.
   limpiarEscena(scene);
@@ -234,7 +244,10 @@ export async function crearRecorridoSupermercado(
 
   // Los clientes, por lo mismo: su ropa también tiene que entrar en esa
   // ampliación. Ver ClientesSupermercado.
-  const clientes = crearClientes(scene, camara, piso);
+  // Un producto de cada clase, copiado de la góndola: lo que la gente saca del
+  // estante es lo mismo que hay en él. Ver ProductosSupermercado.
+  const productos = extraerProductos(scene, supermercado.mallas);
+  const clientes = crearClientes(scene, camara, piso, productos);
 
   // Los pasillos se reparten a lo largo del fondo de la sala. Se calculan desde
   // las medidas reales y no a ojo: si Bitplay manda una versión más grande, los
@@ -242,6 +255,20 @@ export async function crearRecorridoSupermercado(
   const pasillos = [-0.28, 0, 0.28].map((f) => supermercado.fondo * f);
   iluminarSupermercado(scene, supermercado.alto, pasillos);
   ampliarLucesSupermercado(scene);
+
+  // ─── LO DE FUERA ──────────────────────────────────────────────────────
+  //
+  // El estacionamiento, la calle y el barrio de enfrente, con su propio sol.
+  // Y al revés: las luces de la sala dejan de alumbrar lo de fuera, que tiene
+  // las suyas. Ver ExteriorSupermercado. El edificio del local da sombra
+  // fuera: a esta hora tapa el sol de parte del estacionamiento.
+  const exterior = construirExterior(
+    scene,
+    supermercado.mallas.filter((m) => m.name.startsWith("Edificio") || m.name === "Letrero colgante")
+  );
+  scene.lights
+    .filter((luz) => !exterior.luces.includes(luz))
+    .forEach((luz) => luz.excludedMeshes.push(...exterior.mallas));
 
   camara.attachControl(true);
 
@@ -323,7 +350,11 @@ export async function crearRecorridoSupermercado(
     acento: ACENTO,
   });
   const paneles = crearPanelesTurno(scene);
-  const actores = crearActores(scene, camara, clientes, bodega, oficina, piso);
+  const actores = crearActores(scene, camara, clientes, bodega, oficina, piso, productos);
+  // La fachada va después de todos los que caminan: la puerta automática se
+  // abre para cualquiera de ellos, y al montarla tiene que poder contarlos.
+  const fachada = construirFachada(scene, camara, piso);
+  exterior.alReflejar((reflejo) => fachada.reflejar(reflejo));
 
   // ─── ¿LO TIENE DELANTE? ───────────────────────────────────────────────
   //
@@ -344,8 +375,10 @@ export async function crearRecorridoSupermercado(
   // cliente que se cruza por delante cancelaría la situación entera.
   const ALCANCE_VISTA = 9;
   const ANGULO_VISTA = Math.cos(0.6);
+  // Tampoco cuentan los choques que solo están para detener el paso —la
+  // barrera de la puerta, las antenas antihurto—: no tapan la vista.
   const solido = (malla: AbstractMesh): boolean =>
-    malla.checkCollisions && !malla.name.endsWith("_bulto");
+    malla.checkCollisions && !malla.name.endsWith("_bulto") && !malla.metadata?.soloPaso;
 
   const aLaVista = (situacion: Situacion): boolean => {
     const punto = actores.de(situacion.id)?.punto();
@@ -410,6 +443,9 @@ export async function crearRecorridoSupermercado(
     // No más despacio: con ESPACIO se adelanta, y un turno que se arrastra es
     // tan malo como uno que atropella.
     minutosPorSegundo: 0.7,
+    // Al paso de las figuras: si el equipo va lento, el turno y la gente se
+    // frenan juntos. Ver pasoMaximo en RelojTurno.
+    pasoMaximo: 0.05,
     // ─── LOS HITOS: APERTURAS DE RONDA Y SITUACIONES ────────────────────
     //
     // Cada apertura de ronda frena el adelanto, como las novedades frenan el
@@ -501,7 +537,9 @@ export async function crearRecorridoSupermercado(
   let esperaPrimerCartel = 0.8;
   const seguirZonas = scene.onBeforeRenderObservable.add(() => {
     if (!enMarcha) return;
-    const dt = Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+    // El mismo tope que el reloj y las figuras: lo que se mira se cuenta al
+    // mismo paso que se mueve lo mirado.
+    const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
     if (esperaPrimerCartel > 0) {
       esperaPrimerCartel -= dt;
       return;
@@ -535,6 +573,8 @@ export async function crearRecorridoSupermercado(
   });
 
   let comenzado = false;
+  /** Cuándo se abrió el servicio. Ver comenzar(). */
+  let iniciadoEn = new Date();
   const comenzar = (): void => {
     if (cerrado || comenzado) return;
     comenzado = true;
@@ -551,6 +591,9 @@ export async function crearRecorridoSupermercado(
     camara.detachControl();
     paneles.mostrarBriefing(BRIEFING_TURNO, () => {
       if (cerrado) return;
+      // El turno empieza al cerrar la tarjeta, no al cargar: es lo que va al
+      // historial como inicio del servicio.
+      iniciadoEn = new Date();
       camara.attachControl(true);
       hud.mostrar();
       reloj.correr(true);
@@ -643,7 +686,7 @@ export async function crearRecorridoSupermercado(
         opciones: situacion.opciones,
       },
       (opcion) => {
-        situaciones.resolver(situacion, opcion);
+        situaciones.resolver(situacion, opcion, reloj.minuto());
         elegida = opcion;
         reproducir(opcion.correcta ? "acierto" : "error");
       },
@@ -709,6 +752,29 @@ export async function crearRecorridoSupermercado(
     reloj.correr(false);
     camara.detachControl();
     hud.ocultar();
+
+    // ─── LA NOTA, Y AL HISTORIAL ANTES DE DIBUJAR NADA ───────────────────
+    //
+    // Igual que el condominio: el turno queda registrado antes de pintar el
+    // informe. Si la pantalla fallara, el desempeño ya está guardado; lo que
+    // no puede perderse es el intento, no el cartel que lo muestra. Y con el
+    // registro, el menú ya puede dar el supermercado por aprobado.
+    const calificacion = calificarTurno(situaciones.ocurridas(), situaciones.atendidas(), rondas.cerradas());
+    const { guardado } = registrarTurno({
+      usuario,
+      curso: "guardias",
+      escenario: 2,
+      iniciadoEn,
+      nota: calificacion.nota,
+      faltas: calificacion.faltas,
+      decisiones: calificacion.decisiones,
+    });
+    const enInforme = (e: ErrorTurno): ErrorEnInforme => ({
+      hora: horaDelTurno(e.minuto),
+      actividad: e.actividad,
+      enBreve: e.enBreve,
+    });
+
     paneles.mostrarRecuento(
       {
         rotulo: `${horaDelTurno(DURACION_TURNO)} · FIN DEL TURNO`,
@@ -717,6 +783,21 @@ export async function crearRecorridoSupermercado(
         nota: NOTA_RECUENTO,
         situaciones: filasSituaciones(),
         notaSituaciones: NOTA_RECUENTO_SITUACIONES,
+        informe: {
+          nota: calificacion.nota,
+          aprobado: calificacion.aprobado,
+          minimo: NOTA_APROBACION,
+          guardado,
+          frase: calificacion.frase,
+          dejastePasar: calificacion.dejastePasar.map(enInforme),
+          sinMotivo: calificacion.sinMotivo.map(enInforme),
+          descuentos: {
+            dejarPasar: DESCUENTOS.dejarPasar,
+            sinMotivo: DESCUENTOS.sinMotivo,
+            ronda: DESCUENTOS.rondaIncompleta,
+          },
+          rondas: calificacion.rondas,
+        },
       },
       () => salir()
     );
@@ -753,6 +834,7 @@ export async function crearRecorridoSupermercado(
     paneles.dispose();
     clientes.dispose();
     actores.dispose();
+    fachada.dispose();
     bodega.dispose();
     tuberia.dispose();
     // limpiarEscena deja además una cámara neutra y el fondo del portal, así

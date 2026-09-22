@@ -1,4 +1,3 @@
-import type { Falta } from "./LibroNovedades";
 
 // ===========================================================================
 // Historial de turnos
@@ -51,6 +50,26 @@ export interface FaltaRegistrada {
   subsanada: boolean;
 }
 
+/**
+ * Una decisión de un turno con situaciones: qué era, qué eligió y qué
+ * correspondía. Las guarda el supermercado; el condominio no las tiene.
+ *
+ * Van todas, las buenas también: al relator le sirve saber que alguien acertó
+ * el hurto las cinco veces y falla siempre la de la cajera, y eso con solo
+ * las faltas no se ve.
+ */
+export interface DecisionRegistrada {
+  situacion: string;
+  actividad: string;
+  /** Minuto del turno en que se tomó. */
+  minuto: number;
+  eligio: string;
+  correspondia: string;
+  correcta: boolean;
+  /** De qué lado se equivocó, si se equivocó. */
+  error?: "dejarPasar" | "sinMotivo";
+}
+
 export interface TurnoRegistrado {
   id: string;
   usuario: string;
@@ -65,6 +84,8 @@ export interface TurnoRegistrado {
   nota: number;
   aprobado: boolean;
   faltas: FaltaRegistrada[];
+  /** Solo en los escenarios con situaciones. Ver DecisionRegistrada. */
+  decisiones?: DecisionRegistrada[];
 }
 
 const CLAVE = "guardias.historialTurnos.v1";
@@ -108,13 +129,29 @@ function escribir(turnos: TurnoRegistrado[]): boolean {
 
 // --- Lo que usa el resto del juego -----------------------------------------
 
+/**
+ * Lo mínimo que tiene que traer una falta para guardarse.
+ *
+ * Estructural y no el tipo Falta del libro, porque ahora las mandan dos
+ * escenarios con faltas de distinta clase: las del condominio encajan tal
+ * cual, y las del supermercado —dejar pasar, abordar sin motivo— también.
+ */
+export interface FaltaParaRegistrar {
+  tipo: string;
+  descripcion: string;
+  fundamento: string;
+  parrafo?: number;
+  subsanada?: boolean;
+}
+
 export interface DatosTurno {
   usuario: string;
   curso: string;
   escenario: number;
   iniciadoEn: Date;
   nota: number;
-  faltas: Falta[];
+  faltas: readonly FaltaParaRegistrar[];
+  decisiones?: readonly DecisionRegistrada[];
 }
 
 /**
@@ -146,6 +183,7 @@ export function registrarTurno(datos: DatosTurno): {
       parrafo: f.parrafo,
       subsanada: f.subsanada === true,
     })),
+    ...(datos.decisiones ? { decisiones: [...datos.decisiones] } : {}),
   };
 
   const guardado = escribir([...leer(), turno]);
