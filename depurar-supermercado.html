@@ -13,6 +13,10 @@
     <script type="module">
       import { Engine, Scene, Vector3, Ray, VertexBuffer } from "@babylonjs/core";
       import { crearRecorridoSupermercado } from "/src/juegos/guardias/RecorridoSupermercado.ts";
+      // El audio lo arranca main.ts, y esta página no pasa por ahí: sin esto el
+      // nivel suena mudo aquí y no se puede comprobar ni un efecto.
+      import { iniciarAudio } from "/src/core/Sonido.ts";
+      iniciarAudio();
 
       const canvas = document.getElementById("renderCanvas");
       const engine = new Engine(canvas, true, undefined, false);
@@ -23,8 +27,12 @@
 
       const montar = async () => {
         window.__listo = false;
-        const recorrido = await crearRecorridoSupermercado(scene, () => {
-          window.__salio = true;
+        const recorrido = await crearRecorridoSupermercado(scene, (motivo) => {
+          window.__salio = motivo ?? "menu";
+          // Repetir vuelve a montar el nivel aquí mismo, igual que hace el
+          // juego: así la prueba comprueba el ciclo entero de desmontar y
+          // volver a montar.
+          if (motivo === "repetir") void montar();
         });
         await Promise.race([scene.whenReadyAsync(true), new Promise((r) => setTimeout(r, 15000))]);
         recorrido.comenzar();

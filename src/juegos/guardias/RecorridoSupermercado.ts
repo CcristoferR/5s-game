@@ -1,10 +1,12 @@
 import {
   Scene,
+  Mesh,
   FreeCamera,
   Vector3,
   Color4,
   Ray,
   DefaultRenderingPipeline,
+  ImageProcessingConfiguration,
   type AbstractMesh,
 } from "@babylonjs/core";
 import {
@@ -12,6 +14,8 @@ import {
   iluminarSupermercado,
   ampliarLucesSupermercado,
   medirPisoSala,
+  apartarSueloDelBordeVerde,
+  CIELO_RASO,
   type SupermercadoCargado,
 } from "./EscenaSupermercado";
 import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
@@ -27,9 +31,12 @@ import { crearSituaciones, type Situacion } from "./SituacionesSupermercado";
 import type { OpcionSituacion } from "./PanelesSupermercado";
 import { crearActores } from "./ActoresSupermercado";
 import { colgarLetrerosPasillos } from "./PasillosSupermercado";
-import { construirExterior } from "./ExteriorSupermercado";
+import { montarRefrigerados, reflejarRefrigerados } from "./RefrigeradosSupermercado";
+import { montarGrafica } from "./GraficaSupermercado";
+import { colgarLuminarias, encenderFocosSala, separarSueloSala, pulirSuelo, sombrasAlPie } from "./LuzSalaSupermercado";
+import { construirExterior, separarLoDeFuera, type Exterior } from "./ExteriorSupermercado";
 import { extraerProductos } from "./ProductosSupermercado";
-import { construirFachada } from "./FachadaSupermercado";
+import { construirFachada, esCaraDeFueraFachada } from "./FachadaSupermercado";
 import {
   DURACION_TURNO,
   ETIQUETA_TURNO,
@@ -37,11 +44,12 @@ import {
   NOTA_RECUENTO,
   NOTA_RECUENTO_SITUACIONES,
   horaDelTurno,
+  horaDelDia,
 } from "./TurnoSupermercado";
 import type { FilaSituacion, ErrorEnInforme } from "./PanelesSupermercado";
 import { calificarTurno, DESCUENTOS, type ErrorTurno } from "./CalificacionSupermercado";
 import { registrarTurno, NOTA_APROBACION } from "./HistorialTurnos";
-import { reproducir } from "../../core/Sonido";
+import { reproducir, iniciarAmbienteSala, agacharAmbienteSala, detenerAmbienteSala } from "../../core/Sonido";
 
 // ===========================================================================
 // Escenario 2 — Supermercado
@@ -96,8 +104,13 @@ export interface RecorridoSupermercado {
    * carga ya se fue; hacerlo antes es entrar con el turno empezado.
    */
   comenzar: () => void;
+  /** Lo de fuera. El reloj le pone la hora; de fuera, solo para mirarlo a otra. */
+  exterior: Exterior;
   dispose: () => void;
 }
+
+/** Por qué se deja el recorrido. Ver crearRecorridoSupermercado. */
+export type MotivoSalida = "menu" | "repetir";
 
 /** Altura de los ojos de una persona de pie. */
 const ALTURA_OJO = 1.65;
@@ -114,12 +127,15 @@ const ACENTO = "#79a8bd";
 const AVISO_RONDA_MS = 3200;
 
 /**
+ * @param onSalir  Al dejar el recorrido. El motivo dice qué hacer con él:
+ *                 "menu" vuelve al menú de escenarios y "repetir" pide montar
+ *                 el turno otra vez, sin pasar por el menú.
  * @param usuario  Quien juega. Es con quien se guarda el turno en el historial,
  *                 igual que el condominio. Sin nombre, "invitado".
  */
 export async function crearRecorridoSupermercado(
   scene: Scene,
-  onSalir: () => void,
+  onSalir: (motivo?: MotivoSalida) => void,
   usuario = "invitado"
 ): Promise<RecorridoSupermercado> {
   // Lo primero: vaciar lo que dejó el condominio. Ver LimpiezaEscena.
@@ -230,6 +246,11 @@ export async function crearRecorridoSupermercado(
   // Antes de las luces, para que sus materiales entren en la ampliación del
   // tope de luces que se hace más abajo.
   const piso = medirPisoSala(scene, supermercado);
+  // El suelo de la sala, aparte del resto del edificio: se pule y refleja.
+  // Ver LuzSalaSupermercado.
+  const murosYSuelo = supermercado.mallas.find((m) => m.name === "Edificio: muros y estructura");
+  const sueloSala = murosYSuelo instanceof Mesh ? separarSueloSala(murosYSuelo, piso) : null;
+  if (sueloSala) void apartarSueloDelBordeVerde(sueloSala, piso);
   const bodega = construirBodega(scene, camara, piso);
   // La oficina: una puerta con su letrero detrás de la línea de cajas. No la
   // trae el modelo y hasta ahora no existía, aunque cuatro textos del turno
@@ -241,19 +262,26 @@ export async function crearRecorridoSupermercado(
   // El número de cada pasillo, colgado sobre su boca. Central y los paneles
   // hablan del "cuarto pasillo", y sin esto no había forma de saber cuál era.
   colgarLetrerosPasillos(scene, piso, piso + Math.min(supermercado.alto, 5));
+  // La gráfica del local: las cenefas de precio de las baldas, el número de la
+  // caja y la banda de las vidrieras. Ver GraficaSupermercado.
+  montarGrafica(scene, piso);
 
   // Los clientes, por lo mismo: su ropa también tiene que entrar en esa
   // ampliación. Ver ClientesSupermercado.
   // Un producto de cada clase, copiado de la góndola: lo que la gente saca del
   // estante es lo mismo que hay en él. Ver ProductosSupermercado.
-  const productos = extraerProductos(scene, supermercado.mallas);
+  const productos = await extraerProductos(scene, supermercado.mallas);
+  // Los refrigerados, contra el muro ciego de la izquierda: el único paño
+  // grande del local que no tenía nada. Van aquí porque se llenan con esas
+  // mismas plantillas. Ver RefrigeradosSupermercado.
+  montarRefrigerados(scene, piso, productos);
   const clientes = crearClientes(scene, camara, piso, productos);
 
-  // Los pasillos se reparten a lo largo del fondo de la sala. Se calculan desde
-  // las medidas reales y no a ojo: si Bitplay manda una versión más grande, los
-  // focos siguen cayendo donde tienen que caer.
-  const pasillos = [-0.28, 0, 0.28].map((f) => supermercado.fondo * f);
-  iluminarSupermercado(scene, supermercado.alto, pasillos);
+  // La luz de la sala: el relleno, los focos bajo las luminarias y las
+  // luminarias. Ver LuzSalaSupermercado.
+  iluminarSupermercado(scene);
+  encenderFocosSala(scene);
+  colgarLuminarias(scene);
   ampliarLucesSupermercado(scene);
 
   // ─── LO DE FUERA ──────────────────────────────────────────────────────
@@ -262,9 +290,16 @@ export async function crearRecorridoSupermercado(
   // Y al revés: las luces de la sala dejan de alumbrar lo de fuera, que tiene
   // las suyas. Ver ExteriorSupermercado. El edificio del local da sombra
   // fuera: a esta hora tapa el sol de parte del estacionamiento.
+  // La cara de fuera del edificio, aparte: la alumbra el sol y no la sala.
+  const muros = supermercado.mallas.find((m) => m.name === "Edificio: muros y estructura");
+  const murosFuera = muros instanceof Mesh ? separarLoDeFuera(muros, CIELO_RASO, esCaraDeFueraFachada) : null;
   const exterior = construirExterior(
     scene,
-    supermercado.mallas.filter((m) => m.name.startsWith("Edificio") || m.name === "Letrero colgante")
+    [
+      ...supermercado.mallas.filter((m) => m.name.startsWith("Edificio") || m.name === "Letrero colgante"),
+      ...(murosFuera ? [murosFuera] : []),
+    ],
+    murosFuera ? [murosFuera] : []
   );
   scene.lights
     .filter((luz) => !exterior.luces.includes(luz))
@@ -274,10 +309,12 @@ export async function crearRecorridoSupermercado(
 
   // --- Post-proceso ---------------------------------------------------------
   //
-  // Discreto a propósito. En una sala de ventas no hay nada que florezca ni
-  // viñeta que valga: el sitio está para que el producto se vea plano y parejo.
-  // Lo único que aporta aquí es el suavizado de bordes, porque las góndolas son
-  // todo líneas rectas y sin él se ven en escalera.
+  // Discreto a propósito: el sitio está para que el producto se vea parejo.
+  // El suavizado de bordes, porque las góndolas son todo líneas rectas y sin
+  // él se ven en escalera. Y un resplandor que toma solo lo que pasa de
+  // blanco —los difusores de las luminarias y su reflejo en el piso—: con el
+  // umbral en 1 y la tubería en alto rango, una góndola blanca bajo los focos
+  // no llega y no florece.
   const tuberia = new DefaultRenderingPipeline(
     "postProcesoSupermercado",
     true,
@@ -285,17 +322,24 @@ export async function crearRecorridoSupermercado(
     [camara]
   );
   tuberia.samples = 4;
-  tuberia.bloomEnabled = false;
+  tuberia.bloomEnabled = true;
+  tuberia.bloomThreshold = 1.0;
+  tuberia.bloomWeight = 0.32;
+  tuberia.bloomKernel = 48;
+  tuberia.bloomScale = 0.5;
   tuberia.imageProcessingEnabled = true;
-  tuberia.imageProcessing.contrast = 1.04;
-  tuberia.imageProcessing.exposure = 1;
+  tuberia.imageProcessing.contrast = 1.06;
+  tuberia.imageProcessing.exposure = 1.15;
   tuberia.imageProcessing.toneMappingEnabled = true;
+  // ─── POR QUÉ ACES Y NO EL DE SIEMPRE ──────────────────────────────────
+  //
+  // El mapeo estándar aplasta todo lo que pasa de blanco: con la sala bien
+  // iluminada el piso llegaba a su tope, y encima de un tope no se nota nada
+  // —las manchas de sol que entran por las vidrieras desaparecían—. ACES
+  // comprime las luces altas con una curva y deja sitio por arriba: la sala
+  // puede estar clara y el sol seguir viéndose por encima de ella.
+  tuberia.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
 
-  // --- Salir ----------------------------------------------------------------
-  const alPulsar = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") salir();
-  };
-  window.addEventListener("keydown", alPulsar);
 
   let cerrado = false;
   const ayuda = document.createElement("div");
@@ -355,6 +399,19 @@ export async function crearRecorridoSupermercado(
   // abre para cualquiera de ellos, y al montarla tiene que poder contarlos.
   const fachada = construirFachada(scene, camara, piso);
   exterior.alReflejar((reflejo) => fachada.reflejar(reflejo));
+  // La sombra al pie de cada uno y el suelo pulido, que ya puede reflejar a
+  // todos: se monta cuando la sala está completa. Lo de fuera no entra en el
+  // reflejo —por las vidrieras apenas se vería, y se pagaría entero—, ni
+  // las sombras al pie, que están pegadas al piso: la de las personas y la
+  // del carro.
+  sombrasAlPie(scene, scene.transformNodes.filter((n) => n.name.startsWith("figura_")));
+  if (sueloSala) {
+    const deFuera = new Set<AbstractMesh>(exterior.mallas);
+    pulirSuelo(scene, sueloSala, piso, (m) => !deFuera.has(m) && !m.name.endsWith("_sombraAlPie"));
+  }
+  // El cristal de los refrigerados, ahora que la sala está entera: refleja lo
+  // que hay. Ver reflejarRefrigerados.
+  reflejarRefrigerados(scene, piso);
 
   // ─── ¿LO TIENE DELANTE? ───────────────────────────────────────────────
   //
@@ -404,6 +461,13 @@ export async function crearRecorridoSupermercado(
   /** Lo que Central cuenta después se queda a la vista este rato. */
   const RADIO_DESPUES_MS = 9000;
 
+  /** Si ahora mismo está observando algo, y cuándo sonó el tic la última vez. */
+  let observando = false;
+  let ultimaMirada = 0;
+  /** La ronda que suena y cuántas zonas llevaba marcadas: ver alCambiar. */
+  let rondaEnCurso = 0;
+  let zonasMarcadas = 0;
+
   const situaciones = crearSituaciones({
     alAbrir: (s) => actores.de(s.id)?.empezar(),
     // Sin opción: la ventana venció y nadie la vio. El actor remata como si
@@ -415,7 +479,9 @@ export async function crearRecorridoSupermercado(
       actores.de(s.id)?.terminar(null);
       if (s.siSePierde && !turnoTerminado && !cerrado) {
         hud.avisarRadio(s.siSePierde, RADIO_DESPUES_MS);
-        reproducir("error");
+        // La radio otra vez, pero el aviso que baja: lo que suena no es un
+        // error del jugador, es Central contando lo que ya pasó.
+        reproducir("radioVencido");
       }
     },
     aLaVista,
@@ -473,6 +539,7 @@ export async function crearRecorridoSupermercado(
       .sort((a, b) => a - b),
     alAvanzar: (minuto) => {
       hud.ponerHora(horaDelTurno(minuto));
+      exterior.ajustarHora(horaDelDia(minuto));
       hud.ponerAdelanto(reloj.estaAdelantando());
       rondas.alPasarMinuto(minuto);
       if (minuto >= DURACION_TURNO) {
@@ -510,6 +577,16 @@ export async function crearRecorridoSupermercado(
         estado: ronda.completa ? "completa" : "curso",
         zonas: casillas((id) => ronda.visitadas.has(id)),
       });
+      // Cada zona que se marca suena, y la ronda entera suena distinto al
+      // completarse. Al abrirse una ronda nueva no suena nada: la zona con la
+      // que nace es en la que ya estabas, no una que acabes de visitar.
+      if (ronda.numero !== rondaEnCurso) {
+        rondaEnCurso = ronda.numero;
+        zonasMarcadas = ronda.visitadas.size;
+      } else if (ronda.visitadas.size > zonasMarcadas) {
+        zonasMarcadas = ronda.visitadas.size;
+        if (!ronda.completa) reproducir("marca");
+      }
       // Una ronda llega completa una sola vez: después ya no admite zonas.
       if (ronda.completa) reproducir("acierto");
     },
@@ -565,8 +642,18 @@ export async function crearRecorridoSupermercado(
     const nuevas = hud.ponerPistas(
       situaciones.abiertas().map((s) => ({ clave: s.id, de: s.pista.de, texto: s.pista.texto }))
     );
-    if (nuevas.length > 0) reproducir("panel");
+    if (nuevas.length > 0) reproducir("radio");
     const foco = situaciones.foco();
+    // El tic de la barra "Observando" suena al empezar a observar, no cada
+    // vez que la barra reaparece: con la cámara en la mano, un actor entra y
+    // sale del cono media docena de veces por segundo, y sin esta pausa el
+    // tic se convertía en una ametralladora.
+    const ahora = performance.now();
+    if (foco && !observando && ahora - ultimaMirada > 1200) {
+      ultimaMirada = ahora;
+      reproducir("mirada");
+    }
+    observando = !!foco;
     hud.ponerMirada(foco ? { fraccion: foco.fraccion, esperando: foco.esperando } : null);
 
     if (salta) atenderSituacion(salta);
@@ -596,6 +683,9 @@ export async function crearRecorridoSupermercado(
       iniciadoEn = new Date();
       camara.attachControl(true);
       hud.mostrar();
+      // La sala empieza a sonar al cerrar la tarjeta, con el turno: entrando
+      // en dos segundos, como si se abriera la puerta. Ver iniciarAmbienteSala.
+      iniciarAmbienteSala();
       reloj.correr(true);
       enMarcha = true;
       temporizadorAyuda = setTimeout(apagarAyuda, CONTROLES_A_LA_VISTA_MS);
@@ -674,6 +764,9 @@ export async function crearRecorridoSupermercado(
     // solaparían el reloj de arriba y el borde superior de la tarjeta.
     hud.ocultar();
 
+    // Se para el turno y hay que decidir: el aviso de que la pregunta está
+    // en pantalla.
+    reproducir("pregunta");
     paneles.mostrarSituacion(
       {
         // La hora de AHORA, no la del minuto en que la situación abrió su
@@ -707,11 +800,13 @@ export async function crearRecorridoSupermercado(
         if (cerrado || turnoTerminado) return;
         camara.attachControl(true);
         hud.mostrar();
+        // Vuelve el turno.
+        reproducir("cerrar");
         // Lo que cambió en la sala por lo que elegiste, contado por Central:
         // si fuiste a la oficina, el de la parka se te fue.
         if (elegida?.despues) {
           hud.avisarRadio(elegida.despues, RADIO_DESPUES_MS);
-          reproducir("error");
+          reproducir("radioVencido");
         }
         reloj.correr(true);
         enMarcha = true;
@@ -775,6 +870,10 @@ export async function crearRecorridoSupermercado(
       enBreve: e.enBreve,
     });
 
+    // Se acabó el turno: la sala se apaga antes del recuento, que ya no pasa
+    // dentro del local.
+    detenerAmbienteSala();
+    reproducir("nivelCompletado");
     paneles.mostrarRecuento(
       {
         rotulo: `${horaDelTurno(DURACION_TURNO)} · FIN DEL TURNO`,
@@ -799,7 +898,8 @@ export async function crearRecorridoSupermercado(
           rondas: calificacion.rondas,
         },
       },
-      () => salir()
+      () => salir("menu"),
+      () => salir("repetir")
     );
   };
 
@@ -818,7 +918,7 @@ export async function crearRecorridoSupermercado(
    * se avisa. Avisar antes deja al menú montándose sobre una escena que se
    * está destruyendo debajo.
    */
-  const salir = (): void => {
+  const salir = (motivo: MotivoSalida = "menu"): void => {
     if (cerrado) return;
     cerrado = true;
     window.removeEventListener("keydown", alPulsar);
@@ -827,6 +927,9 @@ export async function crearRecorridoSupermercado(
 
     apagarAyuda();
     ayuda.remove();
+    // Si se sale a mitad de turno, el ambiente se va con él. Llamarlo dos
+    // veces —aquí y al terminar el turno— no hace nada.
+    detenerAmbienteSala();
     scene.onBeforeRenderObservable.remove(alturaFija);
     scene.onBeforeRenderObservable.remove(seguirZonas);
     reloj.dispose();
@@ -841,13 +944,88 @@ export async function crearRecorridoSupermercado(
     // que el menú aparece sobre algo dibujable y con su color de siempre.
     limpiarEscena(scene);
 
-    onSalir();
+    onSalir(motivo);
   };
 
+
+  // --- Salir, pero preguntando ------------------------------------------------
+  //
+  // ─── POR QUÉ ESTO VA AL FINAL ─────────────────────────────────────────
+  //
+  // Porque la tecla puede llegar antes de que el nivel termine de montarse
+  // —el modelo son quince megas— y lo que hace ESC toca el reloj, el HUD, los
+  // paneles y la sala. Enganchado arriba, como estaba, un ESC durante la carga
+  // entraba a usar cosas que todavía no existían.
+  //
+  // ─── POR QUÉ HAY PAUSA ────────────────────────────────────────────────
+  //
+  // Porque ESC salía del turno en el acto. Veinte minutos de turno se perdían
+  // con una tecla —y ESC es la tecla que uno aprieta para quitarse de encima
+  // cualquier cosa—, sin aviso y sin nota, porque el turno solo se registra al
+  // llegar a las 20:00.
+  //
+  // Ahora ESC detiene el turno igual que lo detiene una situación: reloj
+  // parado, sala quieta y el mando fuera de la cámara. Desde ahí se sigue o se
+  // sale, y salir dice lo que cuesta.
+  let enPausa = false;
+
+  const abrirPausa = (): void => {
+    if (enPausa || situacionEnPantalla || turnoTerminado || cerrado || !comenzado) return;
+    enPausa = true;
+    enMarcha = false;
+    reloj.correr(false);
+    hud.ponerAdelanto(false);
+    hud.ponerMirada(null);
+    clientes.congelar(true);
+    actores.congelar(true);
+    camara.detachControl();
+    hud.ocultar();
+    // El local no se calla en la pausa, pero se aparta: queda de fondo, lo
+    // justo para que no parezca que se cortó el sonido.
+    agacharAmbienteSala(true);
+    paneles.mostrarPausa(
+      () => seguirTrasPausa(),
+      () => salir("menu")
+    );
+  };
+
+  const seguirTrasPausa = (): void => {
+    if (!enPausa) return;
+    enPausa = false;
+    agacharAmbienteSala(false);
+    if (cerrado || turnoTerminado) return;
+    clientes.congelar(false);
+    actores.congelar(false);
+    camara.attachControl(true);
+    hud.mostrar();
+    reloj.correr(true);
+    enMarcha = true;
+  };
+
+  const alPulsar = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape") return;
+    // Antes de empezar —con la tarjeta de jefatura puesta— no hay turno que
+    // perder: ESC sale directo, como siempre.
+    if (!comenzado) {
+      salir("menu");
+      return;
+    }
+    // Con una situación en pantalla, ESC no hace nada: esa tarjeta se cierra
+    // eligiendo, no escapando.
+    if (situacionEnPantalla || turnoTerminado) return;
+    // La misma tecla abre y cierra la pausa.
+    if (enPausa) {
+      if (paneles.cerrarPausa()) seguirTrasPausa();
+      return;
+    }
+    abrirPausa();
+  };
+  window.addEventListener("keydown", alPulsar);
 
   return {
     supermercado,
     comenzar,
+    exterior,
     // salir() ya desmonta la escena entera, así que esto es solo el atajo por
     // si alguien cierra el recorrido desde fuera sin pasar por ESC.
     dispose: salir,

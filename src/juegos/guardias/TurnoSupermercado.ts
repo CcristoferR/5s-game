@@ -26,6 +26,26 @@ export const INICIO_TURNO = 16 * 60;
 export const DURACION_TURNO = 2 * 60;
 
 /**
+ * Cuántos minutos de reloj vale cada minuto del turno.
+ *
+ * ─── POR QUÉ DOS ─────────────────────────────────────────────────────────
+ *
+ * Para que el turno vaya de las 16:00 a las 20:00 —de la tarde a la noche,
+ * con el atardecer por las vidrieras— sin cambiar nada de cómo se juega.
+ * Todo lo que se mide por dentro —las ventanas de las situaciones, lo que
+ * tarda cada ronda, lo que camina la gente— sigue en los mismos minutos de
+ * turno y dura los mismos segundos reales. Lo único que cambia es la hora
+ * que marca el reloj: cada minuto de turno son dos de reloj.
+ *
+ * Por eso todo lo que se enseña en pantalla pasa por horaDelTurno o por
+ * MINUTOS_RONDA_EN_RELOJ, y nada escribe un minuto de turno a pelo.
+ */
+export const ESCALA_HORARIA = 2;
+
+/** Cada cuánto se abre una ronda, en minutos de reloj: lo que lee el jugador. */
+export const MINUTOS_RONDA_EN_RELOJ = MINUTOS_POR_RONDA * ESCALA_HORARIA;
+
+/**
  * Minuto del turno a hora de reloj.
  *
  * Igual que horaDe, salvo a medianoche: un turno que termina entonces termina
@@ -33,8 +53,13 @@ export const DURACION_TURNO = 2 * 60;
  * 00:00".
  */
 export function horaDelTurno(minuto: number): string {
-  const total = INICIO_TURNO + minuto;
+  const total = INICIO_TURNO + Math.round(minuto * ESCALA_HORARIA);
   return total === 24 * 60 ? "24:00" : horaDe(total);
+}
+
+/** La hora del día en horas con decimales (16,5 son las 16:30). Para la luz de fuera. */
+export function horaDelDia(minuto: number): number {
+  return (INICIO_TURNO + minuto * ESCALA_HORARIA) / 60;
 }
 
 /** El rótulo chico bajo la hora. */
@@ -50,11 +75,11 @@ export const ETIQUETA_TURNO = `Turno ${horaDelTurno(0)} a ${horaDelTurno(DURACIO
 export const BRIEFING_TURNO: BriefingTurno = {
   rotulo: `${horaDelTurno(0)} · INICIO DEL TURNO`,
   titulo:
-    `Turno de tarde. Sala de ventas. Jefatura solicita rondas de verificación cada ${MINUTOS_POR_RONDA} minutos.`,
+    `Turno de tarde. Sala de ventas. Jefatura solicita rondas de verificación cada ${MINUTOS_RONDA_EN_RELOJ} minutos.`,
   campos: [
     ["HORARIO", `${horaDelTurno(0)} a ${horaDelTurno(DURACION_TURNO)} horas`],
     ["SOLICITA", "Jefatura"],
-    ["FRECUENCIA", `Una ronda cada ${MINUTOS_POR_RONDA} minutos`],
+    ["FRECUENCIA", `Una ronda cada ${MINUTOS_RONDA_EN_RELOJ} minutos`],
     ["ZONAS", "Entrada, góndolas, cajas y bodega"],
     // Corto a propósito: la fila tiene un renglón de alto, y más largo se
     // partía en dos y el segundo se montaba sobre la nota. ESPACIO va en la nota.
@@ -68,7 +93,7 @@ export const BRIEFING_TURNO: BriefingTurno = {
   // que hay que hacer es QUEDARSE MIRANDO a la persona. Y avisa de lo que
   // cambia todo: que no todo lo que te mandan a mirar es un delito.
   nota:
-    `Ronda: pasa por las cuatro zonas antes de que se cumplan sus ${MINUTOS_POR_RONDA} minutos; la lista va arriba. ` +
+    `Ronda: pasa por las cuatro zonas antes de que se cumplan sus ${MINUTOS_RONDA_EN_RELOJ} minutos; la lista va arriba. ` +
     "Cuando Central te avise por radio (arriba a la izquierda), ve a ese sitio y quédate mirando a la " +
     "persona: la barra de abajo se llena y el momento se congela para que decidas. No todo lo que te " +
     "mandan a mirar es un delito. Si no llegas a tiempo, pasa igual y te enteras después. " +
@@ -78,7 +103,7 @@ export const BRIEFING_TURNO: BriefingTurno = {
 
 /** El pie del recuento: qué significa cada color de la franja. */
 export const NOTA_RECUENTO =
-  `En verde, las rondas en que pasaste por las cuatro zonas dentro de sus ${MINUTOS_POR_RONDA} minutos; ` +
+  `En verde, las rondas en que pasaste por las cuatro zonas dentro de sus ${MINUTOS_RONDA_EN_RELOJ} minutos; ` +
   "en rojo, las que quedaron a medias.";
 
 /** El pie de la tarjeta de las situaciones. */

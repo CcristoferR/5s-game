@@ -1,5 +1,6 @@
 import type { AbstractMesh } from "@babylonjs/core";
 import { PLANTA_BODEGA } from "./BodegaSupermercado";
+import { ZONA_REFRIGERADOS } from "./RefrigeradosSupermercado";
 
 // ===========================================================================
 // Las cuatro zonas del supermercado
@@ -161,6 +162,9 @@ const MUEBLES: readonly Rectangulo[] = [
   { minX: 0.42, maxX: 6.22, minZ: 1.3, maxZ: 2.55 },
   // El mostrador de caja.
   { minX: 8.12, maxX: 9.34, minZ: 2.59, maxZ: 5.56 },
+  // Los armarios de frío del rincón izquierdo. La huella viene de su propio
+  // módulo: si se mueven, se mueve también lo que las figuras esquivan.
+  ZONA_REFRIGERADOS,
 ];
 
 /**

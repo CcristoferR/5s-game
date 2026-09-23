@@ -1,5 +1,5 @@
 import { Scene, Mesh, MeshBuilder, PBRMaterial, Color3, TransformNode, Vector3 } from "@babylonjs/core";
-import { loft, capsula, cabezaEsculpida, peloEsculpido, texturaTela, type Anillo } from "./ModeladoFigura";
+import { loft, capsula, cabezaEsculpida, peloEsculpido, puntoDeLaCara, texturaTela, type Anillo } from "./ModeladoFigura";
 import type { PaletaFigura, Prenda } from "./Figura";
 
 // ===========================================================================
@@ -131,7 +131,6 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   const matZapato = mat("zapato", paleta.zapato ?? new Color3(0.025, 0.025, 0.03), paleta.gorra ? 0.3 : 0.6);
   const matSuela = mat("suela", paleta.suela ?? new Color3(0.02, 0.02, 0.02), 0.8);
   const matOscuro = mat("oscuro", new Color3(0.02, 0.02, 0.025), 0.45);
-  const matOjo = mat("ojo", new Color3(0.035, 0.025, 0.02), 0.18);
   const matDorado = mat("dorado", new Color3(0.42, 0.31, 0.13), 0.55, { metal: 0.35 });
   // Latón gastado, no un espejo: con el reflejo entero de la sala la placa
   // salía como un punto de luz blanca en el pecho.
@@ -217,10 +216,17 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
       { y: 0.598, x: 0.074, delante: 0.067, atras: 0.066 },
       { y: 0.604, x: 0.07, delante: 0.063, atras: 0.063 },
     ], { lados: 24 }), esq.cuerpo, matRopa);
+    // Las dos puntas del cuello, tumbadas sobre el pecho.
+    //
+    // Eran dos cuadrados girados 35 grados y puestos delante del tronco: de
+    // cerca flotaban sobre la camisa como dos parches sueltos. Ahora son
+    // largas, finas, apuntan hacia abajo y hacia afuera —como cae un cuello
+    // abierto— y su cara de atrás queda metida en el pecho, así que se leen
+    // pegadas a la tela.
     [-1, 1].forEach((lado) => {
-      const punta = caja(`puntaCuello_${lado}`, 0.036, 0.034, 0.005, esq.cuerpo, matRopa, lado * 0.024, 0.538, frente(0.538) + 0.004);
-      punta.rotation.z = lado * 0.62;
-      punta.rotation.x = -0.2;
+      const punta = caja(`puntaCuello_${lado}`, 0.028, 0.052, 0.006, esq.cuerpo, matRopa, lado * 0.026, 0.525, frente(0.525) - 0.004);
+      punta.rotation.z = lado * 0.42;
+      punta.rotation.x = -0.34;
     });
     [0.14, 0.24, 0.34, 0.44].forEach((y, k) => bola(`botonCamisa_${k}`, esq.cuerpo, matDetalle, 0, y, frente(y) + 0.002, 0.011, 0.011, 0.005));
     poner(loft(scene, `${nombre}_pretina`, [
@@ -292,19 +298,98 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
     });
   }
   if (paleta.accesorio === "bolso") {
-    caja("bolso", 0.07, 0.19, 0.25, esq.cuerpo, matOscuro, 0.215, -0.08, 0.01);
-    // La tira sube por el pecho desde el bolso, pasa por encima del hombro
-    // contrario y baja por la espalda. Antes solo iba por delante y terminaba
-    // en el aire: de espaldas, su punta asomaba sobre el hombro como una antena.
-    const zDelante = frente(0.28) + 0.006;
-    const zDetras =
-      Math.min(...anillosTronco.filter((a) => a.y > -0.05 && a.y < 0.52).map((a) => (a.cz ?? 0) - (a.atras ?? a.delante))) - 0.006;
-    [zDelante, zDetras].forEach((z, k) => {
-      const tira = caja(`tiraBolso_${k}`, 0.024, 0.635, 0.01, esq.cuerpo, matOscuro, 0.0325, 0.25, z);
-      tira.rotation.z = 0.556;
+    // ─── EL BOLSO Y SU CORREA ───────────────────────────────────────────
+    //
+    // Eran tres cajas: el bolso un ladrillo y la correa dos barras rectas
+    // giradas, una por delante y otra por detrás, más un puente sobre el
+    // hombro. De lejos pasaba; de cerca era lo que más delataba al muñeco,
+    // porque una correa de tela no tiene aristas ni cambia de dirección en
+    // ángulo: se dobla.
+    //
+    // Ahora el bolso es un cuerpo con sus cantos redondeados y su solapa, y la
+    // correa una cinta continua que rodea el torso: sube en diagonal por el
+    // pecho, cruza el hombro contrario y baja por la espalda hasta el asa. Va
+    // pegada al cuerpo porque cada punto del camino se calcula sobre el propio
+    // contorno del tronco (ver frente y los anillos), no a ojo.
+    // El cuerpo del bolso: chico, plano contra la cadera y algo atrás, que es
+    // donde queda uno de bandolera cuando se camina — y así el brazo pasa por
+    // delante en vez de atravesarlo.
+    const matBolso = mat("bolso", new Color3(0.07, 0.075, 0.09), 0.62, { tela: true });
+    const matBolsoClaro = mat("bolsoSolapa", new Color3(0.12, 0.13, 0.15), 0.6, { tela: true });
+    const matHerraje = mat("herrajeBolso", new Color3(0.62, 0.63, 0.66), 0.35, { metal: 0.85 });
+    const EN_X = 0.185;
+    const EN_Y = -0.045;
+    const EN_Z = -0.055;
+    poner(
+      loft(scene, `${nombre}_bolso`, [
+        { y: -0.085, x: 0.026, delante: 0.072, forma: 3.2 },
+        { y: -0.065, x: 0.032, delante: 0.09, forma: 3.6 },
+        { y: 0.01, x: 0.034, delante: 0.096, forma: 3.8 },
+        { y: 0.06, x: 0.032, delante: 0.09, forma: 3.6 },
+        { y: 0.078, x: 0.026, delante: 0.075, forma: 3.2 },
+      ], { lados: 22, tapaAbajo: true, tapaArriba: true, vPorMetro: 6 }),
+      esq.cuerpo,
+      matBolso,
+      EN_X,
+      EN_Y,
+      EN_Z
+    );
+    // La solapa: del mismo cuero, un punto más claro, cubriendo el tercio de
+    // arriba y con su hebilla.
+    poner(
+      loft(scene, `${nombre}_solapaBolso`, [
+        { y: -0.02, x: 0.036, delante: 0.1, forma: 3.8 },
+        { y: 0.045, x: 0.036, delante: 0.1, forma: 3.8 },
+        { y: 0.08, x: 0.028, delante: 0.078, forma: 3.2 },
+      ], { lados: 22, tapaArriba: true, vPorMetro: 6 }),
+      esq.cuerpo,
+      matBolsoClaro,
+      EN_X,
+      EN_Y,
+      EN_Z
+    );
+    caja("hebillaBolso", 0.016, 0.018, 0.03, esq.cuerpo, matHerraje, EN_X + 0.03, EN_Y - 0.022, EN_Z);
+
+    // La correa: un camino que rodea el torso y se convierte en superficie.
+    // Empieza y termina en la boca del bolso, así que no queda ningún cabo al
+    // aire como pasaba con las barras de antes.
+    const bocaDelante = new Vector3(EN_X + 0.01, EN_Y + 0.075, EN_Z + 0.07);
+    const bocaDetras = new Vector3(EN_X + 0.01, EN_Y + 0.075, EN_Z - 0.07);
+    const camino = [
+      bocaDelante,
+      new Vector3(0.17, 0.11, frente(0.11) * 0.7),
+      new Vector3(0.135, 0.24, frente(0.24) * 0.92),
+      new Vector3(0.08, 0.35, frente(0.35) * 0.96),
+      new Vector3(0.005, 0.45, frente(0.45) * 0.82),
+      new Vector3(-0.085, 0.507, 0.045),
+      new Vector3(-0.125, 0.515, -0.02),
+      new Vector3(-0.105, 0.47, -0.075),
+      new Vector3(-0.04, 0.35, -0.105),
+      new Vector3(0.05, 0.22, -0.108),
+      new Vector3(0.13, 0.11, -0.1),
+      bocaDetras,
+    ];
+    // Dos bordes paralelos: la cinta se apoya de plano contra el cuerpo, así
+    // que su ancho va en la dirección perpendicular al camino Y a la
+    // superficie —el radio desde el eje del tronco—, que es como cae una
+    // correa de verdad.
+    const ANCHO_CINTA = 0.016;
+    const bordes: Vector3[][] = [[], []];
+    camino.forEach((p, i) => {
+      const antes = camino[Math.max(0, i - 1)];
+      const luego = camino[Math.min(camino.length - 1, i + 1)];
+      const avance = luego.subtract(antes).normalize();
+      const afuera = new Vector3(p.x, 0, p.z).normalize();
+      const ancho = Vector3.Cross(avance, afuera).normalize().scale(ANCHO_CINTA);
+      bordes[0].push(p.subtract(ancho));
+      bordes[1].push(p.add(ancho));
     });
-    const sobreHombro = caja("tiraBolsoHombro", 0.024, 0.01, zDelante - zDetras + 0.01, esq.cuerpo, matOscuro, -0.135, 0.517, (zDelante + zDetras) / 2);
-    sobreHombro.rotation.z = 0.61;
+    const cinta = MeshBuilder.CreateRibbon(
+      `${nombre}_correaBolso`,
+      { pathArray: bordes, sideOrientation: Mesh.DOUBLESIDE, closeArray: false },
+      scene
+    );
+    poner(cinta, esq.cuerpo, matBolso);
   }
 
   // --- Cabeza ---------------------------------------------------------------
@@ -315,14 +400,63 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   if (paleta.peinado === "largo") bola("mono", esq.cabeza, matPelo, 0, CENTRO_CRANEO + 0.03, -0.108, 0.075, 0.07, 0.065);
 
   const ancho = paleta.rasgos?.ancho ?? 1;
+  // ─── LA CARA ──────────────────────────────────────────────────────────
+  //
+  // El ojo era una bola oscura aplastada: de cerca, dos botones. Ahora tiene
+  // las tres piezas que el ojo se lee: el blanco en forma de almendra, el iris
+  // oscuro sobre él —un poco salido, como la córnea— y el párpado, una tira
+  // del tono de la piel que le corta el borde de arriba. Esa tira es la que
+  // hace la mirada: sin ella el ojo queda redondo y de susto.
+  const matBlancoOjo = mat("blancoOjo", new Color3(0.86, 0.86, 0.87), 0.25);
+  const matIris = mat("iris", new Color3(0.13, 0.09, 0.06), 0.2, { metal: 0.05 });
+  const matPupila = mat("pupila", new Color3(0.02, 0.018, 0.02), 0.15);
   ojos.forEach((o, k) => {
     const lado = k === 0 ? -1 : 1;
-    bola(`ojo_${lado}`, esq.cabeza, matOjo, o.x, CENTRO_CRANEO + o.y, o.z - 0.005, 0.02, 0.015, 0.013);
-    const ceja = caja(`ceja_${lado}`, 0.03, 0.0055, 0.007, esq.cabeza, matPelo, o.x + lado * 0.002, CENTRO_CRANEO + o.y + 0.021, o.z + 0.006);
-    ceja.rotation.z = -lado * 0.12;
+    const blanco = bola(`ojo_${lado}`, esq.cabeza, matBlancoOjo, o.x, CENTRO_CRANEO + o.y, o.z - 0.006, 0.021, 0.0125, 0.013);
+    blanco.rotation.z = -lado * 0.06;
+    bola(`iris_${lado}`, esq.cabeza, matIris, o.x + lado * 0.001, CENTRO_CRANEO + o.y - 0.0005, o.z - 0.0005, 0.0092, 0.0092, 0.006);
+    bola(`pupila_${lado}`, esq.cabeza, matPupila, o.x + lado * 0.001, CENTRO_CRANEO + o.y - 0.0005, o.z + 0.0018, 0.0042, 0.0042, 0.003);
+    const parpado = bola(`parpado_${lado}`, esq.cabeza, matPiel, o.x, CENTRO_CRANEO + o.y + 0.0072, o.z - 0.0055, 0.0232, 0.0115, 0.0145);
+    parpado.rotation.z = -lado * 0.1;
+    // La ceja: un arco continuo apoyado en la frente, más gruesa por dentro y
+    // afinándose hacia la sien. Con trozos sueltos —y más aún con una barra
+    // recta— se leía como una pegatina pegada encima del ojo.
+    const arco = [-0.95, -0.55, -0.15, 0.25, 0.65, 1.05, 1.3].map((t) => {
+      const px = o.x + lado * t * 0.0086;
+      const alto = 0.0235 + 0.003 * Math.cos(t * 1.1) - 0.0018 * Math.max(0, t);
+      const sitio = puntoDeLaCara(px, o.y + alto, paleta.rasgos);
+      // Apenas hundida: un milímetro más y el arco se mete en la piel y solo
+      // asoman trozos, como si la ceja fueran cuatro lunares.
+      return new Vector3(px, CENTRO_CRANEO + sitio.y, sitio.z - 0.0012);
+    });
+    const ceja = MeshBuilder.CreateTube(
+      `${nombre}_ceja_${lado}`,
+      {
+        path: arco,
+        // Fina y afinándose hacia la sien. Nada de aplastarla con scaling: el
+        // tubo tiene su origen en el centro de la cabeza, así que escalarlo en
+        // Y no lo adelgaza, lo BAJA —la ceja se hundía dentro del cráneo—.
+        radiusFunction: (i) => 0.0042 - 0.0018 * (i / (arco.length - 1)),
+        tessellation: 8,
+        cap: Mesh.CAP_ALL,
+      },
+      scene
+    );
+    poner(ceja, esq.cabeza, matPelo);
     const oreja = bola(`oreja_${lado}`, esq.cabeza, matPiel, lado * 0.072 * ancho, CENTRO_CRANEO - 0.004, -0.004, 0.02, 0.058, 0.036);
     oreja.rotation.y = lado * 0.3;
   });
+
+  // La boca: dos labios apenas marcados sobre la superficie de la cara, en su
+  // sitio de verdad (ver puntoDeLaCara). El color ya lo pinta la cabeza en sus
+  // vértices; esto es el relieve, que es lo que se ve de lejos.
+  const bocaArriba = puntoDeLaCara(0, -0.052, paleta.rasgos);
+  const bocaAbajo = puntoDeLaCara(0, -0.066, paleta.rasgos);
+  const matLabio = mat("labio", new Color3(paleta.piel.r * 0.82, paleta.piel.g * 0.52, paleta.piel.b * 0.5), 0.5);
+  const labioArriba = bola("labioArriba", esq.cabeza, matLabio, 0, CENTRO_CRANEO + bocaArriba.y, bocaArriba.z - 0.004, 0.0165, 0.0042, 0.008);
+  labioArriba.rotation.x = -0.18;
+  const labioAbajo = bola("labioAbajo", esq.cabeza, matLabio, 0, CENTRO_CRANEO + bocaAbajo.y + 0.002, bocaAbajo.z - 0.004, 0.0145, 0.005, 0.0085);
+  labioAbajo.rotation.x = 0.12;
 
   if (paleta.gorra) {
     const c = CENTRO_CRANEO;

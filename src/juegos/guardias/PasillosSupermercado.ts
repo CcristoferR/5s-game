@@ -21,6 +21,14 @@ import { materialLiso } from "./UtileriaBodega";
 
 /** Los centros de los cinco pasillos, en X. Ver la planta de ClientesSupermercado. */
 const PASILLOS_X = [-6.8, -3.73, -0.66, 2.41, 5.48];
+/**
+ * Lo que se vende en cada uno, para la línea de abajo del cartel.
+ *
+ * Salen de lo que hay de verdad en esas góndolas —cereales, pastas, latas y
+ * leches, que es lo que trae el modelo— repartido como lo reparte cualquier
+ * local: lo seco junto, lo líquido junto y la limpieza al final.
+ */
+const CATEGORIAS = ["ABARROTES", "CONSERVAS", "BEBIDAS", "LÁCTEOS", "LIMPIEZA"];
 /** Sobre la boca de los pasillos: el frente de las góndolas está en Z −1,31. */
 const LETRERO_Z = -1.2;
 /** Por encima de las góndolas, que miden 1,80, y a la vista desde la entrada. */
@@ -39,6 +47,11 @@ export function colgarLetrerosPasillos(scene: Scene, piso: number, techo: number
   PASILLOS_X.forEach((x, i) => {
     const numero = i + 1;
     // El verde de la marca, el mismo del uniforme de la cajera.
+    //
+    // Debajo del número, lo que se vende en ese pasillo. Es la línea que
+    // llevan estos carteles en cualquier local, y aquí además hace algo: el
+    // jugador que oye "revisa el tercer pasillo" no tiene por qué saber que el
+    // tercero es el de las bebidas, pero sí reconoce dónde estuvo antes.
     const material = materialPintadoNitido(scene, `matLetreroPasillo_${numero}`, 390, 108, 2, (ctx, w, h) => {
       ctx.fillStyle = "#2f6b2c";
       ctx.fillRect(0, 0, w, h);
@@ -48,8 +61,13 @@ export function colgarLetrerosPasillos(scene: Scene, piso: number, techo: number
       ctx.fillStyle = "#f4f6f2";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = `800 ${Math.round(h * 0.5)}px system-ui, 'Segoe UI', sans-serif`;
-      ctx.fillText(`PASILLO ${numero}`, w / 2, h * 0.53);
+      ctx.font = `800 ${Math.round(h * 0.42)}px system-ui, 'Segoe UI', sans-serif`;
+      ctx.fillText(`PASILLO ${numero}`, w / 2, h * 0.41);
+      ctx.fillStyle = "rgba(244,246,242,0.82)";
+      ctx.font = `600 ${Math.round(h * 0.2)}px system-ui, 'Segoe UI', sans-serif`;
+      ctx.letterSpacing = "3px";
+      ctx.fillText(CATEGORIAS[i] ?? "", w / 2, h * 0.73);
+      ctx.letterSpacing = "0px";
     });
 
     // Dos caras, una hacia la entrada y otra hacia el fondo: un plano solo se
@@ -65,7 +83,10 @@ export function colgarLetrerosPasillos(scene: Scene, piso: number, techo: number
     [-1, 1].forEach((lado) => {
       const varilla = MeshBuilder.CreateCylinder(
         `varillaPasillo_${numero}_${lado}`,
-        { height: largoVarilla, diameter: 0.015, tessellation: 6 },
+        // Veintidós milímetros y ocho caras: con quince y seis, a seis metros
+        // de altura la varilla no llegaba a ocupar un pixel y titilaba al
+        // caminar, como pasaba con los cables de las luminarias.
+        { height: largoVarilla, diameter: 0.022, tessellation: 8 },
         scene
       );
       varilla.material = metal;

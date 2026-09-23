@@ -9,6 +9,7 @@ import {
   Texture,
   type Camera,
   type BaseTexture,
+  type Vector3,
 } from "@babylonjs/core";
 
 // ===========================================================================
@@ -16,48 +17,68 @@ import {
 // ===========================================================================
 //
 // El modelo trae el vidrio como tres láminas celestes al diez por ciento,
-// sin marco y metidas quince centímetros por detrás del muro: desde dentro se
-// leían como paneles de color, no como vidrio, y la puerta era una ventana más
-// que llegaba al suelo. Aquí se rehace entera:
+// sin marco: desde dentro se leían como paneles de color, no como vidrio, y
+// la puerta era una ventana más que llegaba al suelo. Aquí se rehace entera:
 //
 //   · Vidrio de verdad: casi incoloro, con el reflejo del cielo y de la calle
 //     que se hace más fuerte cuanto más de canto se mira (Fresnel), que es lo
 //     que hace que un vidrio se lea como vidrio.
-//   · Carpintería de aluminio en cada hueco, con un parteluz al medio de las
-//     ventanas, como las de cualquier local de barrio.
+//   · Un marco de aluminio natural, delgado y sin parteluz: el de una vidriera
+//     de local, que es un paño entero y no una ventana de casa.
+//   · El derrame de cada hueco revestido: el del modelo salía manchado.
 //   · Una puerta automática de dos hojas que se abren cuando alguien se acerca
 //     —un cliente que entra o se va, o el guardia—, con su caja de motor y su
 //     franja esmerilada de seguridad.
 //   · Las antenas antihurto a los lados del paso y un felpudo.
 //
-// ─── LAS MEDIDAS ─────────────────────────────────────────────────────────
+// ─── EL MURO DEL MODELO ──────────────────────────────────────────────────
 //
-// Sacadas del modelo con rayos contra el muro, no a ojo: cuatro ventanas de
-// 2,06 × 1,76 m con el alféizar a 0,52, y la puerta de 1,79 × 2,12 sobre un
-// umbral de 0,17. El muro va de Z 7,396 (cara de dentro) a 7,567 (de fuera).
+// Medido con rayos, no a ojo, y ojo con cómo: un rayo devuelve un solo golpe
+// por malla, el más cercano, y el edificio entero es una malla. Contando eso:
+//
+//   · Bajo la franja verde, el muro de las vidrieras va de Z 7,112 (dentro)
+//     a 7,282 (fuera): diecisiete centímetros, con sus jambas, antepecho y
+//     dintel en cada hueco.
+//   · La franja verde de arriba vuela sobre la vereda hasta 7,567. Debajo de
+//     su vuelo, a 2,46 m, hay un plafón: las vidrieras quedan retranqueadas
+//     28 cm bajo la franja, como en tantos locales.
+//
+// La versión anterior había medido el espesor en la franja (7,40 a 7,57) y
+// montó ahí los marcos, derrames y repisas: por fuera sobresalían hasta
+// 28 cm de la cara del muro, como cajas pegadas. Ahora el marco va al ras de
+// la cara de fuera, que es donde va en una vidriera de local, y desde la sala
+// la ventana se lee hundida en los once centímetros de muro que quedan.
 
-/** Los huecos de las ventanas, en X, con su alféizar y su dintel. */
+/** Los huecos de las ventanas, en X, con su antepecho y su dintel. */
 const VENTANAS: readonly [number, number][] = [
   [-3.68, -1.48],
   [-0.77, 1.29],
-  [4.78, 6.83],
-  [7.55, 9.61],
+  [4.775, 6.83],
+  [7.545, 9.605],
 ];
-const VENTANA_Y: [number, number] = [0.52, 2.28];
+const VENTANA_Y: [number, number] = [0.515, 2.28];
 /** El hueco de la puerta. */
-const PUERTA_HUECO: [number, number] = [2.14, 3.93];
-const PUERTA_Y: [number, number] = [0.17, 2.29];
+const PUERTA_HUECO: [number, number] = [2.135, 3.93];
+const PUERTA_Y: [number, number] = [0.17, 2.285];
 
-const MURO_DENTRO_Z = 7.396;
-const MURO_FUERA_Z = 7.567;
-/** Plano del vidrio fijo: a media pared, como va la carpintería de un local. */
-const VIDRIO_Z = (MURO_DENTRO_Z + MURO_FUERA_Z) / 2;
-/** Plano de las hojas de la puerta: por dentro del muro, sobre su cara. */
-const HOJAS_Z = MURO_DENTRO_Z - 0.045;
+/** Cara de dentro del muro de las vidrieras: la que se ve desde la sala. */
+const MURO_DENTRO_Z = 7.112;
+/** Cara de fuera, retranqueada bajo el vuelo de la franja verde. */
+const MURO_FUERA_Z = 7.282;
+/** El plafón bajo el vuelo de la franja verde. */
+const PLAFON_Y = 2.46;
 
-/** Ancho a la vista de los perfiles, y su fondo. */
-const PERFIL = 0.05;
-const FONDO_PERFIL = 0.09;
+/** El marco: ancho a la vista y fondo. El travesaño de abajo, algo más ancho. */
+const PERFIL = 0.04;
+const PERFIL_BAJO = 0.06;
+const FONDO_PERFIL = 0.06;
+/** El marco va a haces de la cara de fuera, dos milímetros por dentro. */
+const MARCO_Z1 = MURO_FUERA_Z - 0.002;
+const MARCO_Z0 = MARCO_Z1 - FONDO_PERFIL;
+const VIDRIO_Z = (MARCO_Z0 + MARCO_Z1) / 2;
+
+/** Plano de las hojas de la puerta: por dentro, corriendo sobre el muro. */
+const HOJAS_Z = MURO_DENTRO_Z - 0.032;
 
 /** A cuánta distancia de la puerta alguien la hace abrir. */
 const ALCANCE_SENSOR = 2.2;
@@ -70,11 +91,23 @@ export interface Fachada {
    * esté dibujada: ver ExteriorSupermercado.
    */
   reflejantes: PBRMaterial[];
-  /** Todas sus mallas, para dejarlas fuera de las luces de la calle. */
+  /** Todas sus mallas. Las alumbran las luces de la sala. */
   mallas: Mesh[];
   /** Le pone el reflejo del exterior a lo que lo lleva. */
   reflejar(textura: BaseTexture): void;
   dispose(): void;
+}
+
+/**
+ * Si un triángulo del muro del modelo es de lo que alumbra el sol: la cara de
+ * fuera de las vidrieras o el plafón bajo la franja. Para separarLoDeFuera,
+ * en ExteriorSupermercado: son caras del mismo muro que se ve desde la sala,
+ * y por el centro del triángulo no se distinguen de él.
+ */
+export function esCaraDeFueraFachada(centro: Vector3, normal: Vector3): boolean {
+  const caraFuera = Math.abs(normal.z) > 0.7 && Math.abs(centro.z - MURO_FUERA_Z) < 0.02 && centro.y < PLAFON_Y + 0.01;
+  const plafon = Math.abs(normal.y) > 0.7 && Math.abs(centro.y - PLAFON_Y) < 0.05 && centro.z > MURO_FUERA_Z;
+  return caraFuera || plafon;
 }
 
 /**
@@ -97,12 +130,15 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
 
   // --- Materiales -------------------------------------------------------------
 
-  // Casi incoloro, con un punto de verde en el canto como el float de
-  // verdad. El alfa bajo deja pasar la calle; el reflejo va encima del alfa
-  // (radiancia sobre alfa), así que el vidrio brilla aunque se vea a través.
+  // Casi incoloro, con un punto de verde como el float de verdad. El alfa
+  // bajo deja pasar la calle; el reflejo va encima del alfa (radiancia sobre
+  // alfa), así que el vidrio brilla aunque se vea a través. El albedo, casi
+  // negro: un vidrio no tiene color propio que las luces aclaren, solo quita
+  // un poco de luz y refleja. Claro, las luces de la sala le ponían un velo
+  // blanco y la calle se veía como tras un vidrio empañado.
   const vidrio = new PBRMaterial("matVidrioFachada", scene);
-  vidrio.albedoColor = new Color3(0.86, 0.93, 0.94);
-  vidrio.alpha = 0.12;
+  vidrio.albedoColor = new Color3(0.035, 0.045, 0.045);
+  vidrio.alpha = 0.1;
   vidrio.metallic = 0;
   vidrio.roughness = 0.03;
   vidrio.indexOfRefraction = 1.52;
@@ -113,20 +149,26 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
   vidrio.environmentIntensity = 0.85;
   vidrio.maxSimultaneousLights = 8;
 
-  // Aluminio anodizado gris grafito: el de la carpintería de un comercio.
+  // Aluminio anodizado natural, satinado: el de las vidrieras de un local.
+  // Claro a propósito: sobre el muro blanco, un marco oscuro se come la
+  // ventana y la hace parecer una reja.
+  //
+  // Sin el reflejo del exterior, y metálico solo a medias: la sonda está en
+  // medio del estacionamiento, y en los cantos del marco, vistos desde la
+  // sala, reflejaba el pasto en verde y el cielo en rosa. El satinado del
+  // anodizado se ve con el brillo de las luces, que es lo que tiene.
   const aluminio = new PBRMaterial("matAluminioFachada", scene);
-  aluminio.albedoColor = new Color3(0.2, 0.21, 0.22);
-  aluminio.metallic = 0.85;
-  aluminio.roughness = 0.34;
-  aluminio.environmentIntensity = 0.6;
+  aluminio.albedoColor = new Color3(0.74, 0.75, 0.76);
+  aluminio.metallic = 0.35;
+  aluminio.roughness = 0.4;
   aluminio.maxSimultaneousLights = 8;
 
-  // La caja del motor de la puerta, en aluminio natural cepillado.
+  // La caja del motor de la puerta, en aluminio natural cepillado. Por
+  // dentro: tampoco refleja la calle.
   const cepillado = new PBRMaterial("matMotorPuerta", scene);
   cepillado.albedoColor = new Color3(0.72, 0.73, 0.74);
-  cepillado.metallic = 0.9;
-  cepillado.roughness = 0.42;
-  cepillado.environmentIntensity = 0.6;
+  cepillado.metallic = 0.4;
+  cepillado.roughness = 0.45;
   cepillado.maxSimultaneousLights = 8;
 
   // La franja esmerilada que llevan las puertas de vidrio para que nadie se
@@ -145,6 +187,14 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
   negro.metallic = 0;
   negro.maxSimultaneousLights = 8;
 
+  // El derrame de los huecos, visto desde la sala: del tono de la pared bajo
+  // sus mismas luces.
+  const revoque = new PBRMaterial("matRevoqueHuecos", scene);
+  revoque.albedoColor = new Color3(0.8, 0.8, 0.79);
+  revoque.metallic = 0;
+  revoque.roughness = 0.92;
+  revoque.maxSimultaneousLights = 8;
+
   // --- Utilidades ---------------------------------------------------------------
 
   /** Una caja por sus extremos, en coordenadas del mundo. */
@@ -153,7 +203,7 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
     m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
     return m;
   };
-  /** Varias cajas del mismo material en una sola malla: un dibujo, no diez. */
+  /** Varias piezas del mismo material en una sola malla: un dibujo, no diez. */
   const fundir = (nombre: string, piezas: Mesh[], material: PBRMaterial): Mesh => {
     const m = Mesh.MergeMeshes(piezas, true, true) ?? piezas[0];
     m.name = nombre;
@@ -168,33 +218,55 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
     return guardar(m);
   };
 
-  // --- Ventanas: marco, parteluz y dos vidrios -----------------------------------
+  // --- El derrame de cada hueco ---------------------------------------------------
+  //
+  // El modelo trae jambas, antepecho y dintel, pero con la textura del atlas
+  // del edificio, y en esas caras la textura cae justo al borde de la franja
+  // verde: vistas de canto se manchaban de verde y rosa. Se revisten con el
+  // tono de la pared, seis milímetros por delante de las del modelo —los
+  // huecos se midieron con rayos cada cinco, y con milímetro y medio la cara
+  // del modelo asomaba—, desde la cara de dentro hasta meterse en el marco.
+  // Las cajas van hundidas en el muro: lo que asoma es solo la cara del borde.
+  const huecos: { x: [number, number]; y: [number, number]; puerta: boolean }[] = [
+    ...VENTANAS.map((x) => ({ x, y: VENTANA_Y, puerta: false })),
+    { x: PUERTA_HUECO, y: PUERTA_Y, puerta: true },
+  ];
+  const R = 0.02;
+  const S = 0.006;
+  const zr0 = MURO_DENTRO_Z + 0.001;
+  const zr1 = MARCO_Z0 + 0.01;
+  const derrames: Mesh[] = [];
+  for (const [i, h] of huecos.entries()) {
+    const [x0, x1] = h.x;
+    const [y0, y1] = h.y;
+    derrames.push(
+      caja(`jamba_${i}_i`, x0 - R, x0 + S, y0 - R, y1 + R, zr0, zr1),
+      caja(`jamba_${i}_d`, x1 - S, x1 + R, y0 - R, y1 + R, zr0, zr1),
+      caja(`dintel_${i}`, x0, x1, y1 - S, y1 + R, zr0, zr1)
+    );
+    // La puerta no lleva antepecho: abajo va el umbral.
+    if (!h.puerta) derrames.push(caja(`antepecho_${i}`, x0, x1, y0 - R, y0 + S, zr0, zr1));
+  }
+  fundir("derramesHuecos", derrames, revoque);
 
+  // --- Ventanas: un marco y un paño --------------------------------------------------
+
+  // El marco se mete un centímetro en el muro por cada lado y el derrame se
+  // mete otro en el marco: así no queda rendija a la vista entre los dos.
   const perfiles: Mesh[] = [];
-  const zp0 = VIDRIO_Z - FONDO_PERFIL / 2;
-  const zp1 = VIDRIO_Z + FONDO_PERFIL / 2;
   VENTANAS.forEach(([x0, x1], i) => {
     const [y0, y1] = VENTANA_Y;
-    const medio = (x0 + x1) / 2;
     perfiles.push(
-      caja(`perfilV_${i}_i`, x0, x0 + PERFIL, y0, y1, zp0, zp1),
-      caja(`perfilV_${i}_d`, x1 - PERFIL, x1, y0, y1, zp0, zp1),
-      caja(`perfilV_${i}_ab`, x0, x1, y0, y0 + PERFIL * 1.4, zp0, zp1),
-      caja(`perfilV_${i}_ar`, x0, x1, y1 - PERFIL, y1, zp0, zp1),
-      caja(`perfilV_${i}_m`, medio - PERFIL / 2, medio + PERFIL / 2, y0, y1, zp0, zp1)
+      caja(`perfilV_${i}_i`, x0 - 0.01, x0 + PERFIL, y0 - 0.01, y1 + 0.01, MARCO_Z0, MARCO_Z1),
+      caja(`perfilV_${i}_d`, x1 - PERFIL, x1 + 0.01, y0 - 0.01, y1 + 0.01, MARCO_Z0, MARCO_Z1),
+      caja(`perfilV_${i}_ab`, x0, x1, y0 - 0.01, y0 + PERFIL_BAJO, MARCO_Z0, MARCO_Z1),
+      caja(`perfilV_${i}_ar`, x0, x1, y1 - PERFIL, y1 + 0.01, MARCO_Z0, MARCO_Z1)
     );
-    const vy0 = y0 + PERFIL * 1.4;
-    const vy1 = y1 - PERFIL;
-    const vidrioVentana = [
-      lamina(`vidrioVentana_${i}_a`, x0 + PERFIL, medio - PERFIL / 2, vy0, vy1, VIDRIO_Z),
-      lamina(`vidrioVentana_${i}_b`, medio + PERFIL / 2, x1 - PERFIL, vy0, vy1, VIDRIO_Z),
-    ];
-    // Chocan como chocaba el vidrio del modelo. No tapan la vista a nada que
-    // importe, pero se marcan igual: solo detienen el paso.
-    vidrioVentana.forEach((v) => {
-      v.checkCollisions = true;
-      v.metadata = { soloPaso: true };
-    });
+    const vidrioVentana = lamina(`vidrioVentana_${i}`, x0 + PERFIL, x1 - PERFIL, y0 + PERFIL_BAJO, y1 - PERFIL, VIDRIO_Z);
+    // Choca como chocaba el vidrio del modelo. No tapa la vista a nada que
+    // importe, pero se marca igual: solo detiene el paso.
+    vidrioVentana.checkCollisions = true;
+    vidrioVentana.metadata = { soloPaso: true };
   });
 
   // --- Puerta: marco fijo, caja del motor y sensor -------------------------------
@@ -203,9 +275,9 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
   const [py0, py1] = PUERTA_Y;
   const centroPuerta = (px0 + px1) / 2;
   perfiles.push(
-    caja("perfilPuerta_i", px0, px0 + PERFIL, py0, py1, zp0, zp1),
-    caja("perfilPuerta_d", px1 - PERFIL, px1, py0, py1, zp0, zp1),
-    caja("perfilPuerta_ar", px0, px1, py1 - PERFIL, py1, zp0, zp1)
+    caja("perfilPuerta_i", px0 - 0.01, px0 + PERFIL, py0, py1 + 0.01, MARCO_Z0, MARCO_Z1),
+    caja("perfilPuerta_d", px1 - PERFIL, px1 + 0.01, py0, py1 + 0.01, MARCO_Z0, MARCO_Z1),
+    caja("perfilPuerta_ar", px0, px1, py1 - PERFIL, py1 + 0.01, MARCO_Z0, MARCO_Z1)
   );
   fundir("carpinteriaFachada", perfiles, aluminio);
 
@@ -213,7 +285,7 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
   // que corren las hojas: sin ella, las hojas colgarían de la nada.
   fundir(
     "motorPuerta",
-    [caja("motorPuerta_caja", px0 - 0.95, px1 + 0.95, py1 - 0.02, py1 + 0.2, HOJAS_Z - 0.085, MURO_DENTRO_Z)],
+    [caja("motorPuerta_caja", px0 - 0.95, px1 + 0.95, py1 - 0.02, py1 + 0.2, HOJAS_Z - 0.085, MURO_DENTRO_Z - 0.001)],
     cepillado
   );
   fundir("sensorPuerta", [caja("sensorPuerta_caja", centroPuerta - 0.09, centroPuerta + 0.09, py1 - 0.07, py1 - 0.02, HOJAS_Z - 0.08, HOJAS_Z - 0.02)], negro);
@@ -253,72 +325,21 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
   });
 
   // Lo que impide salir: la puerta se abre, pero el guardia no se va del
-  // puesto. Invisible, en el plano del muro, y sin tapar la vista.
+  // puesto. Invisible, dentro del hueco, y sin tapar la vista.
   const barrera = guardar(caja("barreraPuerta", px0, px1, 0, py1, VIDRIO_Z - 0.02, VIDRIO_Z + 0.02));
   barrera.isVisible = false;
   barrera.checkCollisions = true;
   barrera.metadata = { soloPaso: true };
 
-  // --- El espesor del muro en cada hueco ------------------------------------------
-  //
-  // El muro del modelo son dos caras con el hueco recortado y nada entre
-  // ellas: medido con rayos dentro del espesor, a los lados del hueco no hay
-  // superficie ninguna. Mirando la ventana de canto se veía el vacío entre las
-  // dos caras, y la carpintería parecía una ventana pegada encima del muro en
-  // vez de metida en él. Aquí se reviste el hueco —jambas, dintel y alféizar—
-  // y se le pone la repisa por dentro y el vierteaguas por fuera, que es lo
-  // que hace que una ventana se lea como hundida en diecisiete centímetros de
-  // pared.
-  const revoque = new PBRMaterial("matRevoqueHuecos", scene);
-  // Del tono de la pared de la sala bajo sus mismas luces. El material del
-  // muro no sirve: es un atlas del edificio entero, y en una cara de diecisiete
-  // centímetros saldría la franja verde de la fachada.
-  revoque.albedoColor = new Color3(0.8, 0.8, 0.79);
-  revoque.metallic = 0;
-  revoque.roughness = 0.92;
-  revoque.maxSimultaneousLights = 8;
-  const piedra = new PBRMaterial("matRepisaVentana", scene);
-  piedra.albedoColor = new Color3(0.9, 0.89, 0.86);
-  piedra.metallic = 0;
-  piedra.roughness = 0.38;
-  piedra.environmentIntensity = 0.5;
-  piedra.maxSimultaneousLights = 8;
-  // Un milímetro por dentro de cada cara del muro: coplanares con ellas
-  // parpadearían.
-  const zr0 = MURO_DENTRO_Z + 0.001;
-  const zr1 = MURO_FUERA_Z - 0.001;
-  const R = 0.04;
-  const revestido: Mesh[] = [];
-  const repisas: Mesh[] = [];
-  VENTANAS.forEach(([x0, x1], i) => {
-    const [y0, y1] = VENTANA_Y;
-    revestido.push(
-      caja(`jamba_${i}_i`, x0 - R, x0, y0 - R, y1 + R, zr0, zr1),
-      caja(`jamba_${i}_d`, x1, x1 + R, y0 - R, y1 + R, zr0, zr1),
-      caja(`dintel_${i}`, x0 - R, x1 + R, y1, y1 + R, zr0, zr1),
-      caja(`alfeizar_${i}`, x0 - R, x1 + R, y0 - R, y0, zr0, zr1)
-    );
-    repisas.push(
-      // Repisa por dentro, diez centímetros hacia la sala.
-      caja(`repisa_${i}`, x0 - 0.06, x1 + 0.06, y0 - 0.03, y0 + 0.004, MURO_DENTRO_Z - 0.1, VIDRIO_Z - FONDO_PERFIL / 2),
-      // Vierteaguas por fuera, con su vuelo.
-      caja(`vierteaguas_${i}`, x0 - 0.05, x1 + 0.05, y0 - 0.05, y0 - 0.005, VIDRIO_Z + FONDO_PERFIL / 2, MURO_FUERA_Z + 0.05)
-    );
-  });
-  revestido.push(
-    caja("jambaPuerta_i", px0 - R, px0, py0 - 0.02, py1 + R, zr0, zr1),
-    caja("jambaPuerta_d", px1, px1 + R, py0 - 0.02, py1 + R, zr0, zr1),
-    caja("dintelPuerta", px0 - R, px1 + R, py1, py1 + R, zr0, zr1)
-  );
-  fundir("revestimientoHuecos", revestido, revoque);
-  fundir("repisasVentanas", repisas, piedra);
-  // El umbral de la puerta: una pletina de aluminio sobre el escalón.
-  fundir("umbralPuerta", [caja("umbralPuerta_caja", px0, px1, py0 - 0.012, py0 + 0.004, MURO_DENTRO_Z - 0.06, MURO_FUERA_Z + 0.02)], aluminio);
+  // El umbral: una pletina de aluminio de la cara de dentro a la de fuera,
+  // sobre el escalón del hueco.
+  fundir("umbralPuerta", [caja("umbralPuerta_caja", px0, px1, py0 - 0.012, py0 + 0.004, HOJAS_Z - 0.04, MURO_FUERA_Z + 0.01)], aluminio);
 
   // --- Felpudo ----------------------------------------------------------------------
 
+  // Por dentro, con el borde a un centímetro del muro.
   const felpudo = guardar(MeshBuilder.CreateGround("felpudoEntrada", { width: px1 - px0 + 0.3, height: 1.3 }, scene));
-  felpudo.position.set(centroPuerta, piso + 0.006, MURO_DENTRO_Z - 0.7);
+  felpudo.position.set(centroPuerta, piso + 0.006, MURO_DENTRO_Z - 0.01 - 0.65);
   felpudo.material = materialFelpudo(scene);
   felpudo.receiveShadows = true;
 
@@ -346,7 +367,7 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
   // A los dos lados del paso, un poco por dentro de la puerta. Dejan metro y
   // medio libre: medido contra las rutas de quienes entran y salen, nadie las
   // roza.
-  const ANTENA_Z = MURO_DENTRO_Z - 0.65;
+  const ANTENA_Z = 6.746;
   const piezasAntena: Mesh[] = [];
   const piezasAcrilico: Mesh[] = [];
   const piezasBase: Mesh[] = [];
@@ -400,7 +421,7 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
     for (const h of hojas) h.nodo.position.x = h.cerrada + h.lado * recorrido;
   });
 
-  const reflejantes = [vidrio, aluminio, cepillado];
+  const reflejantes = [vidrio];
   return {
     reflejantes,
     mallas,

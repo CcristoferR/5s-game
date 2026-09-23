@@ -163,7 +163,22 @@ export interface PanelesTurno {
     alElegir: (opcion: OpcionSituacion) => void,
     alCerrar: () => void
   ): void;
-  mostrarRecuento(recuento: RecuentoTurno, alTerminar: () => void): void;
+  /**
+   * El recuento del cierre, en tres tarjetas: rondas, situaciones y nota.
+   *
+   * @param alTerminar  Vuelve al menú.
+   * @param alRepetir   Vuelve a empezar el turno sin pasar por el menú.
+   */
+  mostrarRecuento(recuento: RecuentoTurno, alTerminar: () => void, alRepetir: () => void): void;
+  /**
+   * La pausa: el turno queda detenido detrás del velo hasta que se elige.
+   *
+   * @param alSeguir  Vuelve al turno donde estaba.
+   * @param alSalir   Se va al menú. Lo hecho hasta aquí no queda registrado.
+   */
+  mostrarPausa(alSeguir: () => void, alSalir: () => void): void;
+  /** Retira la pausa si está puesta. Para poder cerrarla con la misma tecla. */
+  cerrarPausa(): boolean;
   dispose(): void;
 }
 
@@ -175,6 +190,8 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
   afinarGui(gui);
 
   let capa: Rectangle | null = null;
+  /** Si la capa de ahora es la pausa. Ver cerrarPausa. */
+  let pausaPuesta = false;
 
   /**
    * Retira la tarjeta con un fundido.
@@ -259,9 +276,22 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
     });
   }
 
-  function botonAbajo(tarjeta: Rectangle, nombre: string, texto: string, alPulsar: () => void): void {
-    const boton = crearBotonTurno(nombre, texto, 220, "principal");
-    boton.left = -MARGEN + "px";
+  /**
+   * El botón de la esquina de abajo a la derecha.
+   *
+   * @param segundo  Lo corre a la izquierda del principal, para las tarjetas
+   *                 que ofrecen dos salidas.
+   */
+  function botonAbajo(
+    tarjeta: Rectangle,
+    nombre: string,
+    texto: string,
+    alPulsar: () => void,
+    opciones: { variante?: "principal" | "secundario"; segundo?: boolean } = {}
+  ): void {
+    const ANCHO_BOTON = 220;
+    const boton = crearBotonTurno(nombre, texto, ANCHO_BOTON, opciones.variante ?? "principal");
+    boton.left = -(MARGEN + (opciones.segundo ? ANCHO_BOTON + 12 : 0)) + "px";
     boton.top = "-24px";
     boton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     boton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
@@ -342,7 +372,7 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
    * renglón a renglón para ver dónde se acertó y dónde no. Juntas no caben en
    * una pantalla sin apretar la letra, y apretada no se lee ninguna.
    */
-  function mostrarSituacionesTurno(recuento: RecuentoTurno, alTerminar: () => void): void {
+  function mostrarSituacionesTurno(recuento: RecuentoTurno, alTerminar: () => void, alRepetir: () => void): void {
     const filas = recuento.situaciones;
     const cuentan = filas.filter((f) => !(f.inocente && f.resultado === "perdida"));
     const bien = cuentan.filter((f) => f.resultado === "correcta").length;
@@ -436,7 +466,7 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
     );
 
     botonAbajo(tarjeta, "btnVerNota", "Ver la nota", () =>
-      setTimeout(() => mostrarInforme(recuento.informe, alTerminar), 0)
+      setTimeout(() => mostrarInforme(recuento.informe, alTerminar, alRepetir), 0)
     );
     // Las filas y la nota se estiman por lo alto; se encoge a lo que ocuparon.
     ajustarAlContenido(tarjeta, columna, 94);
@@ -452,7 +482,7 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
    * Dos turnos con 70 pueden venir de lados contrarios, y lo que el alumno
    * tiene que ver de un vistazo es de cuál viene el suyo.
    */
-  function mostrarInforme(informe: InformeTurno, alTerminar: () => void): void {
+  function mostrarInforme(informe: InformeTurno, alTerminar: () => void, alRepetir: () => void): void {
     const color = informe.aprobado ? PALETA.acierto : PALETA.error;
     const HUECO = 32;
     const ANCHO_COLUMNA = (ANCHO_CONTENIDO - HUECO) / 2;
@@ -545,6 +575,12 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
     columna.addControl(crearParrafo("leyendaInforme", leyenda, ANCHO_CONTENIDO, TEXTO.menor, PALETA.tenue));
 
     botonAbajo(tarjeta, "btnTerminarTurno", "Terminar el turno", alTerminar);
+    // Repetir sin pasar por el menú: para reintentar de inmediato y para
+    // grabar el turno otra vez sin volver a entrar por el portal.
+    botonAbajo(tarjeta, "btnRepetirTurno", "Repetir turno", alRepetir, {
+      variante: "secundario",
+      segundo: true,
+    });
     ajustarAlContenido(tarjeta, columna, 94);
   }
 
@@ -667,7 +703,50 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
       ajustarAlContenido(tarjeta, columna, PIE);
     },
 
-    mostrarRecuento(recuento, alTerminar) {
+    mostrarPausa(alSeguir, alSalir) {
+      const titulo = "Turno en pausa";
+      const aviso =
+        "El reloj está detenido y la sala también. Puedes seguir donde estabas.";
+      const nota =
+        "Si sales ahora, el turno no queda registrado: no hay nota ni queda en el historial. " +
+        "Para que cuente hay que llegar a las 20:00.";
+      const alto =
+        MARCO_VERTICAL +
+        28 +
+        altoDeTexto(titulo, ANCHO_CONTENIDO, TEXTO.titulo) +
+        18 +
+        altoDeTexto(aviso, ANCHO_CONTENIDO, TEXTO.destacado) +
+        22 +
+        altoDeTexto(nota, ANCHO_CONTENIDO, TEXTO.menor);
+      const { tarjeta, columna } = armarCapa("Pausa", alto, PALETA.dato);
+      pausaPuesta = true;
+
+      columna.addControl(crearRotulo("rotuloPausa", "TURNO EN PAUSA"));
+      columna.addControl(crearEspacio("aireRotuloPausa", 10));
+      columna.addControl(crearParrafo("tituloPausa", titulo, ANCHO_CONTENIDO, TEXTO.titulo, PALETA.titulo, "600"));
+      columna.addControl(crearEspacio("aireAvisoPausa", 18));
+      columna.addControl(crearParrafo("avisoPausa", aviso, ANCHO_CONTENIDO, TEXTO.destacado, PALETA.cuerpo));
+      columna.addControl(crearEspacio("aireNotaPausa", 22));
+      columna.addControl(crearParrafo("notaPausa", nota, ANCHO_CONTENIDO, TEXTO.menor, PALETA.tenue));
+
+      botonAbajo(tarjeta, "btnSeguirTurno", "Seguir en el turno", () => {
+        pausaPuesta = false;
+        alSeguir();
+      });
+      botonAbajo(tarjeta, "btnSalirTurno", "Salir del turno", () => {
+        pausaPuesta = false;
+        alSalir();
+      }, { variante: "secundario", segundo: true });
+    },
+
+    cerrarPausa() {
+      if (!pausaPuesta) return false;
+      pausaPuesta = false;
+      retirarCapa();
+      return true;
+    },
+
+    mostrarRecuento(recuento, alTerminar, alRepetir) {
       const total = recuento.rondas.length;
       const completas = recuento.rondas.filter((ronda) => ronda.completa).length;
       const incompletas = total - completas;
@@ -766,14 +845,14 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
 
       if (recuento.situaciones.length === 0) {
         botonAbajo(tarjeta, "btnVerNota", "Ver la nota", () =>
-          setTimeout(() => mostrarInforme(recuento.informe, alTerminar), 0)
+          setTimeout(() => mostrarInforme(recuento.informe, alTerminar, alRepetir), 0)
         );
         return;
       }
       botonAbajo(tarjeta, "btnVerSituaciones", "Ver las situaciones", () =>
         // Un tick después: la capa que se retira todavía está repartiendo
         // este clic (ver retirarCapa).
-        setTimeout(() => mostrarSituacionesTurno(recuento, alTerminar), 0)
+        setTimeout(() => mostrarSituacionesTurno(recuento, alTerminar, alRepetir), 0)
       );
     },
 

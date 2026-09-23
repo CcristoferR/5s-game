@@ -16,9 +16,11 @@ import {
   type AbstractMesh,
   type BaseTexture,
   type Light,
+  SpotLight,
 } from "@babylonjs/core";
 import { crearFarol } from "./ModelosCalle";
 import { crearAuto, crearArbolFrondoso } from "./ModelosExterior";
+import { montarCorral } from "./CarroSupermercado";
 import { crearAzar, fbm } from "./TexturasPBR";
 
 // ===========================================================================
@@ -56,8 +58,11 @@ import { crearAzar, fbm } from "./TexturasPBR";
 // techo teñirían la calle de blanco frío. La sombra se calcula una sola vez:
 // fuera no se mueve nada.
 
-/** Cara exterior del muro de la fachada. */
-const FACHADA_Z = 7.567;
+/**
+ * Cara de fuera del muro de las vidrieras: retranqueado bajo el vuelo de la
+ * franja verde, que llega a 7,567. Ver FachadaSupermercado.
+ */
+const VIDRIERA_Z = 7.282;
 const VEREDA_LOCAL_Z = 9.6;
 const ESTACIONAMIENTO_FIN_Z = 21.2;
 const BANDEJON_FIN_Z = 22.4;
@@ -72,8 +77,15 @@ const PUERTA_X = 3.03;
 export interface Exterior {
   /** Todo lo de fuera, para dejarlo fuera de las luces de la sala. */
   mallas: AbstractMesh[];
-  /** El sol y el cielo: las únicas luces que alumbran fuera. */
+  /** El sol, el cielo y los faroles: las únicas luces que alumbran fuera. */
   luces: Light[];
+  /**
+   * Pone la luz de fuera a esa hora del día, en horas con decimales (16,5 son
+   * las 16:30). Se llama cada minuto del turno: el sol baja, el cielo se
+   * enciende de naranjo y después se apaga, las ventanas de enfrente y los
+   * faroles se van encendiendo.
+   */
+  ajustarHora(hora: number): void;
   /**
    * Avisa cuando el reflejo del exterior está dibujado, con la textura. Se
    * dibuja una vez, en el primer cuadro.
@@ -82,14 +94,79 @@ export interface Exterior {
 }
 
 /**
+ * Aparta la cara de fuera de una malla del edificio en una malla propia: la
+ * fachada por fuera, los costados, el muro del fondo y la losa del techo.
+ *
+ * ─── POR QUÉ ─────────────────────────────────────────────────────────────
+ *
+ * El modelo trae el edificio en una sola malla, por dentro y por fuera, y la
+ * alumbraban las luces de la sala. De día pasaba, pero con la tarde avanzando
+ * el estacionamiento se oscurecía y la fachada seguía blanca como a mediodía.
+ * Separada, la cara de fuera la alumbran el sol y el cielo, y se apaga con
+ * ellos; la de dentro sigue con los tubos de la sala.
+ *
+ * Por triángulos, según dónde cae su centro: a menos de un medio muro de la
+ * cara exterior del edificio, o por encima del cielo raso. Y lo que diga
+ * `tambien`: las vidrieras van retranqueadas bajo la franja verde, y su cara
+ * de fuera y el plafón no están en la cara exterior del conjunto. Los cantos
+ * de los vanos quedan dentro: se ven desde la sala.
+ *
+ * @returns La malla de fuera, o null si no había nada fuera.
+ */
+export function separarLoDeFuera(
+  malla: Mesh,
+  cieloRaso: number,
+  tambien: (centro: Vector3, normal: Vector3) => boolean = () => false
+): Mesh | null {
+  const pos = malla.getVerticesData(VertexBuffer.PositionKind);
+  const indices = malla.getIndices();
+  if (!pos || !indices) return null;
+  const mundo = malla.computeWorldMatrix(true);
+  const caja = malla.getBoundingInfo().boundingBox;
+  const MEDIO_MURO = 0.085;
+  const dentro: number[] = [];
+  const fuera: number[] = [];
+  const v = [new Vector3(), new Vector3(), new Vector3()];
+  const centro = new Vector3();
+  const normal = new Vector3();
+  for (let t = 0; t < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const i = indices[t + k];
+      Vector3.TransformCoordinatesFromFloatsToRef(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2], mundo, v[k]);
+    }
+    centro.copyFrom(v[0]).addInPlace(v[1]).addInPlace(v[2]).scaleInPlace(1 / 3);
+    Vector3.CrossToRef(v[1].subtract(v[0]), v[2].subtract(v[0]), normal);
+    normal.normalize();
+    const esFuera =
+      centro.z > caja.maximumWorld.z - MEDIO_MURO ||
+      centro.z < caja.minimumWorld.z + MEDIO_MURO ||
+      centro.x > caja.maximumWorld.x - MEDIO_MURO ||
+      centro.x < caja.minimumWorld.x + MEDIO_MURO ||
+      centro.y > cieloRaso + 0.15 ||
+      tambien(centro, normal);
+    (esFuera ? fuera : dentro).push(indices[t], indices[t + 1], indices[t + 2]);
+  }
+  if (!fuera.length) return null;
+  const copia = malla.clone(`${malla.name} (fuera)`, malla.parent)!;
+  copia.makeGeometryUnique();
+  copia.setIndices(fuera);
+  malla.setIndices(dentro);
+  copia.freezeWorldMatrix();
+  return copia;
+}
+
+/**
  * Monta el exterior.
  *
  * @param proyectan  Lo de la escena que tiene que dar sombra fuera: el
  *                   edificio del local, que a esta hora tapa el sol de parte
  *                   del estacionamiento.
+ * @param deFuera    Mallas del modelo que están fuera y alumbra el sol, no la
+ *                   sala: la cara exterior del edificio (ver separarLoDeFuera).
  */
-export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exterior {
-  const mallas: AbstractMesh[] = [];
+export function construirExterior(scene: Scene, proyectan: AbstractMesh[], deFuera: AbstractMesh[] = []): Exterior {
+  const mallas: AbstractMesh[] = [...deFuera];
+  deFuera.forEach((m) => (m.receiveShadows = true));
   const guardar = <T extends AbstractMesh>(m: T): T => {
     m.isPickable = false;
     mallas.push(m);
@@ -138,8 +215,10 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
   // Un piso de fondo muy grande, para que nada se asome al vacío mirando de
   // canto por la última vidriera.
   losa("fondoExterior", -320, 320, -80, 420, -0.03, 0, pasto, 6);
-  // La vereda del local, un bordillo por encima del estacionamiento.
-  losa("veredaLocal", -12, 12.5, FACHADA_Z, VEREDA_LOCAL_Z, 0, SOLERA, concreto, 2.4);
+  // La vereda del local, un bordillo por encima del estacionamiento. Llega
+  // hasta el muro de las vidrieras, por debajo del vuelo de la franja: sin
+  // ese trozo quedaba una zanja de un palmo al pie de la fachada.
+  losa("veredaLocal", -12, 12.5, VIDRIERA_Z, VEREDA_LOCAL_Z, 0, SOLERA, concreto, 2.4);
   losa("estacionamiento", -19, 15, VEREDA_LOCAL_Z, ESTACIONAMIENTO_FIN_Z, 0.004, 0, asfalto, 5);
   losa("bandejon", -60, 60, ESTACIONAMIENTO_FIN_Z, BANDEJON_FIN_Z, 0, SOLERA * 0.8, pasto, 3);
   losa("veredaPublica", -60, 60, BANDEJON_FIN_Z, VEREDA_Z, 0, SOLERA, concreto, 2.4);
@@ -240,6 +319,24 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
   // Uno estacionado en la calle, junto a la vereda de enfrente.
   estacionar("autoExterior_calle", new Color3(0.08, 0.18, 0.32), "PT·GS·55", -9.5, CALLE_FIN_Z - 1.2, 0, true);
 
+  // --- Los carros ---------------------------------------------------------------------
+  //
+  // Cinco encajados en fila contra la fachada, a la derecha de la puerta, con
+  // el manillar del último hacia ella: el que entra coge ese. Bajo el vuelo de
+  // la franja verde y delante de la segunda vidriera, que es desde donde se
+  // ven desde la sala.
+  //
+  // ─── POR QUÉ AFUERA ─────────────────────────────────────────────────────
+  //
+  // Adentro no hay sitio que no sea de paso: entre la puerta, las antenas y
+  // la fila de góndolas, un corral le quitaba al guardia medio acceso. Afuera
+  // no estorba a nadie: el jugador no sale del local, y la gente que entra y
+  // sale camina por la vereda a 8,3 m o más —medido en sus recorridos—,
+  // mientras la fila llega a 7,93. Nadie la atraviesa.
+  const corral = montarCorral(scene, { x: 6.15, y: SOLERA, z: 7.66, rumbo: Math.PI / 2 }, 5);
+  corral.mallas.forEach((m) => guardar(m));
+  materialesAuto.push(...corral.reflejan);
+
   // --- Árboles y faroles ------------------------------------------------------------------
 
   const follaje = new PBRMaterial("matFollajeExterior", scene);
@@ -273,12 +370,14 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
   luminaria.albedoColor = new Color3(0.85, 0.86, 0.84);
   luminaria.roughness = 0.3;
   luminaria.metallic = 0;
+  const focosFarol: Vector3[] = [];
   [-11, 16].forEach((x, i) => {
     const f = crearFarol(scene, `farolExterior_${i}`, 7.5, poste, luminaria);
     f.raiz.position.set(x, SOLERA, VEREDA_Z - 0.5);
     // El brazo, sobre la calzada.
     f.raiz.rotation.y = -Math.PI / 2;
     f.raiz.computeWorldMatrix(true);
+    focosFarol.push(f.bulbo());
     for (const m of porMaterial(f.mallas)) {
       guardar(m);
       dan.push(m);
@@ -297,6 +396,7 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
     { x0: 28.5, x1: 42, alto: 11.2, pisos: 3, muro: "#eeeeea", marco: "#2b2f33", local: "CAFÉ", colorLocal: "#5a3a26", toldo: ["#3d2a1e", "#3d2a1e"] },
   ];
   const Z_FRENTE = VEREDA_ENFRENTE_FIN_Z + 0.8;
+  const fachadasNoche: PBRMaterial[] = [];
   EDIFICIOS.forEach((e, i) => {
     const ancho = e.x1 - e.x0;
     const fondo = 12;
@@ -313,7 +413,13 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
     const fachada = MeshBuilder.CreatePlane(`fachadaEnfrente_${i}`, { width: ancho, height: e.alto }, scene);
     fachada.position.set((e.x0 + e.x1) / 2, e.alto / 2, Z_FRENTE);
     const mat = new PBRMaterial(`matFachadaEnfrente_${i}`, scene);
-    mat.albedoTexture = texturaFachada(scene, `texFachadaEnfrente_${i}`, e, 100 + i * 13);
+    const pintada = texturaFachada(scene, `texFachadaEnfrente_${i}`, e, 100 + i * 13);
+    mat.albedoTexture = pintada.albedo;
+    // Las ventanas que se encienden al caer la tarde, y el letrero del local.
+    // Apagadas de día: el color emisivo arranca en negro.
+    mat.emissiveTexture = pintada.luz;
+    mat.emissiveColor = new Color3(0, 0, 0);
+    fachadasNoche.push(mat);
     mat.roughness = 0.82;
     mat.metallic = 0;
     fachada.material = mat;
@@ -353,46 +459,121 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
     reflejados.push(m);
     return guardar(m);
   };
-  lejos("ciudadLejana", texturaCiudad(scene), 520, 64, 150, 30);
-  lejos("cordillera", texturaCordillera(scene), 3400, 260, 820, 105);
+  const pintadaCiudad = texturaCiudad(scene);
+  const ciudad = lejos("ciudadLejana", pintadaCiudad.bloques, 520, 64, 150, 30);
+  const cordillera = lejos("cordillera", texturaCordillera(scene), 3400, 260, 820, 105);
+  // Las luces de la ciudad: un segundo plano apenas delante, que se enciende
+  // al anochecer. Aditivo: suma luz sobre los bloques sin taparlos.
+  const lucesCiudad = lejos("lucesCiudad", pintadaCiudad.luces, 520, 64, 149.6, 30);
+  const matLucesCiudad = lucesCiudad.material as StandardMaterial;
+  matLucesCiudad.alphaMode = 1; // ADD
+  matLucesCiudad.alpha = 0;
+  lucesCiudad.isVisible = false;
 
   // --- El cielo ---------------------------------------------------------------------------------
 
-  const cielo = MeshBuilder.CreateSphere("cieloTarde", { diameter: 1900, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
-  const matCielo = new StandardMaterial("matCieloTarde", scene);
-  matCielo.emissiveTexture = texturaCielo(scene);
-  matCielo.disableLighting = true;
-  matCielo.backFaceCulling = false;
-  cielo.material = matCielo;
-  cielo.infiniteDistance = true;
-  guardar(cielo);
-  reflejados.push(cielo);
+  // ─── TRES CIELOS Y NO UNO ────────────────────────────────────────────────
+  //
+  // La tarde, el ocaso y el anochecer, pintados cada uno con su luz, en tres
+  // esferas una dentro de otra. La de dentro se va haciendo opaca con la hora
+  // y tapa a la de fuera: el cielo no se retiñe, se funde, que es como cambia
+  // de verdad —el naranjo sube desde el horizonte, no cae sobre todo a la
+  // vez—.
+  const capaCielo = (nombre: string, estilo: EstiloCielo, diametro: number, orden: number): StandardMaterial => {
+    const esfera = MeshBuilder.CreateSphere(nombre, { diameter: diametro, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
+    const mat = new StandardMaterial(`mat_${nombre}`, scene);
+    mat.emissiveTexture = texturaCielo(scene, `tex_${nombre}`, estilo);
+    mat.disableLighting = true;
+    mat.backFaceCulling = false;
+    esfera.material = mat;
+    esfera.infiniteDistance = true;
+    esfera.alphaIndex = orden;
+    guardar(esfera);
+    reflejados.push(esfera);
+    return mat;
+  };
+  capaCielo("cieloTarde", "tarde", 1900, 0);
+  const cieloOcaso = capaCielo("cieloOcaso", "ocaso", 1880, 1);
+  const cieloNoche = capaCielo("cieloNoche", "noche", 1860, 2);
+  cieloOcaso.alpha = 0;
+  cieloNoche.alpha = 0;
 
   // --- Luz de tarde ---------------------------------------------------------------------------
 
   // Por detrás y a la derecha del local, bajo: alumbra de lleno la hilera de
   // enfrente —que es lo que se ve desde dentro— y tiende las sombras de los
   // autos hacia la calle.
-  const sol = new DirectionalLight("solTarde", new Vector3(-0.52, -0.46, 0.72).normalize(), scene);
+  // ─── EL SOL VIENE DE LA CALLE ────────────────────────────────────────
+  //
+  // Antes caía desde detrás del edificio: el estacionamiento quedaba a la
+  // sombra del local, la fachada también, y por las vidrieras no entraba nada
+  // —la luz se cortaba en el vidrio y dentro eran las cuatro de la tarde para
+  // siempre—.
+  //
+  // Ahora está del lado de la calle y a la altura de una tarde: entra por los
+  // huecos y deja sus manchas en el piso de la sala, que se alargan y se
+  // enrojecen según baja. De paso, la fachada del local se ve iluminada desde
+  // el estacionamiento y los edificios de enfrente quedan a contraluz, que es
+  // lo que se ve al mirar hacia un poniente.
+  const sol = new DirectionalLight("solTarde", new Vector3(-0.35, -0.56, -0.75).normalize(), scene);
   sol.position = new Vector3(40, 45, -50);
   sol.diffuse = new Color3(1, 0.87, 0.7);
   sol.specular = new Color3(1, 0.9, 0.78);
-  sol.intensity = 3.1;
+  sol.intensity = 3.6;
   const cieloLuz = new HemisphericLight("cieloLuzTarde", new Vector3(0, 1, 0), scene);
   cieloLuz.diffuse = new Color3(0.6, 0.7, 0.88);
   cieloLuz.groundColor = new Color3(0.36, 0.34, 0.31);
   cieloLuz.intensity = 0.95;
-  // Solo lo de fuera. Los materiales de la sala ni se enteran de estas dos.
-  sol.includedOnlyMeshes = [...mallas];
+  // Los faroles, a oscuras hasta que anochece. Luz de sodio, cálida, y hacia
+  // abajo: un cono y no una bombilla, que un farol alumbra la vereda y la
+  // calle, no las fachadas de enfrente. Con una luz puntual la del súper, a
+  // quince metros, quedaba iluminada como de día.
+  const lucesFarol = focosFarol.map((p, i) => {
+    const l = new SpotLight(`luzFarolExterior_${i}`, p.subtract(new Vector3(0, 0.2, 0)), new Vector3(0, -1, 0), 2.1, 2, scene);
+    l.diffuse = new Color3(1, 0.74, 0.42);
+    // Poco brillo: sobre las fachadas lisas el reflejo del farol era una
+    // mancha.
+    l.specular = new Color3(0.35, 0.26, 0.15);
+    // Encendida desde el principio, a cero: prenderla a media tarde
+    // cambiaría cuántas luces tiene cada material de fuera, y recompilarlos
+    // todos de golpe se notaría como un tirón justo al anochecer.
+    l.intensity = 0;
+    l.range = 24;
+    return l;
+  });
+  // El cielo y los faroles, solo fuera: los materiales de la sala ni se
+  // enteran de ellos.
+  //
+  // El SOL no: alumbra toda la escena, porque tiene que poder entrar por las
+  // vidrieras. Lo que lo detiene no es una lista de mallas sino el propio
+  // edificio, que proyecta su sombra y deja la sala a oscuras salvo por los
+  // huecos. Eso es lo que dibuja las manchas en el piso.
   cieloLuz.includedOnlyMeshes = [...mallas];
+  lucesFarol.forEach((l) => (l.includedOnlyMeshes = [...mallas]));
 
   // Sombras: una vez, al arrancar. Fuera no se mueve nada.
   const sombras = new ShadowGenerator(2048, sol);
   sombras.usePercentageCloserFiltering = true;
   sombras.filteringQuality = ShadowGenerator.QUALITY_HIGH;
-  sombras.bias = 0.0006;
-  sombras.normalBias = 0.015;
-  sombras.darkness = 0.25;
+  // Con el sol entrando por los huecos, el mapa de sombras dejó de ser un
+  // adorno del estacionamiento: es lo que recorta las manchas en el piso de la
+  // sala. Los sesgos son los que evitan que el suelo se raye a sí mismo con
+  // luz tan rasante, sin despegar la sombra de lo que la proyecta.
+  sombras.bias = 0.0009;
+  sombras.normalBias = 0.02;
+  // Sombra de verdad, no a medias.
+  //
+  // Estaba en 0,25: donde había sombra seguía entrando la cuarta parte del
+  // sol. Fuera no se notaba, pero dentro sí —el sol atravesaba el techo a un
+  // cuarto de fuerza y la sala entera quedaba plana, sin las manchas de las
+  // vidrieras—. A oscuras del sol, lo que queda es el cielo y las luminarias,
+  // que es exactamente lo que alumbra una sala a la sombra.
+  sombras.darkness = 0.04;
+  // El fondo del mapa, acotado a mano: con el rango por defecto —el de la
+  // cámara, que llega a mil metros— la precisión se reparte entre la sala y
+  // la cordillera, y las manchas del piso salen dentadas.
+  sol.shadowMinZ = 6;
+  sol.shadowMaxZ = 130;
   dan.forEach((m) => sombras.addShadowCaster(m, false));
   const mapa = sombras.getShadowMap();
   if (mapa) mapa.refreshRate = 0;
@@ -416,9 +597,125 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[]): Exte
     esperan.forEach((f) => f(sonda.cubeTexture));
   });
 
+  // ─── LA HORA ─────────────────────────────────────────────────────────────
+  //
+  // Todo por tramos suaves de la hora del día. El sol va de 34 grados a las
+  // 16:00 a ponerse hacia las 19:45; su color, de blanco tibio a dorado y a
+  // naranjo; el cielo, de la capa de tarde a la de ocaso y a la de noche. Las
+  // ventanas de enfrente y los faroles se encienden en el último tramo.
+  /**
+   * Por dónde anda el sol a cada hora, en radianes de brújula: la dirección
+   * en la que VIAJA la luz, con Z hacia la calle.
+   *
+   * No solo baja: también se corre de lado, y eso es lo que hace que las
+   * manchas de las vidrieras barran el piso a lo largo de la tarde en vez de
+   * quedarse clavadas alargándose.
+   */
+  const AZIMUT_TARDE = (202 * Math.PI) / 180;
+  const AZIMUT_OCASO = (158 * Math.PI) / 180;
+
+  /**
+   * Desde dónde mira el sol para dibujar sus sombras.
+   *
+   * ─── POR QUÉ HAY QUE MOVERLO A MANO ──────────────────────────────────
+   *
+   * Una luz direccional no tiene sitio —sus rayos son paralelos—, pero su
+   * mapa de sombras sí: se dibuja desde `position` mirando en `direction`, y
+   * lo que queda por detrás de ese punto no entra en el mapa y sale sin
+   * sombra. Al traer el sol al lado de la calle, su posición se quedó donde
+   * estaba, detrás del edificio: el mapa miraba hacia afuera y la sala entera
+   * quedaba iluminada como si no tuviera techo.
+   *
+   * Así que en cada cambio de hora se le vuelve a poner enfrente: a sesenta
+   * metros del centro de la escena, en contra de por donde viene.
+   */
+  const CENTRO_ESCENA = new Vector3(0, 2, 6);
+  const LEJOS_DEL_SOL = 60;
+  const entre = (h: number, a: number, b: number): number => {
+    const t = Math.min(1, Math.max(0, (h - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const mezclar = (a: Color3, b: Color3, t: number): Color3 => Color3.Lerp(a, b, t);
+  let ultimaSombra = -1;
+  let ultimaSonda = -1;
+  const ajustarHora = (h: number): void => {
+    // Sol: baja de 28 grados a ponerse, y se corre de lado mientras lo hace.
+    //
+    // ─── POR QUÉ 28 Y POR QUÉ EN LÍNEA RECTA ─────────────────────────
+    //
+    // Por el alero: la franja de la fachada vuela 28 cm sobre las vidrieras y,
+    // con el sol a 34 grados, su sombra cae justo en el dintel y tapa la
+    // ventana entera — no entraba ni un rayo. A 28 pasa raspando, y de ahí
+    // para abajo entra cada vez más adentro.
+    //
+    // Y en línea recta, no con la curva suave de los demás tramos: con ella el
+    // sol se desplomaba a media tarde y a las 18:30 ya estaba tan rasante que
+    // no alumbraba el piso. Así reparte la caída pareja a lo largo del turno,
+    // que es además lo que hace un sol de verdad en cuatro horas.
+    const caida = Math.min(1, Math.max(0, (h - 16) / (19.75 - 16)));
+    const alto = (28 - 28 * caida) * (Math.PI / 180);
+    const elevacion = Math.max(alto, 2 * (Math.PI / 180));
+    const azimut = AZIMUT_TARDE + (AZIMUT_OCASO - AZIMUT_TARDE) * caida;
+    sol.direction = new Vector3(
+      Math.sin(azimut) * Math.cos(elevacion),
+      -Math.sin(elevacion),
+      Math.cos(azimut) * Math.cos(elevacion)
+    );
+    sol.position = CENTRO_ESCENA.subtract(sol.direction.scale(LEJOS_DEL_SOL));
+    const dorado = entre(h, 17.5, 19.2);
+    const naranjo = entre(h, 19.0, 19.7);
+    sol.diffuse = mezclar(mezclar(new Color3(1, 0.87, 0.7), new Color3(1, 0.72, 0.45), dorado), new Color3(1, 0.5, 0.28), naranjo);
+    sol.specular = sol.diffuse;
+    sol.intensity = 3.6 * (1 - 0.3 * dorado) * (1 - entre(h, 19.2, 19.85));
+    // Cielo como luz.
+    const ocaso = entre(h, 18.2, 19.4);
+    const noche = entre(h, 19.4, 20.0);
+    cieloLuz.diffuse = mezclar(mezclar(new Color3(0.6, 0.7, 0.88), new Color3(0.66, 0.56, 0.62), ocaso), new Color3(0.2, 0.25, 0.42), noche);
+    cieloLuz.groundColor = mezclar(new Color3(0.36, 0.34, 0.31), new Color3(0.09, 0.09, 0.11), noche);
+    cieloLuz.intensity = 0.95 - 0.3 * ocaso - 0.43 * noche;
+    // Cielo como fondo.
+    cieloOcaso.alpha = ocaso;
+    cieloNoche.alpha = noche;
+    cieloOcaso.getBindedMeshes().forEach((m) => (m.isVisible = ocaso > 0.001));
+    cieloNoche.getBindedMeshes().forEach((m) => (m.isVisible = noche > 0.001));
+    // Lo lejano, teñido por la luz que le llega. El plano suma su difuso y
+    // su emisivo —sin luces que lo alumbren, los dos son la textura—, así
+    // que el tinte va en los dos; de día, blanco, queda como estaba.
+    const teñir = (m: Mesh, tinte: Color3): void => {
+      const mat = m.material as StandardMaterial;
+      mat.diffuseColor = tinte;
+      mat.emissiveColor = tinte;
+    };
+    teñir(ciudad, mezclar(mezclar(new Color3(1, 1, 1), new Color3(1, 0.8, 0.74), ocaso), new Color3(0.2, 0.22, 0.33), noche));
+    teñir(cordillera, mezclar(mezclar(new Color3(1, 1, 1), new Color3(1, 0.74, 0.7), ocaso), new Color3(0.24, 0.25, 0.38), noche));
+    // Luces de la ciudad, ventanas de enfrente y faroles.
+    const encendido = entre(h, 18.9, 19.8);
+    matLucesCiudad.alpha = encendido;
+    lucesCiudad.isVisible = encendido > 0.001;
+    fachadasNoche.forEach((m) => (m.emissiveColor = new Color3(1, 0.86, 0.62).scale(encendido * 0.95)));
+    const farol = entre(h, 19.1, 19.45);
+    luminaria.emissiveColor = new Color3(1, 0.78, 0.45).scale(farol * 2.4);
+    lucesFarol.forEach((l) => (l.intensity = 70 * farol));
+    // Sombras y reflejo, al día. La sombra se vuelve a dibujar cada vez que
+    // el sol se mueve: el mapa se lee con la dirección nueva del sol, y uno
+    // viejo quedaría corrido. Es una pasada cada par de minutos de reloj,
+    // nada. El reflejo, cada media hora, que es cuando se nota.
+    if (h !== ultimaSombra) {
+      ultimaSombra = h;
+      mapa?.resetRefreshCounter();
+    }
+    const media = Math.floor(h * 2);
+    if (media !== ultimaSonda) {
+      if (ultimaSonda !== -1) sonda.cubeTexture.resetRefreshCounter();
+      ultimaSonda = media;
+    }
+  };
+  ajustarHora(16);
+
   return {
     mallas,
-    luces: [sol, cieloLuz],
+    luces: [sol, cieloLuz, ...lucesFarol],
+    ajustarHora,
     alReflejar(usar) {
       if (lista) usar(lista);
       else esperan.push(usar);
@@ -649,7 +946,7 @@ interface Edificio {
  * ventanas con marco, reflejo de cielo y alguna cortina, el local de abajo
  * con su vitrina y su letrero, y la cornisa.
  */
-function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: number): DynamicTexture {
+function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: number): { albedo: DynamicTexture; luz: DynamicTexture } {
   const ancho = e.x1 - e.x0;
   const PX_M = 64;
   const W = Math.min(2048, Math.round(ancho * PX_M));
@@ -657,7 +954,15 @@ function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: numb
   const sx = W / ancho;
   const sy = H / e.alto;
   const { tex, ctx } = lienzo(scene, nombre, W, H);
+  // La capa de luz: negro, y solo lo que se enciende de noche —la mitad de
+  // las ventanas, la vitrina y el letrero del local—. Va al emisivo, que de
+  // día está apagado.
+  const capa = lienzo(scene, `${nombre}_luz`, W, H);
+  const luz = capa.ctx;
+  luz.fillStyle = "#000000";
+  luz.fillRect(0, 0, W, H);
   const azar = crearAzar(semilla);
+  const azarLuz = crearAzar(semilla + 7);
 
   // Muro.
   ctx.fillStyle = e.muro;
@@ -727,6 +1032,19 @@ function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: numb
     // Parteluz.
     ctx.fillStyle = e.marco;
     ctx.fillRect(x + pw / 2 - 2, y, 4, ph);
+    // De noche: algo más de la mitad encendidas, cada una con su tono —una
+    // lámpara cálida, una tele azulada— y la cortina recortada delante.
+    if (azarLuz() < 0.58) {
+      const tonos = ["#ffd39a", "#ffe2b8", "#ffc98a", "#cfe0ff", "#fff0d6"];
+      const gl = luz.createLinearGradient(0, y, 0, y + ph);
+      const tono = tonos[Math.floor(azarLuz() * tonos.length)];
+      gl.addColorStop(0, tono);
+      gl.addColorStop(1, "#6b4a2c");
+      luz.fillStyle = gl;
+      luz.fillRect(x, y, pw, ph);
+      luz.fillStyle = "rgba(0,0,0,0.55)";
+      luz.fillRect(x + pw / 2 - 2, y, 4, ph);
+    }
   };
 
   for (let piso = 1; piso < e.pisos; piso++) {
@@ -781,6 +1099,23 @@ function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: numb
     ctx.textBaseline = "middle";
     ctx.font = `800 ${Math.round(0.52 * sy)}px system-ui, 'Segoe UI', sans-serif`;
     ctx.fillText(e.local, W / 2, yLocal + 0.53 * sy);
+    // De noche: la vitrina iluminada por dentro y el letrero encendido.
+    const vitrina = luz.createLinearGradient(0, yLocal + 1.1 * sy, 0, H);
+    vitrina.addColorStop(0, "#fff1d2");
+    vitrina.addColorStop(1, "#a07a4a");
+    luz.fillStyle = vitrina;
+    luz.fillRect(margen, yLocal + 1.1 * sy, W - margen * 2, H - yLocal - 1.1 * sy - 0.25 * sy);
+    luz.fillStyle = "rgba(0,0,0,0.5)";
+    for (let k = margen + 20; k < W - margen - 20; k += 70) luz.fillRect(k, yLocal + 1.6 * sy, 40, H - yLocal - 2.0 * sy);
+    luz.fillStyle = e.colorLocal;
+    luz.globalAlpha = 0.55;
+    luz.fillRect(margen - 6, yLocal + 0.15 * sy, W - margen * 2 + 12, 0.75 * sy);
+    luz.globalAlpha = 1;
+    luz.fillStyle = "#ffffff";
+    luz.textAlign = "center";
+    luz.textBaseline = "middle";
+    luz.font = `800 ${Math.round(0.52 * sy)}px system-ui, 'Segoe UI', sans-serif`;
+    luz.fillText(e.local, W / 2, yLocal + 0.53 * sy);
   } else {
     // Sin local: el acceso a los departamentos, con su portal y su reja.
     const pw = 2.4 * sx;
@@ -807,7 +1142,8 @@ function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: numb
   ctx.fillRect(0, 0.22 * sy, W, 3);
 
   tex.update();
-  return tex;
+  capa.tex.update();
+  return { albedo: tex, luz: capa.tex };
 }
 
 function texturaToldo(scene: Scene, nombre: string, [a, b]: [string, string]): DynamicTexture {
@@ -828,12 +1164,19 @@ function texturaToldo(scene: Scene, nombre: string, [a, b]: [string, string]): D
   return tex;
 }
 
-function texturaCiudad(scene: Scene): DynamicTexture {
+function texturaCiudad(scene: Scene): { bloques: DynamicTexture; luces: DynamicTexture } {
   const W = 2048;
   const H = 256;
   const { tex, ctx } = lienzo(scene, "texCiudadLejana", W, H);
   ctx.clearRect(0, 0, W, H);
+  // Las ventanas que se encienden de noche, en su sitio: las mismas del
+  // bloque, una de cada tres. Van aparte, sobre transparente.
+  const capa = lienzo(scene, "texLucesCiudad", W, H);
+  const luz = capa.ctx;
+  luz.clearRect(0, 0, W, H);
+  const tonos = ["#ffd9a0", "#ffe9c4", "#ffcf8a", "#dfe8ff"];
   const azar = crearAzar(31);
+  const azarLuz = crearAzar(33);
   // Dos filas de bloques, la de atrás más velada: el aire los aclara.
   const fila = (color: string, alto: [number, number], ventanas: string): void => {
     let x = 0;
@@ -844,7 +1187,13 @@ function texturaCiudad(scene: Scene): DynamicTexture {
       ctx.fillRect(x, H - h, w, h);
       ctx.fillStyle = ventanas;
       for (let yy = H - h + 8; yy < H - 6; yy += 9) {
-        for (let xx = x + 5; xx < x + w - 5; xx += 8) if (azar() < 0.55) ctx.fillRect(xx, yy, 4, 4);
+        for (let xx = x + 5; xx < x + w - 5; xx += 8) {
+          if (azar() < 0.55) ctx.fillRect(xx, yy, 4, 4);
+          if (azarLuz() < 0.3) {
+            luz.fillStyle = tonos[Math.floor(azarLuz() * tonos.length)];
+            luz.fillRect(xx, yy, 4, 4);
+          }
+        }
       }
       x += w + azar() * 14;
     }
@@ -860,7 +1209,8 @@ function texturaCiudad(scene: Scene): DynamicTexture {
   ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = "source-over";
   tex.update();
-  return tex;
+  capa.tex.update();
+  return { bloques: tex, luces: capa.tex };
 }
 
 function texturaCordillera(scene: Scene): DynamicTexture {
@@ -904,10 +1254,36 @@ function texturaCordillera(scene: Scene): DynamicTexture {
   return tex;
 }
 
-function texturaCielo(scene: Scene): DynamicTexture {
+type EstiloCielo = "tarde" | "ocaso" | "noche";
+
+/**
+ * Los colores de cada cielo: el degradado de cenit a bajo el horizonte y el
+ * tono de las nubes, que al ocaso se tiñen de rosa por debajo y de noche son
+ * sombras contra el azul.
+ */
+const CIELOS: Record<EstiloCielo, { paradas: [number, string][]; nube: [string, string, string]; estrellas: number }> = {
+  tarde: {
+    paradas: [[0, "#2d62ad"], [0.25, "#4a80c6"], [0.4, "#78a4d8"], [0.47, "#b3cde6"], [0.495, "#e4dccb"], [0.51, "#cdd0d0"], [1, "#b9bcbc"]],
+    nube: ["rgba(255,255,255,0.55)", "rgba(236,238,242,0.3)", "rgba(220,225,232,0)"],
+    estrellas: 0,
+  },
+  ocaso: {
+    paradas: [[0, "#243a78"], [0.22, "#3d5392"], [0.36, "#7a78a8"], [0.44, "#d08a8c"], [0.475, "#f09a58"], [0.495, "#fbc56e"], [0.51, "#8a6a5a"], [1, "#5a4a48"]],
+    nube: ["rgba(255,196,160,0.62)", "rgba(236,150,140,0.34)", "rgba(200,120,130,0)"],
+    estrellas: 0,
+  },
+  noche: {
+    paradas: [[0, "#070c22"], [0.25, "#111d44"], [0.4, "#233466"], [0.465, "#46487a"], [0.49, "#8a5e6a"], [0.505, "#2a2630"], [1, "#16151c"]],
+    nube: ["rgba(70,80,120,0.5)", "rgba(40,48,80,0.3)", "rgba(20,24,40,0)"],
+    estrellas: 160,
+  },
+};
+
+function texturaCielo(scene: Scene, nombre: string, estilo: EstiloCielo): DynamicTexture {
   const W = 2048;
   const H = 1024;
-  const { tex, ctx } = lienzo(scene, "texCieloTarde", W, H);
+  const { tex, ctx } = lienzo(scene, nombre, W, H);
+  const cielo = CIELOS[estilo];
   // ─── EL LIENZO VA AL REVÉS ───────────────────────────────────────────────
   //
   // La esfera de Babylon pone v = 0 en el polo de arriba, y el lienzo sube a
@@ -920,15 +1296,16 @@ function texturaCielo(scene: Scene): DynamicTexture {
   // La franja clara del horizonte, estrecha: desde dentro solo se ve el
   // cielo bajo —los primeros quince grados— y con la franja ancha ese cielo
   // salía gris. Así el azul empieza a pocos grados sobre los tejados.
-  g.addColorStop(0, "#2d62ad");
-  g.addColorStop(0.25, "#4a80c6");
-  g.addColorStop(0.4, "#78a4d8");
-  g.addColorStop(0.47, "#b3cde6");
-  g.addColorStop(0.495, "#e4dccb");
-  g.addColorStop(0.51, "#cdd0d0");
-  g.addColorStop(1, "#b9bcbc");
+  cielo.paradas.forEach(([t, c]) => g.addColorStop(t, c));
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
+  // Estrellas, solo de noche y solo lejos del horizonte.
+  const azarE = crearAzar(91);
+  for (let i = 0; i < cielo.estrellas; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${(0.35 + azarE() * 0.5).toFixed(2)})`;
+    const r = azarE() < 0.9 ? 1 : 1.8;
+    ctx.fillRect(azarE() * W, azarE() * H * 0.36, r, r);
+  }
   // Nubes: cúmulos aplastados cerca del horizonte, blancos con el vientre gris.
   const azar = crearAzar(57);
   for (let i = 0; i < 70; i++) {
@@ -940,9 +1317,9 @@ function texturaCielo(scene: Scene): DynamicTexture {
       const y = cy + (azar() - 0.5) * r * 0.5;
       const rr = r * (0.5 + azar() * 0.6);
       const gr = ctx.createRadialGradient(x, y - rr * 0.2, 0, x, y, rr);
-      gr.addColorStop(0, "rgba(255,255,255,0.55)");
-      gr.addColorStop(0.6, "rgba(236,238,242,0.3)");
-      gr.addColorStop(1, "rgba(220,225,232,0)");
+      gr.addColorStop(0, cielo.nube[0]);
+      gr.addColorStop(0.6, cielo.nube[1]);
+      gr.addColorStop(1, cielo.nube[2]);
       ctx.fillStyle = gr;
       ctx.beginPath();
       ctx.ellipse(x, y, rr * 1.6, rr * 0.55, 0, 0, Math.PI * 2);

@@ -375,7 +375,7 @@ export const SITUACIONES: readonly Situacion[] = [
         explicacion:
           "Observar era lo correcto mientras el hecho no estaba completo. Ya lo está: lo viste " +
           "tomarlo, esconderlo y pasar el último punto de pago sin detenerse. Dejarlo salir ahora " +
-          "es tirar a la basura los veinte minutos que llevas sin perderlo de vista, y el informe " +
+          "es tirar a la basura todo el rato que llevas sin perderlo de vista, y el informe " +
           "queda diciendo que viste un hurto y no hiciste nada.",
       },
       {

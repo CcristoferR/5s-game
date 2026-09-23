@@ -10,6 +10,7 @@ import {
   type Material,
 } from "@babylonjs/core";
 import { vestir, MEDIDAS, type Esqueleto } from "./VestuarioFigura";
+import { CARRO } from "./CarroSupermercado";
 import type { Peinado, Rasgos } from "./ModeladoFigura";
 
 // ===========================================================================
@@ -130,6 +131,18 @@ const CANASTO_ARRIBA: [number, number, number] = [0, -0.4, -1.5];
  * que se vea hundirse en ella.
  */
 const DENTRO_DE_LA_PRENDA = new Vector3(0.03, 1.2, 0.12);
+/**
+ * Dónde queda el manillar del carro respecto a los pies de quien lo empuja:
+ * treinta y seis centímetros por delante, a la altura del carro. Con los
+ * brazos de una persona de 1,60 eso deja los codos algo doblados y pegados,
+ * que es como se empuja un carro.
+ */
+const MANILLAR_DELANTE = 0.36;
+/** Del pie de quien empuja al centro del carro. */
+const DISTANCIA_CARRO = MANILLAR_DELANTE - CARRO.asaZ;
+/** Donde cae lo que se echa al carro: el centro del canasto, sobre el fondo. */
+const DENTRO_DEL_CARRO = new Vector3(0, CARRO.fondoY + 0.12, 0);
+
 /** Y en el marco del canasto: justo bajo la boca, asomando al entrar. */
 const DENTRO_DEL_CANASTO = new Vector3(0, -0.27, 0);
 
@@ -236,6 +249,11 @@ export interface OpcionesFigura {
    * que echa cosas al canasto es la que, cuando suena, se lo lleva a la oreja.
    */
   telefono?: boolean;
+  /**
+   * Empuja un carro en vez de llevar canasto: el nodo del carro (ver
+   * CarroSupermercado). Ver "EL CARRO" más abajo.
+   */
+  carro?: TransformNode;
 }
 
 /**
@@ -481,6 +499,11 @@ export interface Figura {
   raiz: TransformNode;
   /** Coloca la figura de golpe, sin caminar. */
   situar(punto: Vector3, mirandoHacia?: Vector3): void;
+  /**
+   * Hacia dónde apunta su carro, si empuja uno: se coloca delante de ella en
+   * esa dirección. Para dejarlo bien puesto al situarla.
+   */
+  situarCarro(rumbo: number): void;
   /** Camina por los puntos, en orden, y avisa al llegar al último. */
   caminar(ruta: Vector3[], velocidad: number, alLlegar?: () => void): void;
   /** Gira suavemente hasta quedar de cara a ese punto, y lo mira a su altura. */
@@ -638,6 +661,34 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   /** Cuánto está caminando ahora, de 0 a 1. Suaviza arrancar y parar. */
   let marcha = 0;
   let reloj = opciones.fase ?? Math.random() * 10;
+
+  // ─── CADA UNO CAMINA A SU MANERA ──────────────────────────────────────
+  //
+  // Todos braceaban igual, con la misma amplitud y la misma zancada, y ocho
+  // personas haciendo exactamente lo mismo en una sala se leen como copias
+  // del mismo muñeco. Estos cuatro números salen del nombre —siempre los
+  // mismos para la misma persona, partida tras partida— y le dan a cada una
+  // su manera de andar: cuánto bracea, cuánto le dura el paso, cuánto se
+  // balancea y cuánto anticipa la cabeza el giro.
+  const dado = (() => {
+    let h = 2166136261;
+    for (let i = 0; i < nombre.length; i++) {
+      h ^= nombre.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (k: number): number => {
+      h = Math.imul(h ^ (k * 2654435761), 16777619);
+      return ((h >>> 8) % 1000) / 1000;
+    };
+  })();
+  const manera = {
+    brazo: 0.26 + dado(1) * 0.14,
+    zancada: 0.93 + dado(2) * 0.14,
+    balanceo: 0.018 + dado(3) * 0.016,
+    anticipa: 0.5 + dado(4) * 0.45,
+    /** Lo que se inclina al andar: unos van más echados hacia delante. */
+    inclina: 0.035 + dado(5) * 0.035,
+  };
   /** A qué altura mira cuando está plantado, si se le dio un punto con altura. */
   let mirada: Vector3 | null = null;
   let cabeceo = 0;
@@ -662,6 +713,47 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   let faseUltima = 0;
   /** Clavada donde está: ni anda, ni bracea, ni gesticula, ni respira. */
   let congelada = false;
+
+  // ─── EL CARRO ─────────────────────────────────────────────────────────
+  //
+  // Tiene su propio rumbo y va siempre delante de ella en esa dirección. Solo
+  // gira mientras ella camina, y la sigue con algo de retraso, como un carro
+  // que se empuja y se tuerce desde el manillar. Parada, el rumbo del carro no
+  // cambia y ella no se mueve de sitio: el carro queda estacionado donde se
+  // detuvo, y ella puede girarse al estante, alargar la mano y echar lo que
+  // coge dentro. Al echar a andar lo retoma tal como quedó.
+  //
+  // Las manos van al manillar solo mientras empuja —caminando y de cara al
+  // carro—; parada, los brazos quedan libres para el gesto.
+  const carro = opciones.carro ?? null;
+  let rumboCarro = 0;
+  let agarre = 0;
+  /** Hacia dónde dio su último paso: la dirección del tramo que camina. */
+  let rumboPaso = 0;
+  /**
+   * La pose de empujar: brazo y antebrazo de modo que la mano quede en el
+   * manillar, calculada con las medidas de esta figura. Dos segmentos, el
+   * codo hacia atrás.
+   */
+  const empuje = (() => {
+    const bajo = (MEDIDAS.cadera + MEDIDAS.hombroY) * escala - CARRO.altoAsa;
+    const l1 = MEDIDAS.brazo * escala;
+    const l2 = MEDIDAS.antebrazo * escala;
+    const d = Math.min(l1 + l2 - 0.005, Math.hypot(bajo, MANILLAR_DELANTE));
+    const codo = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2))));
+    const desvio = Math.asin(Math.min(1, (l2 * Math.sin(codo)) / d));
+    const alHombro = Math.atan2(MANILLAR_DELANTE, bajo);
+    return { hombro: -(alHombro - desvio), codo: -(Math.PI - codo) };
+  })();
+  const ponerCarro = (): void => {
+    if (!carro) return;
+    carro.position.set(
+      raiz.position.x + Math.sin(rumboCarro) * DISTANCIA_CARRO,
+      raiz.position.y,
+      raiz.position.z + Math.cos(rumboCarro) * DISTANCIA_CARRO
+    );
+    carro.rotation.y = rumboCarro;
+  };
 
   /**
    * El brazo con el que se gesticula: el que no lleva nada.
@@ -755,6 +847,28 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       compras.push(copia);
       ajenas.push(copia);
     }
+  } else if (opciones.compras?.plantilla && carro) {
+    // En el carro: sobre el fondo del canasto, repartidas y cada una con su
+    // giro, que es como queda lo que se va echando.
+    const plantilla = opciones.compras.plantilla;
+    const alto = plantilla.getBoundingInfo().boundingBox.extendSize.y * 2;
+    const sitios: [number, number][] = [
+      [-0.09, -0.14],
+      [0.08, 0.1],
+      [-0.06, 0.2],
+      [0.1, -0.18],
+    ];
+    for (let i = 0; i < opciones.compras.cuantas; i++) {
+      const copia = plantilla.clone(nombre + "_compra_" + i, carro) as Mesh;
+      copia.setEnabled(true);
+      const [x, z] = sitios[i % sitios.length];
+      copia.position.set(x, CARRO.fondoY + alto / 2 + 0.005, z);
+      copia.rotation.set(0, 0.7 * i + 0.3, 0);
+      copia.isVisible = false;
+      copia.isPickable = false;
+      compras.push(copia);
+      ajenas.push(copia);
+    }
   } else if (opciones.compras && carga) {
     const matCompra = new PBRMaterial(nombre + "_matCompras", scene);
     matCompra.albedoColor = opciones.compras.color;
@@ -797,11 +911,25 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   function dejaPasar(x: number, z: number, destino: Vector3): boolean {
     const otro = opciones.cederPasoA?.();
     if (!otro) return true;
-    const nueva = Math.hypot(x - otro.x, z - otro.z);
+    // Con carro cuenta también su nariz: el carro va metro y medio por
+    // delante, y sin esto se le metía encima al jugador aunque ella se
+    // detuviera a su distancia.
+    const nariz = carro ? DISTANCIA_CARRO + CARRO.largo / 2 : 0;
+    const distancia = (px: number, pz: number): number => {
+      const cuerpo = Math.hypot(px - otro.x, pz - otro.z);
+      if (!nariz) return cuerpo;
+      return Math.min(cuerpo, Math.hypot(px + Math.sin(rumboCarro) * nariz - otro.x, pz + Math.cos(rumboCarro) * nariz - otro.z));
+    };
+    const nueva = distancia(x, z);
     if (nueva > ESPACIO_PERSONAL) return true;
-    if (nueva >= Math.hypot(raiz.position.x - otro.x, raiz.position.z - otro.z)) return true;
+    if (nueva >= distancia(raiz.position.x, raiz.position.z)) return true;
     // Se le acercaría. Espera, salvo que lleve un rato esperando y el jugador
     // no esté plantado en su destino: entonces sigue. Ver PACIENCIA.
+    //
+    // Con carro no sigue nunca: pasaría con el carro a través del jugador, y
+    // eso se ve mucho más que un hombro. Espera a que se aparte, como hace
+    // cualquiera con un carro lleno en un pasillo.
+    if (carro) return false;
     const enSuDestino = Math.hypot(destino.x - otro.x, destino.z - otro.z) < ESPACIO_PERSONAL;
     return !enSuDestino && esperandoPaso > PACIENCIA;
   }
@@ -853,6 +981,7 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
         if (!cede && (opciones.sueloLibre?.(x, z) ?? true)) {
           raiz.position.x = x;
           raiz.position.z = z;
+          rumboPaso = Math.atan2(dx, dz);
           recorrido += paso;
           avanzando = paso > 0.0005;
         }
@@ -865,14 +994,28 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
 
     // --- Ciclo de caminata --------------------------------------------------
     marcha += ((avanzando ? 1 : 0) - marcha) * Math.min(1, dt * 6);
-    const fase = (recorrido / ZANCADA) * Math.PI * 2;
+    const fase = (recorrido / (ZANCADA * manera.zancada)) * Math.PI * 2;
     const amplitud = marcha;
+
+    if (carro) {
+      // El carro sigue la dirección en que ella AVANZA —la del tramo que
+      // camina—, no hacia dónde mira. Con la mirada, al frenar junto al
+      // estante ya girándose hacia él, o al echar a andar todavía de cara a
+      // él, el carro la seguía medio segundo y metía una esquina en la
+      // góndola: medido, hasta ocho centímetros. Girarse en el sitio no lo
+      // mueve.
+      const tuerce = acortar(rumboPaso - rumboCarro);
+      if (avanzando) rumboCarro += tuerce * Math.min(1, dt * 4);
+      ponerCarro();
+      const deCara = Math.abs(acortar(rumbo - rumboCarro)) < 0.7;
+      agarre += ((marcha > 0.15 && deCara ? 1 : 0) - agarre) * Math.min(1, dt * 5);
+    }
 
     // Inclinación hacia delante al caminar, balanceo de hombros y un vaivén
     // de peso muy leve estando quieto: nadie está perfectamente clavado.
-    cuerpo.rotation.x = 0.05 * amplitud;
+    cuerpo.rotation.x = manera.inclina * amplitud;
     cuerpo.rotation.y = Math.sin(fase) * 0.07 * amplitud;
-    cuerpo.rotation.z = Math.sin(fase) * 0.025 * amplitud + Math.sin(reloj * 0.6) * 0.008 * (1 - amplitud);
+    cuerpo.rotation.z = Math.sin(fase) * manera.balanceo * amplitud + Math.sin(reloj * 0.6) * 0.008 * (1 - amplitud);
 
     esq.caderas.forEach((cadera, i) => {
       const f = fase + (i === 0 ? 0 : Math.PI);
@@ -904,11 +1047,27 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       }
       // Los brazos van al revés que las piernas y algo separados del cuerpo,
       // para que las manos no atraviesen el abrigo.
-      hombro.rotation.x = Math.sin(f) * 0.32 * amplitud + Math.sin(reloj * 0.8 + i) * 0.015 * (1 - amplitud);
+      // Los dos brazos no bracean igual —nadie lo hace—: uno va un poco más
+      // suelto que el otro.
+      const suyo = manera.brazo * (i === 0 ? 1 : 0.88);
+      hombro.rotation.x = Math.sin(f) * suyo * amplitud + Math.sin(reloj * 0.8 + i) * 0.015 * (1 - amplitud);
       hombro.rotation.z = lado * (0.07 + 0.02 * amplitud);
       // El codo nunca se estira del todo, ni parado.
       esq.codos[i].rotation.x = -(0.16 + Math.max(0, Math.sin(f)) * 0.3) * amplitud - 0.12;
     });
+
+    // Empujando el carro: las dos manos al manillar y el cuerpo algo echado
+    // sobre él. Pisa el braceo, que empujando no hay.
+    if (carro && agarre > 0.001) {
+      esq.hombros.forEach((hombro, i) => {
+        const lado = i === 0 ? -1 : 1;
+        hombro.rotation.x += (empuje.hombro - hombro.rotation.x) * agarre;
+        hombro.rotation.z += (lado * 0.06 - hombro.rotation.z) * agarre;
+        esq.codos[i].rotation.x += (empuje.codo - esq.codos[i].rotation.x) * agarre;
+      });
+      cuerpo.rotation.x += 0.07 * agarre;
+      cuerpo.rotation.y *= 1 - 0.6 * agarre;
+    }
 
     // --- El gesto -------------------------------------------------------
     //
@@ -1082,7 +1241,9 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
           activo === "comprar"
             ? carga && !cargaSuelta
               ? Vector3.TransformCoordinates(DENTRO_DEL_CANASTO, carga.nodo.getWorldMatrix())
-              : null
+              : carro
+                ? Vector3.TransformCoordinates(DENTRO_DEL_CARRO, carro.getWorldMatrix())
+                : null
             : Vector3.TransformCoordinates(
                 new Vector3(lado * DENTRO_DE_LA_PRENDA.x, DENTRO_DE_LA_PRENDA.y - cuerpo.position.y, DENTRO_DE_LA_PRENDA.z),
                 cuerpo.getWorldMatrix()
@@ -1146,7 +1307,11 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       objetivo = Math.max(-0.25, Math.min(0.32, Math.atan2(ojos - mirada.y, Math.max(0.3, distancia))));
     }
     cabeceo += (objetivo * (1 - amplitud) - cabeceo) * Math.min(1, dt * 3);
-    cabeza.rotation.y = -cuerpo.rotation.y * 0.75 + giroGesto;
+    // La cabeza va por delante del cuerpo al girar: quien dobla una esquina
+    // mira primero y gira después. Sin esto, la cabeza es un añadido rígido
+    // del tronco.
+    const adelanta = acortar(rumboDeseado - rumbo) * manera.anticipa;
+    cabeza.rotation.y = -cuerpo.rotation.y * 0.75 + giroGesto + Math.max(-0.5, Math.min(0.5, adelanta));
     cabeza.rotation.x = -cuerpo.rotation.x * 0.6 + cabeceo + inclinaGesto + Math.sin(reloj * 0.9) * 0.008;
     cabeza.rotation.z = -cuerpo.rotation.z * 0.8;
   });
@@ -1168,6 +1333,10 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
         rumboDeseado = rumbo;
         raiz.rotation.y = rumbo;
       }
+    },
+    situarCarro(r) {
+      rumboCarro = r;
+      ponerCarro();
     },
     caminar(nuevaRuta, vel, aviso) {
       ruta = nuevaRuta.slice();
@@ -1231,6 +1400,7 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     },
     visible(v) {
       raiz.setEnabled(v);
+      carro?.setEnabled(v);
     },
     dispose() {
       if (observador) scene.onBeforeRenderObservable.remove(observador);

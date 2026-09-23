@@ -6,11 +6,12 @@ import {
   AbstractMesh,
   Mesh,
   ShadowGenerator,
-  PointLight,
   HemisphericLight,
   Color3,
   PBRMaterial,
   Ray,
+  Texture,
+  VertexBuffer,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 import { afinarMateriales } from "./MaterialesModelo";
@@ -237,6 +238,90 @@ export async function cargarSupermercado(
 const PISO_MEDIDO = 0.16;
 
 /**
+ * El cielo raso de la sala, medido en el modelo: la cara de abajo de la losa
+ * del techo. No es el alto del conjunto —ese llega a la losa por encima y a
+ * los letreros—: lo que se cuelga del techo se cuelga de aquí.
+ */
+export const CIELO_RASO = 6.045;
+
+/**
+ * Aparta las UV del suelo de la sala del borde verde del atlas.
+ *
+ * ─── POR QUÉ ─────────────────────────────────────────────────────────────
+ *
+ * El edificio viene texturizado con un solo atlas, y la isla de las baldosas
+ * está rodeada por una franja verde —la de la fachada—. Las UV del suelo
+ * llegan justo hasta ese borde, o lo pisan un pixel: junto a los muros, y
+ * sobre todo mirando el suelo de canto, el filtrado mezclaba el verde y el
+ * piso se veía manchado de verde al pie de las vidrieras.
+ *
+ * Solo se mueven los vértices del suelo que tienen verde a menos de tres
+ * pixeles, y solo lo justo para dejarlo a esa distancia, en el eje en que lo
+ * tienen. En la isla de las baldosas tres pixeles son unos dieciocho
+ * centímetros, repartidos a lo largo de caras de catorce metros: la trama se
+ * estira menos de un uno por ciento, que no se ve. Los vértices del suelo no
+ * los comparte ninguna otra cara —medido—, así que nada más se mueve.
+ *
+ * Asíncrona: hay que leer la textura, y eso espera a que esté cargada. Hasta
+ * entonces el suelo se ve como venía.
+ */
+export async function apartarSueloDelBordeVerde(malla: Mesh, alturaSuelo: number): Promise<void> {
+  const textura = (malla.material as PBRMaterial | null)?.albedoTexture;
+  if (!(textura instanceof Texture)) return;
+  await new Promise<void>((listo) => Texture.WhenAllReady([textura], () => listo()));
+  const leidos = await textura.readPixels();
+  if (!leidos || malla.isDisposed()) return;
+  const pixeles = new Uint8Array(leidos.buffer, leidos.byteOffset, leidos.byteLength);
+  const { width: W, height: H } = textura.getSize();
+  const esVerde = (x: number, y: number): boolean => {
+    const px = Math.min(W - 1, Math.max(0, Math.floor(x)));
+    const py = Math.min(H - 1, Math.max(0, Math.floor(y)));
+    const i = (py * W + px) * 4;
+    return pixeles[i + 1] - pixeles[i] > 25 && pixeles[i + 1] - pixeles[i + 2] > 25;
+  };
+
+  const pos = malla.getVerticesData(VertexBuffer.PositionKind);
+  const uv = malla.getVerticesData(VertexBuffer.UVKind);
+  const indices = malla.getIndices();
+  if (!pos || !uv || !indices) return;
+  const mundo = malla.computeWorldMatrix(true);
+  const v = [new Vector3(), new Vector3(), new Vector3()];
+  const normal = new Vector3();
+  const delSuelo = new Set<number>();
+  for (let t = 0; t < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const i = indices[t + k];
+      Vector3.TransformCoordinatesFromFloatsToRef(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2], mundo, v[k]);
+    }
+    Vector3.CrossToRef(v[1].subtract(v[0]), v[2].subtract(v[0]), normal);
+    normal.normalize();
+    const y = (v[0].y + v[1].y + v[2].y) / 3;
+    if (Math.abs(normal.y) > 0.9 && Math.abs(y - alturaSuelo) < 0.03) {
+      for (let k = 0; k < 3; k++) delSuelo.add(indices[t + k]);
+    }
+  }
+
+  const MARGEN = 3;
+  const nuevas = Float32Array.from(uv);
+  for (const i of delSuelo) {
+    let x = uv[2 * i] * W;
+    let y = uv[2 * i + 1] * H;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (let k = 0; k <= MARGEN; k++) {
+        if (esVerde(x + dx * k, y + dy * k)) {
+          x -= dx * (MARGEN - k + 1);
+          y -= dy * (MARGEN - k + 1);
+          break;
+        }
+      }
+    }
+    nuevas[2 * i] = x / W;
+    nuevas[2 * i + 1] = y / H;
+  }
+  malla.setVerticesData(VertexBuffer.UVKind, nuevas);
+}
+
+/**
  * Altura del suelo que se pisa, medida con un rayo.
  *
  * ─── POR QUÉ NO ES CERO ───────────────────────────────────────────────────
@@ -385,48 +470,32 @@ function medirConjunto(mallas: AbstractMesh[]): { minimo: Vector3; maximo: Vecto
 }
 
 /**
- * Ilumina la sala de ventas.
+ * El relleno ambiental de la sala.
  *
- * ─── POR QUÉ NO SIRVE LA RECETA DEL GARAJE ────────────────────────────────
+ * Una sala de ventas casi no tiene zonas oscuras: la luz rebota en el piso
+ * claro, en los envases y en el cielo raso blanco. Eso es este relleno. El
+ * origen de la luz —las luminarias y sus focos— va aparte, en
+ * LuzSalaSupermercado: sin ellos todo quedaba igual de claro en todas partes.
  *
- * Un galpón se ilumina con unos pocos focos colgados y sombras marcadas; ahí
- * el contraste es parte del sitio. Una sala de ventas es lo contrario: está
- * pensada para que el producto se vea, con luz pareja de techo y casi sin
- * sombra dura. Un supermercado con la iluminación de un taller se lee como un
- * depósito, no como una tienda.
- *
- * Por eso aquí la mayor parte viene del relleno ambiental y los focos solo
- * marcan los pasillos.
- *
- * @param alturaTecho  Altura real de la sala, para colgar los focos debajo.
+ * Más bajo que antes (1,05), porque ahora los focos ponen el resto.
  */
-export function iluminarSupermercado(
-  scene: Scene,
-  alturaTecho: number,
-  pasillos: number[] = [-3.5, 0, 3.5]
-): void {
+export function iluminarSupermercado(scene: Scene): void {
   const relleno =
     (scene.getLightByName("luzRellenoSupermercado") as HemisphericLight | null) ??
     new HemisphericLight("luzRellenoSupermercado", new Vector3(0, 1, 0), scene);
-  // Alto a propósito: en una tienda la luz rebota en el piso brillante y en los
-  // envases, y casi no quedan zonas oscuras.
-  relleno.intensity = 1.05;
+  // ─── POR QUÉ NO MÁS ─────────────────────────────────────────────────
+  //
+  // Porque con el relleno más alto el piso llegaba casi al blanco, y sobre un
+  // piso que ya está en su tope no se nota nada: las manchas del sol que
+  // entran por las vidrieras desaparecían al comprimir la imagen. Bajando el
+  // relleno, la sala se sigue viendo como una tienda bien iluminada y encima
+  // queda sitio para que el sol se note.
+  relleno.intensity = 0.66;
   relleno.diffuse = new Color3(1, 0.99, 0.96);
-  relleno.groundColor = new Color3(0.55, 0.56, 0.6);
-
-  pasillos.forEach((z, i) => {
-    const luz = new PointLight(
-      `luzPasilloSupermercado_${i}`,
-      new Vector3(0, alturaTecho - 0.35, z),
-      scene
-    );
-    // Blanco frío, que es el de los tubos de una sala de ventas. Con luz cálida
-    // el producto se ve apetecible pero el sitio deja de parecer un comercio.
-    luz.diffuse = new Color3(0.96, 0.98, 1);
-    luz.specular = new Color3(0.9, 0.93, 1);
-    luz.intensity = 0.55;
-    luz.range = 12;
-  });
+  // Lo que sube desde el piso, que aquí es un porcelanato claro: es la luz
+  // que le llega al cielo raso, y con el valor de antes el techo se veía
+  // apagado bajo unas luminarias encendidas.
+  relleno.groundColor = new Color3(0.74, 0.75, 0.78);
 }
 
 /**
@@ -438,6 +507,10 @@ export function iluminarSupermercado(
  */
 export function ampliarLucesSupermercado(scene: Scene): void {
   scene.materials.forEach((mat) => {
-    if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = 8;
+    // Diez y no ocho: el relleno, la luz de la bodega y los seis focos de sala
+    // ya eran ocho, y el sol de la tarde —que ahora entra por las vidrieras,
+    // ver ExteriorSupermercado— es una más. Con ocho, la que sobra no se
+    // calcula y no avisa: el sol entraría por unas cosas y por otras no.
+    if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = 10;
   });
 } 

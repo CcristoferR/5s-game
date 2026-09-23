@@ -2,6 +2,7 @@ import { Scene, Vector3, Color3, type Camera } from "@babylonjs/core";
 import { sueloLibre } from "./ZonasSupermercado";
 import { crearFigura, type Figura, type PaletaFigura, type Gesto } from "./Figura";
 import type { Productos, TipoProducto } from "./ProductosSupermercado";
+import { crearCarro, materialesCarro } from "./CarroSupermercado";
 
 // ===========================================================================
 // Los clientes de la sala de ventas
@@ -103,9 +104,15 @@ interface Parada {
    * Sale de la tabla de aquí arriba: la cara de la góndola que tiene al lado.
    */
   mira: { x: number; z: number };
+  /**
+   * Por dónde pasa antes de llegar, sin detenerse. Para quien empuja un carro:
+   * el carro va metro y medio por delante, y los giros tienen que caer donde
+   * cabe, no junto a una góndola.
+   */
+  por?: { x: number; z: number }[];
 }
 
-interface Cliente {
+export interface Cliente {
   /** Da nombre a sus mallas. Dice lo que se ve de lejos. */
   nombre: string;
   altura: number;
@@ -132,9 +139,13 @@ interface Cliente {
   compras?: { color: Color3; cuantas: number };
   /** Si lleva teléfono. Ver la situación del canasto y el teléfono. */
   telefono?: boolean;
+  /** Si empuja un carro en vez de llevar canasto. Ver CarroSupermercado. */
+  carro?: boolean;
 }
 
-const CLIENTES: readonly Cliente[] = [
+// Exportada para el estudio de figuras (depurar-personas.html): sirve para
+// mirar de cerca ropa, cara y accesorios sin cargar el escenario entero.
+export const CLIENTES: readonly Cliente[] = [
   // --- Góndolas ---------------------------------------------------------------
 
   // Primer pasillo. Camisa celeste y canasto: sale del trabajo y pasa a comprar.
@@ -344,15 +355,40 @@ const CLIENTES: readonly Cliente[] = [
       pelo: new Color3(0.3, 0.19, 0.1),
       peinado: "largo",
       prenda: "poleron",
-      accesorio: "canasto",
       zapato: new Color3(0.75, 0.74, 0.72),
       suela: new Color3(0.92, 0.92, 0.9),
       rasgos: { nariz: 0.8, mandibula: 1.2, ancho: 0.94 },
     },
+    // CON CARRO: es la única, que el local es chico. Recorre la fila de
+    // delante hacia la derecha, parando tres veces con el carro estacionado
+    // a lo largo del estante, y vuelve por arriba dando la vuelta por los dos
+    // lados donde hay sitio: por la derecha antes de las cajas y por la
+    // izquierda en el pasillo que corta la fila de delante, a metro y medio de
+    // la punta de la góndola. Así el carro nunca tiene que girar junto a un
+    // estante —va metro y medio por delante de ella y se lo comería—, y llega
+    // a cada parada ya paralelo. Medido en dos vueltas enteras: ninguna
+    // esquina del carro entra en un mueble; la más cercana queda a 16 cm.
+    carro: true,
     ruta: [
-      { x: 1.3, z: 3.1, pausa: 7, mira: { x: 1.3, z: 2.55 } },
-      { x: 4.6, z: 3.1, pausa: 7, mira: { x: 4.6, z: 2.55 } },
-      { x: 2.9, z: 4.2, pausa: 6, mira: { x: 2.9, z: 2.55 } },
+      {
+        x: 1.3,
+        z: 3.2,
+        pausa: 7,
+        mira: { x: 1.3, z: 2.55 },
+        por: [
+          { x: 5.7, z: 3.25 },
+          { x: 6.3, z: 3.8 },
+          { x: 5.8, z: 4.45 },
+          { x: 3.0, z: 4.5 },
+          { x: 0.2, z: 4.5 },
+          { x: -1.2, z: 4.35 },
+          { x: -1.5, z: 3.95 },
+          { x: -1.5, z: 3.4 },
+          { x: -1.15, z: 3.22 },
+        ],
+      },
+      { x: 2.95, z: 3.2, pausa: 6, mira: { x: 2.95, z: 2.55 } },
+      { x: 4.6, z: 3.2, pausa: 7, mira: { x: 4.6, z: 2.55 } },
     ],
     producto: { color: new Color3(0.24, 0.42, 0.62), medidas: [0.12, 0.17, 0.08], tipo: "pasta" },
     compras: { color: new Color3(0.24, 0.42, 0.62), cuantas: 4 },
@@ -520,7 +556,7 @@ export interface Clientes {
  *                   canastos. Sin ellos, cajas lisas del color de la tabla.
  */
 export function crearClientes(scene: Scene, camara: Camera, piso: number, productos: Productos = {}): Clientes {
-  const punto = (p: Parada): Vector3 => new Vector3(p.x, piso, p.z);
+  const punto = (p: { x: number; z: number }): Vector3 => new Vector3(p.x, piso, p.z);
   /** El punto del estante, ya a la altura a la que se le va la vista. */
   const estante = (p: Parada): Vector3 =>
     new Vector3(p.mira.x, piso + ALTURA_ENTREPANO, p.mira.z);
@@ -528,7 +564,14 @@ export function crearClientes(scene: Scene, camara: Camera, piso: number, produc
   /** Quiénes NO se apartan del jugador ahora mismo. Ver cederElPaso. */
   const sinCortesia = new Set<string>();
 
+  // Los carros de la sala, con sus materiales: sin reflejo del entorno,
+  // que dentro no hay. Ver materialesCarro.
+  const materialesSala = CLIENTES.some((c) => c.carro) ? materialesCarro(scene, "sala", false) : null;
+  const carros: ReturnType<typeof crearCarro>[] = [];
+
   const enSala = CLIENTES.map((cliente, i) => {
+    const carro = cliente.carro && materialesSala ? crearCarro(scene, `carro_${cliente.nombre}`, materialesSala) : null;
+    if (carro) carros.push(carro);
     const figura = crearFigura(scene, `cliente_${cliente.nombre}`, {
       paleta: cliente.paleta,
       altura: cliente.altura,
@@ -544,12 +587,19 @@ export function crearClientes(scene: Scene, camara: Camera, piso: number, produc
         plantilla: cliente.producto?.tipo ? productos[cliente.producto.tipo] : undefined,
       },
       telefono: cliente.telefono,
+      carro: carro?.nodo,
     });
     // Ya de cara a su estante, no a la parada siguiente: los que arrancan más
     // tarde pasan varios segundos quietos, y en esos segundos tienen que estar
     // haciendo lo mismo que hacen en cualquier otra pausa.
     figura.situar(punto(cliente.ruta[0]), estante(cliente.ruta[0]));
     figura.mirarHacia(estante(cliente.ruta[0]));
+    // El carro, estacionado hacia donde echará a andar.
+    if (carro) {
+      const desde = cliente.ruta[0];
+      const hacia = cliente.ruta[1].por?.[0] ?? cliente.ruta[1];
+      figura.situarCarro(Math.atan2(hacia.x - desde.x, hacia.z - desde.z));
+    }
     // Quien viene a comprar, compra: el gesto se le pone y no se le quita en
     // todo el turno. Solo se ve estando parado —caminando se apaga solo, ver
     // Figura— así que lo hace en cada pausa delante de una góndola y en
@@ -590,7 +640,8 @@ export function crearClientes(scene: Scene, camara: Camera, piso: number, produc
 
       const siguiente = (c.parada + 1) % c.cliente.ruta.length;
       c.andando = true;
-      c.figura.caminar([punto(c.cliente.ruta[siguiente])], c.cliente.velocidad, () => {
+      const parada = c.cliente.ruta[siguiente];
+      c.figura.caminar([...(parada.por ?? []).map(punto), punto(parada)], c.cliente.velocidad, () => {
         c.andando = false;
         c.parada = siguiente;
         c.espera = c.cliente.ruta[siguiente].pausa;
@@ -695,6 +746,10 @@ export function crearClientes(scene: Scene, camara: Camera, piso: number, produc
     dispose() {
       scene.onBeforeRenderObservable.remove(observador);
       enSala.forEach((c) => c.figura.dispose());
+      carros.forEach((c) => {
+        c.mallas.forEach((m) => m.dispose());
+        c.nodo.dispose();
+      });
     },
   };
 }

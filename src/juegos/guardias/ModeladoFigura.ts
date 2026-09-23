@@ -309,27 +309,39 @@ export function cabezaEsculpida(scene: Scene, nombre: string, rasgos: Rasgos = {
   const malla = esfera(scene, nombre, 48, 72, (dx, dy, dz) => puntoCabeza(dx, dy, dz, rasgos), tonoCara);
   // La cuenca se busca en la malla ya deformada: así el ojo cae en su sitio
   // aunque cambien los rasgos, en vez de flotar delante o hundirse.
-  const ojos = [-1, 1].map((lado) => {
-    const objetivo = { x: lado * 0.031 * (rasgos.ancho ?? 1), y: 0.011 };
-    let mejor = new Vector3(objetivo.x, objetivo.y, 0.08);
-    let distancia = Infinity;
-    for (let i = 0; i <= 48; i++) {
-      const fi = (i / 48) * Math.PI;
-      for (let j = 0; j <= 72; j++) {
-        const te = (j / 72) * Math.PI * 2;
-        const dz = Math.sin(fi) * Math.cos(te);
-        if (dz <= 0) continue;
-        const [x, y, z] = puntoCabeza(Math.sin(fi) * Math.sin(te), Math.cos(fi), dz, rasgos);
-        const d = Math.hypot(x - objetivo.x, y - objetivo.y);
-        if (d < distancia) {
-          distancia = d;
-          mejor = new Vector3(x, y, z);
-        }
+  const ojos = [-1, 1].map((lado) => puntoDeLaCara(lado * 0.031 * (rasgos.ancho ?? 1), 0.011, rasgos)) as [Vector3, Vector3];
+  return { malla, ojos };
+}
+
+/**
+ * Dónde cae un punto de la cara, ya esculpida.
+ *
+ * Se busca el punto de la superficie más cercano a esa altura y ese lado, en
+ * vez de calcularlo a ojo: así los ojos, las cejas y la boca quedan APOYADOS
+ * en la cara aunque los rasgos cambien —una nariz más grande o una mandíbula
+ * más ancha mueven la superficie—, y no flotando delante ni hundidos dentro.
+ *
+ * @param objetivoX  Separación del eje, con signo: negativo a la izquierda.
+ * @param objetivoY  Altura respecto al centro del cráneo.
+ */
+export function puntoDeLaCara(objetivoX: number, objetivoY: number, rasgos: Rasgos = {}): Vector3 {
+  let mejor = new Vector3(objetivoX, objetivoY, 0.08);
+  let distancia = Infinity;
+  for (let i = 0; i <= 48; i++) {
+    const fi = (i / 48) * Math.PI;
+    for (let j = 0; j <= 72; j++) {
+      const te = (j / 72) * Math.PI * 2;
+      const dz = Math.sin(fi) * Math.cos(te);
+      if (dz <= 0) continue;
+      const [x, y, z] = puntoCabeza(Math.sin(fi) * Math.sin(te), Math.cos(fi), dz, rasgos);
+      const d = Math.hypot(x - objetivoX, y - objetivoY);
+      if (d < distancia) {
+        distancia = d;
+        mejor = new Vector3(x, y, z);
       }
     }
-    return mejor;
-  }) as [Vector3, Vector3];
-  return { malla, ojos };
+  }
+  return mejor;
 }
 
 export type Peinado = "corto" | "largo" | "rapado";

@@ -7,6 +7,7 @@ import {
   Color3,
   DynamicTexture,
   MeshBuilder,
+  Texture,
   type AbstractMesh,
   type Scene,
 } from "@babylonjs/core";
@@ -35,6 +36,19 @@ import {
 //
 // Se hace una vez al cargar, con las mallas más livianas: las botellas (60 mil
 // vértices) no hacen falta y no se tocan.
+//
+// ─── Y POR QUÉ SEGUÍAN PARECIENDO BLOQUES ────────────────────────────────
+//
+// Porque en el modelo las cajas están impresas por una sola cara, la que da
+// al pasillo: la de cereal tiene la etiqueta en un costado grande y las otras
+// tres caras de un café liso; la de pasta, una cara impresa y el resto azul
+// marino. En el estante no se nota —solo se ve el frente—, pero en la mano de
+// alguien que se gira, de espaldas o de lado, era un ladrillo de color.
+//
+// Así que a las cajas se les imprime también la cara de atrás, con la misma
+// etiqueta y bien orientada —vista desde atrás se lee derecha, no en espejo—,
+// y los envases se giran un octavo de vuelta: con dos caras impresas y en
+// diagonal, desde cualquier lado se ve al menos una etiqueta de medio lado.
 
 export type TipoProducto = "cereal" | "pasta" | "leche" | "lata";
 
@@ -48,23 +62,62 @@ const DE_DONDE: Record<TipoProducto, string> = {
 };
 
 /**
+ * Cómo se arregla cada envase. Las cajas —la leche también, que es un
+ * tetra— llevan etiqueta atrás y van en diagonal; la lata es un cilindro con
+ * la etiqueta alrededor y no necesita nada.
+ */
+const ARREGLO: Record<TipoProducto, { etiquetaAtras: boolean; diagonal: boolean }> = {
+  cereal: { etiquetaAtras: true, diagonal: true },
+  pasta: { etiquetaAtras: true, diagonal: true },
+  leche: { etiquetaAtras: true, diagonal: true },
+  lata: { etiquetaAtras: false, diagonal: false },
+};
+
+/** Los pixeles de una textura, para saber qué cara de un envase está impresa. */
+interface Pixeles {
+  datos: Uint8Array;
+  ancho: number;
+  alto: number;
+}
+
+async function leerTextura(mesh: Mesh): Promise<Pixeles | null> {
+  const tex = (mesh.material as PBRMaterial | null)?.albedoTexture;
+  if (!(tex instanceof Texture)) return null;
+  await new Promise<void>((listo) => Texture.WhenAllReady([tex], () => listo()));
+  const leidos = await tex.readPixels();
+  if (!leidos) return null;
+  const { width, height } = tex.getSize();
+  return { datos: new Uint8Array(leidos.buffer, leidos.byteOffset, leidos.byteLength), ancho: width, alto: height };
+}
+
+/**
  * Saca un producto de cada clase del modelo.
  *
  * Las plantillas quedan apagadas: no se ven ni cuentan para nada. Quien las
  * use las clona (ver la opción `plantilla` de Figura).
+ *
+ * Asíncrona porque lee las texturas, para saber qué caras están impresas.
  */
-export function extraerProductos(scene: Scene, mallas: readonly AbstractMesh[]): Productos {
+export async function extraerProductos(scene: Scene, mallas: readonly AbstractMesh[]): Promise<Productos> {
   const salida: Productos = {};
-  (Object.keys(DE_DONDE) as TipoProducto[]).forEach((tipo) => {
+  for (const tipo of Object.keys(DE_DONDE) as TipoProducto[]) {
     const fuente = mallas.find((m) => m.name === DE_DONDE[tipo]);
-    if (!(fuente instanceof Mesh)) return;
-    const pieza = unaPieza(scene, fuente, `plantilla_${tipo}`);
+    if (!(fuente instanceof Mesh)) continue;
+    const arreglo = ARREGLO[tipo];
+    const pixeles = arreglo.etiquetaAtras ? await leerTextura(fuente) : null;
+    const pieza = unaPieza(scene, fuente, `plantilla_${tipo}`, arreglo, pixeles);
     if (pieza) salida[tipo] = pieza;
-  });
+  }
   return salida;
 }
 
-function unaPieza(scene: Scene, fuente: Mesh, nombre: string): Mesh | null {
+function unaPieza(
+  scene: Scene,
+  fuente: Mesh,
+  nombre: string,
+  arreglo: { etiquetaAtras: boolean; diagonal: boolean },
+  pixeles: Pixeles | null
+): Mesh | null {
   const pos = fuente.getVerticesData(VertexBuffer.PositionKind);
   const nor = fuente.getVerticesData(VertexBuffer.NormalKind);
   const uv = fuente.getVerticesData(VertexBuffer.UVKind);
@@ -187,6 +240,9 @@ function unaPieza(scene: Scene, fuente: Mesh, nombre: string): Mesh | null {
     if (espejo) nIdx.push(a, d, b);
     else nIdx.push(a, b, d);
   }
+  if (arreglo.etiquetaAtras && nor && uv && pixeles) imprimirAtras(nPos, nNor, nUv, nIdx, pixeles);
+  if (arreglo.diagonal) girarEnY(nPos, nNor, Math.PI / 4);
+
   const datos = new VertexData();
   datos.positions = nPos;
   datos.indices = nIdx;
@@ -198,6 +254,158 @@ function unaPieza(scene: Scene, fuente: Mesh, nombre: string): Mesh | null {
   malla.isPickable = false;
   malla.setEnabled(false);
   return malla;
+}
+
+/**
+ * Imprime la cara de atrás de una caja con la etiqueta del frente.
+ *
+ * Las caras se reconocen por su normal —la caja está centrada en el origen—,
+ * y la impresa es, de las cuatro verticales, la de más variedad de color en
+ * la textura: una etiqueta tiene letras, dibujos y fondo; una cara lisa, un
+ * solo color. (Por el tamaño de sus UV no sirve: medido, las caras lisas
+ * también ocupan su buen trozo de textura.) Se ajusta cómo cae la etiqueta
+ * sobre su cara —una transformación afín de la posición a la UV, por mínimos
+ * cuadrados— y se aplica a la cara opuesta con el eje horizontal dado vuelta:
+ * quien la mira desde atrás tiene la derecha al revés, y así la lee derecha.
+ *
+ * Los vértices de la cara de atrás se duplican antes de cambiarles la UV: si
+ * los compartiera con un costado, el costado se estiraría con ella.
+ */
+function imprimirAtras(pos: number[], nor: number[], uv: number[], idx: number[], pixeles: Pixeles): void {
+  type Cara = "+x" | "-x" | "+z" | "-z";
+  // Hasta dónde llega la caja en cada eje: solo cuentan los triángulos que
+  // están en su borde. Los de la tapa de la leche, que también miran hacia
+  // los lados, quedan cerca del centro y no son la cara de la caja.
+  let bordeX = 0;
+  let bordeZ = 0;
+  for (let i = 0; i < pos.length; i += 3) {
+    bordeX = Math.max(bordeX, Math.abs(pos[i]));
+    bordeZ = Math.max(bordeZ, Math.abs(pos[i + 2]));
+  }
+  const caraDe = (t: number): Cara | null => {
+    const a = idx[t];
+    const b = idx[t + 1];
+    const c = idx[t + 2];
+    const nx = nor[3 * a] + nor[3 * b] + nor[3 * c];
+    const ny = nor[3 * a + 1] + nor[3 * b + 1] + nor[3 * c + 1];
+    const nz = nor[3 * a + 2] + nor[3 * b + 2] + nor[3 * c + 2];
+    if (Math.abs(ny) >= Math.abs(nx) && Math.abs(ny) >= Math.abs(nz)) return null;
+    // El lado por dónde cae el triángulo y no por el signo de la normal: la
+    // caja está centrada, y así no importa hacia dónde gire el triángulo.
+    if (Math.abs(nx) > Math.abs(nz)) {
+      const x = (pos[3 * a] + pos[3 * b] + pos[3 * c]) / 3;
+      if (Math.abs(x) < bordeX * 0.9) return null;
+      return x > 0 ? "+x" : "-x";
+    }
+    const z = (pos[3 * a + 2] + pos[3 * b + 2] + pos[3 * c + 2]) / 3;
+    if (Math.abs(z) < bordeZ * 0.9) return null;
+    return z > 0 ? "+z" : "-z";
+  };
+  const triangulos = new Map<Cara, number[]>();
+  for (let t = 0; t < idx.length; t += 3) {
+    const cara = caraDe(t);
+    if (!cara) continue;
+    let lista = triangulos.get(cara);
+    if (!lista) triangulos.set(cara, (lista = []));
+    lista.push(t);
+  }
+  /**
+   * Cuánto varía el color sobre una cara: se muestrea la textura en una
+   * rejilla de puntos de cada triángulo y se mide la dispersión.
+   */
+  const variedad = (cara: Cara): number => {
+    const { datos, ancho, alto } = pixeles;
+    let suma = 0;
+    let suma2 = 0;
+    let cuenta = 0;
+    for (const t of triangulos.get(cara) ?? []) {
+      const [a, b, c] = [idx[t], idx[t + 1], idx[t + 2]];
+      for (let i = 0; i <= 6; i++) {
+        for (let j = 0; j <= 6 - i; j++) {
+          const wa = i / 6;
+          const wb = j / 6;
+          const wc = 1 - wa - wb;
+          const u = wa * uv[2 * a] + wb * uv[2 * b] + wc * uv[2 * c];
+          const v = wa * uv[2 * a + 1] + wb * uv[2 * b + 1] + wc * uv[2 * c + 1];
+          const x = Math.min(ancho - 1, Math.max(0, Math.floor((((u % 1) + 1) % 1) * ancho)));
+          const y = Math.min(alto - 1, Math.max(0, Math.floor((((v % 1) + 1) % 1) * alto)));
+          const k = (y * ancho + x) * 4;
+          const luz = 0.3 * datos[k] + 0.59 * datos[k + 1] + 0.11 * datos[k + 2];
+          suma += luz;
+          suma2 += luz * luz;
+          cuenta++;
+        }
+      }
+    }
+    if (!cuenta) return 0;
+    const media = suma / cuenta;
+    return Math.sqrt(Math.max(0, suma2 / cuenta - media * media));
+  };
+  const caras: Cara[] = ["+x", "-x", "+z", "-z"];
+  const impresa = caras.reduce((a, b) => (variedad(b) > variedad(a) ? b : a));
+  const opuesta = ((impresa[0] === "+" ? "-" : "+") + impresa[1]) as Cara;
+  // Si atrás ya hay algo impreso, no se toca.
+  if (variedad(opuesta) > variedad(impresa) * 0.5) return;
+
+  // La coordenada horizontal de la cara: z en las de x, x en las de z.
+  const eje = impresa[1] === "x" ? 2 : 0;
+  const verts = new Set<number>();
+  for (const t of triangulos.get(impresa) ?? []) for (let k = 0; k < 3; k++) verts.add(idx[t + k]);
+  // Mínimos cuadrados de u y de v sobre (s, y, 1).
+  const M = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const bu = [0, 0, 0];
+  const bv = [0, 0, 0];
+  for (const i of verts) {
+    const f = [pos[3 * i + eje], pos[3 * i + 1], 1];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) M[3 * r + c] += f[r] * f[c];
+      bu[r] += f[r] * uv[2 * i];
+      bv[r] += f[r] * uv[2 * i + 1];
+    }
+  }
+  const det = (m: number[]): number =>
+    m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+  const resolver = (b: number[]): number[] | null => {
+    const d = det(M);
+    if (Math.abs(d) < 1e-12) return null;
+    return [0, 1, 2].map((col) => {
+      const m = M.slice();
+      for (let r = 0; r < 3; r++) m[3 * r + col] = b[r];
+      return det(m) / d;
+    });
+  };
+  const au = resolver(bu);
+  const av = resolver(bv);
+  if (!au || !av) return;
+
+  for (const t of triangulos.get(opuesta) ?? []) {
+    for (let k = 0; k < 3; k++) {
+      const i = idx[t + k];
+      const nuevo = pos.length / 3;
+      pos.push(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
+      nor.push(nor[3 * i], nor[3 * i + 1], nor[3 * i + 2]);
+      const s = -pos[3 * i + eje];
+      const y = pos[3 * i + 1];
+      uv.push(au[0] * s + au[1] * y + au[2], av[0] * s + av[1] * y + av[2]);
+      idx[t + k] = nuevo;
+    }
+  }
+}
+
+/** Gira posiciones y normales alrededor del eje vertical. */
+function girarEnY(pos: number[], nor: number[], angulo: number): void {
+  const c = Math.cos(angulo);
+  const s = Math.sin(angulo);
+  const girar = (a: number[]): void => {
+    for (let i = 0; i < a.length; i += 3) {
+      const x = a[i];
+      const z = a[i + 2];
+      a[i] = x * c + z * s;
+      a[i + 2] = -x * s + z * c;
+    }
+  };
+  girar(pos);
+  if (nor.length) girar(nor);
 }
 
 /**

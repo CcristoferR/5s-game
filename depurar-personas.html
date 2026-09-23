@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Estudio de personas del supermercado (temporal)</title>
+    <style>
+      html, body { margin: 0; overflow: hidden; height: 100%; background: #000; }
+      #renderCanvas { width: 100%; height: 100%; display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <script type="module">
+      import {
+        Engine, Scene, Vector3, Color3, Color4, FreeCamera, HemisphericLight, DirectionalLight,
+        MeshBuilder, PBRMaterial, ShadowGenerator, DefaultRenderingPipeline, ImageProcessingConfiguration,
+      } from "@babylonjs/core";
+      import { crearFigura } from "/src/juegos/guardias/Figura.ts";
+      import { CLIENTES } from "/src/juegos/guardias/ClientesSupermercado.ts";
+
+      // Estudio para mirar a la gente de cerca —ropa, cara, accesorios y cómo
+      // se mueven— sin cargar los quince megas del supermercado. La luz imita
+      // la de la sala: relleno alto y una luz de techo que marca el volumen.
+      const canvas = document.getElementById("renderCanvas");
+      const engine = new Engine(canvas, true, undefined, false);
+      const scene = new Scene(engine);
+      scene.clearColor = new Color4(0.62, 0.64, 0.67, 1);
+
+      const relleno = new HemisphericLight("relleno", new Vector3(0, 1, 0), scene);
+      relleno.intensity = 0.66;
+      relleno.diffuse = new Color3(1, 0.99, 0.96);
+      relleno.groundColor = new Color3(0.74, 0.75, 0.78);
+      const techo = new DirectionalLight("techo", new Vector3(-0.25, -1, -0.35), scene);
+      techo.intensity = 1.5;
+      techo.position = new Vector3(4, 8, 6);
+      const sombras = new ShadowGenerator(2048, techo);
+      sombras.usePercentageCloserFiltering = true;
+      sombras.darkness = 0.35;
+
+      const suelo = MeshBuilder.CreateGround("suelo", { width: 40, height: 40 }, scene);
+      const matSuelo = new PBRMaterial("matSuelo", scene);
+      matSuelo.albedoColor = new Color3(0.82, 0.83, 0.84);
+      matSuelo.roughness = 0.35;
+      matSuelo.metallic = 0;
+      suelo.material = matSuelo;
+      suelo.receiveShadows = true;
+
+      const camara = new FreeCamera("camara", new Vector3(0, 1.5, 4.2), scene);
+      camara.setTarget(new Vector3(0, 1.1, 0));
+      camara.minZ = 0.02;
+      camara.attachControl(true);
+      camara.keysUp.push(87); camara.keysDown.push(83); camara.keysLeft.push(65); camara.keysRight.push(68);
+      camara.speed = 0.15;
+
+      const tuberia = new DefaultRenderingPipeline("estudio", true, scene, [camara]);
+      tuberia.samples = 4;
+      tuberia.imageProcessing.toneMappingEnabled = true;
+      tuberia.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+      tuberia.imageProcessing.exposure = 1.15;
+      tuberia.imageProcessing.contrast = 1.06;
+
+      const figuras = CLIENTES.map((cliente, i) => {
+        const f = crearFigura(scene, `estudio_${cliente.nombre}`, {
+          paleta: cliente.paleta,
+          altura: cliente.altura,
+          fase: i * 1.3,
+          producto: cliente.producto,
+          compras: cliente.compras,
+          telefono: cliente.telefono,
+        });
+        const x = (i - (CLIENTES.length - 1) / 2) * 1.2;
+        f.situar(new Vector3(x, 0, 0), new Vector3(x, 0, 6));
+        f.visible(true);
+        return { nombre: cliente.nombre, figura: f, x };
+      });
+      scene.meshes.forEach((m) => { if (m !== suelo) sombras.addShadowCaster(m, false); });
+
+      // Para las pruebas: mirar a alguien de cerca, ponerle un gesto o hacerlo
+      // caminar en círculos.
+      window.__estudio = {
+        scene, engine, camara, figuras, Vector3,
+        mirar(nombre, distancia = 1.1, altura = 1.45, angulo = 0.6) {
+          const f = figuras.find((x) => x.nombre === nombre) ?? figuras[0];
+          const cx = f.x + Math.sin(angulo) * distancia;
+          const cz = Math.cos(angulo) * distancia;
+          camara.position.set(cx, altura, cz);
+          camara.setTarget(new Vector3(f.x, altura - 0.12, 0));
+          return f.nombre;
+        },
+        gesto(nombre, cual) {
+          const f = figuras.find((x) => x.nombre === nombre);
+          f?.figura.gesticular(cual);
+        },
+        caminar(nombre) {
+          const f = figuras.find((x) => x.nombre === nombre);
+          if (!f) return;
+          const ida = [new Vector3(f.x, 0, 3), new Vector3(f.x, 0, -3)];
+          const vuelta = () => f.figura.caminar(ida.slice().reverse(), 0.9, () => f.figura.caminar(ida, 0.9, vuelta));
+          f.figura.caminar(ida, 0.9, vuelta);
+        },
+      };
+      engine.runRenderLoop(() => scene.render());
+      await scene.whenReadyAsync(true);
+      window.__listo = true;
+    </script>
+  </body>
+</html>

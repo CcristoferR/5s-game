@@ -18,8 +18,8 @@ import {
 import {
   DURACION_TURNO,
   horaDelTurno,
+  MINUTOS_RONDA_EN_RELOJ,
 } from "./guardias/TurnoSupermercado";
-import { MINUTOS_POR_RONDA } from "./guardias/RondasSupermercado";
 import {
   crearPuestoConserjeria,
 } from "./guardias/PuestoConserjeria";
@@ -54,7 +54,7 @@ const BRIEFINGS: Record<
     contexto:
       `Turno de tarde, de ${horaDelTurno(0)} a ${horaDelTurno(DURACION_TURNO)}, ` +
       "en la sala de ventas. Jefatura solicita una ronda de verificación " +
-      `cada ${MINUTOS_POR_RONDA} minutos por las cuatro zonas del local: entrada, góndolas, ` +
+      `cada ${MINUTOS_RONDA_EN_RELOJ} minutos por las cuatro zonas del local: entrada, góndolas, ` +
       "cajas y bodega. Mientras tanto, en la sala pasan cosas: Central te " +
       "avisará por radio dónde mirar, y tú decides qué hacer. No todo lo que " +
       "parece sospechoso lo es.",
@@ -199,50 +199,64 @@ export function abrirMenuGuardias(
       // ESCENARIO 2
       // =========================================================
       if (numero === 2) {
-        // El turno arranca cuando se levanta la pantalla de carga, no cuando
-        // termina de montarse el escenario. Ver comenzar().
-        let recorrido: RecorridoSupermercado | null = null;
+        // Montar el turno, con su pantalla de carga.
+        //
+        // Va en una función con nombre porque se llama dos veces: al entrar
+        // desde el menú y cuando el jugador pide REPETIR desde la pantalla de
+        // la nota. Repitiendo no se pasa por el menú —el recorrido ya se
+        // desmontó solo, ver salir()— y se ahorra el viaje de ida y vuelta.
+        const montarTurno = (): void => {
+          // El turno arranca cuando se levanta la pantalla de carga, no cuando
+          // termina de montarse el escenario. Ver comenzar().
+          let recorrido: RecorridoSupermercado | null = null;
 
-        void cargarConPantalla(
-          numero,
+          void cargarConPantalla(
+            numero,
 
-          async () => {
-            recorrido = await crearRecorridoSupermercado(
-              scene,
+            async () => {
+              recorrido = await crearRecorridoSupermercado(
+                scene,
 
-              () => {
-                abrirMenuGuardias(
-                  scene,
-                  onVolverAlPortal,
-                  usuario
-                );
-              },
+                (motivo) => {
+                  if (motivo === "repetir") {
+                    montarTurno();
+                    return;
+                  }
+                  abrirMenuGuardias(
+                    scene,
+                    onVolverAlPortal,
+                    usuario
+                  );
+                },
 
-              // Con quien se guarda el turno en el historial, como el
-              // condominio: es lo que deja marcar el escenario aprobado.
-              quienJuega
-            );
+                // Con quien se guarda el turno en el historial, como el
+                // condominio: es lo que deja marcar el escenario aprobado.
+                quienJuega
+              );
 
-            const TOPE_MS =
-              10000;
+              const TOPE_MS =
+                10000;
 
-            await Promise.race([
-              scene.whenReadyAsync(
-                true
-              ),
+              await Promise.race([
+                scene.whenReadyAsync(
+                  true
+                ),
 
-              new Promise<void>(
-                (listo) =>
-                  setTimeout(
-                    listo,
-                    TOPE_MS
-                  )
-              ),
-            ]);
-          },
+                new Promise<void>(
+                  (listo) =>
+                    setTimeout(
+                      listo,
+                      TOPE_MS
+                    )
+                ),
+              ]);
+            },
 
-          BRIEFINGS[numero]
-        ).then(() => recorrido?.comenzar());
+            BRIEFINGS[numero]
+          ).then(() => recorrido?.comenzar());
+        };
+
+        montarTurno();
 
         return;
       }
