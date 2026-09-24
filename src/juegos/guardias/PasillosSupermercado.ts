@@ -78,6 +78,9 @@ export function colgarLetrerosPasillos(scene: Scene, piso: number, techo: number
       letrero.rotation.y = giro;
       letrero.position.set(x, piso + LETRERO_Y, LETRERO_Z + (cara === 0 ? 0.006 : -0.006));
       letrero.isPickable = false;
+      // Cuelga y ahí se queda: Babylon no tiene por qué recalcularle la matriz
+      // de mundo en cada cuadro.
+      letrero.freezeWorldMatrix();
     });
 
     [-1, 1].forEach((lado) => {
@@ -92,6 +95,7 @@ export function colgarLetrerosPasillos(scene: Scene, piso: number, techo: number
       varilla.material = metal;
       varilla.position.set(x + lado * (ANCHO / 2 - 0.1), piso + LETRERO_Y + ALTO / 2 + largoVarilla / 2, LETRERO_Z);
       varilla.isPickable = false;
+      varilla.freezeWorldMatrix();
     });
   });
 }

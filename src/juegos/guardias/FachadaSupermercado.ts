@@ -421,6 +421,18 @@ export function construirFachada(scene: Scene, camara: Camera, piso: number): Fa
     for (const h of hojas) h.nodo.position.x = h.cerrada + h.lado * recorrido;
   });
 
+  // ─── LO QUE NO SE MUEVE, CONGELADO ────────────────────────────────────
+  //
+  // De toda la fachada, lo único que se mueve son las dos hojas de la puerta,
+  // y sus piezas cuelgan de un nodo (`hojaPuerta_*`). Todo lo demás —marcos,
+  // vidrios, derrames, umbral, felpudo, antenas— se coloca y se queda quieto,
+  // así que se le congela la matriz de mundo y Babylon deja de recalcularla en
+  // cada cuadro. La regla es exacta y no hay que mantener una lista: lo que
+  // cuelga de algo se deja en paz, lo que no, se congela.
+  mallas.forEach((malla) => {
+    if (!malla.parent) malla.freezeWorldMatrix();
+  });
+
   const reflejantes = [vidrio];
   return {
     reflejantes,

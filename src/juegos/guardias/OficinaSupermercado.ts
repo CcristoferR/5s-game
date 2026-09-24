@@ -109,6 +109,11 @@ export function construirOficina(scene: Scene, piso: number): Oficina {
     malla.checkCollisions = true;
   });
 
+  // La puerta está cerrada y no se abre nunca: ni ella, ni su marco, ni el
+  // letrero se mueven en todo el turno, así que Babylon no tiene que
+  // recalcularles la matriz de mundo cuadro a cuadro.
+  [hoja, marco, letrero].forEach((malla) => malla.freezeWorldMatrix());
+
   return {
     umbral: new Vector3(MURO_X - 0.25, piso, OFICINA_Z),
     llegada: new Vector3(MURO_X - 1.5, piso, OFICINA_Z),

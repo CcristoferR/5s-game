@@ -1,6 +1,7 @@
 import type { AbstractMesh } from "@babylonjs/core";
 import { PLANTA_BODEGA } from "./BodegaSupermercado";
 import { ZONA_REFRIGERADOS } from "./RefrigeradosSupermercado";
+import { ZONA_CANASTOS } from "./CajaSupermercado";
 
 // ===========================================================================
 // Las cuatro zonas del supermercado
@@ -165,6 +166,9 @@ const MUEBLES: readonly Rectangulo[] = [
   // Los armarios de frío del rincón izquierdo. La huella viene de su propio
   // módulo: si se mueven, se mueve también lo que las figuras esquivan.
   ZONA_REFRIGERADOS,
+  // Y la pila de canastos del principio de la línea de cajas, que está en el
+  // camino de quien va a la oficina. Ver CajaSupermercado.
+  ZONA_CANASTOS,
 ];
 
 /**

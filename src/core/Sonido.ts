@@ -242,8 +242,16 @@ const EMPALME = 4;
 /**
  * El ambiente va bajo a propósito, como el del taller: tiene que sostener la
  * sala por debajo, no competir con la radio ni con los avisos.
+ *
+ * ─── DE DÓNDE SALE EL NÚMERO ──────────────────────────────────────────────
+ *
+ * De comparar energías, no a oído. La grabación tiene un RMS de 0,036 y los
+ * efectos del turno están igualados a 0,11 de RMS, que con su volumen propio
+ * —la radio, 0,6— quedan en 0,066. A 0,25, el ambiente suena en 0,009: unos
+ * 17 dB por debajo de la radio. Ahí se oye el local sin que haya que levantar
+ * la voz por encima de él; estuvo en 0,16 y era un rumor que se perdía.
  */
-const VOLUMEN_SALA = 0.16;
+const VOLUMEN_SALA = 0.25;
 /** Lo que baja cuando el turno se pausa, sin llegar a apagarse. */
 const AGACHADO = 0.25;
 
@@ -314,6 +322,25 @@ function empalmar(ctx: AudioContext, crudo: AudioBuffer): AudioBuffer {
     }
   }
   return salida;
+}
+
+/**
+ * Va bajando y preparando el ambiente sin sonar todavía.
+ *
+ * ─── POR QUÉ HACE FALTA ───────────────────────────────────────────────────
+ *
+ * Porque descargar millón y medio de bytes y decodificar sesenta y ocho
+ * segundos de MP3 lleva unos segundos, y si eso empieza cuando arranca el
+ * turno, el local entra mudo y se enciende tarde. Llamándolo al montar el
+ * nivel —que tarda lo suyo con quince megas de modelo—, para cuando el
+ * jugador cierra la tarjeta de jefatura el audio ya está listo y entra a
+ * tiempo.
+ *
+ * No suena nada ni hace falta que el navegador esté desbloqueado: decodificar
+ * se puede con el contexto dormido.
+ */
+export function precargarAmbienteSala(): void {
+  void cargarSala();
 }
 
 /**

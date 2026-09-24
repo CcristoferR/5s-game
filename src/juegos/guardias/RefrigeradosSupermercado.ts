@@ -13,6 +13,7 @@ import {
 import { materialLiso, bloque, fundir, choque } from "./UtileriaBodega";
 import { materialPintadoNitido } from "../../entities/ObjetosComunes";
 import type { Productos, TipoProducto } from "./ProductosSupermercado";
+import { materialDePrecios, tarjetaPrecio } from "./GraficaSupermercado";
 
 // ===========================================================================
 // Los refrigerados
@@ -216,50 +217,36 @@ export function montarRefrigerados(scene: Scene, piso: number, productos: Produc
     );
   }
 
-  // --- Los portaprecios ---------------------------------------------------
+  // --- Los precios --------------------------------------------------------
   //
-  // La tira de plástico con el precio que llevan todas las baldas de todos los
-  // supermercados. Es lo que distingue un estante de una repisa.
-  //
-  // Doce precios en la textura y tres ventanas: cada balda usa la suya, así
-  // que no se repite la misma tira doce veces. Es una sola textura y una sola
-  // malla; lo que cambia son las UV que se hornean en cada tira.
-  const PRECIOS = [890, 1290, 1750, 2190, 1090, 1540, 990, 2450, 1190, 1690, 850, 1990];
-  const precios = materialPintadoNitido(scene, "matRefriPrecios", 768, 22, 3, (ctx, w, h) => {
-    ctx.fillStyle = "#f2f3f2";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "#c9ccc9";
-    ctx.fillRect(0, h - 2, w, 2);
-    const paso = w / PRECIOS.length;
-    PRECIOS.forEach((precio, i) => {
-      const x = i * paso + 7;
-      ctx.fillStyle = "#1d2a1c";
-      ctx.font = `700 ${Math.round(h * 0.5)}px system-ui, 'Segoe UI', sans-serif`;
-      ctx.fillText("$" + precio, x, h * 0.58);
-      ctx.fillStyle = "rgba(40,50,40,0.5)";
-      for (let b = 0; b < 9; b++) ctx.fillRect(x + b * 2.4, h * 0.74, 1, h * 0.18);
-    });
-  });
-  precios.maxSimultaneousLights = 10;
-  // Planos y no cajas: una caja repartiría la misma etiqueta por sus seis
-  // caras, y en las de los costados saldría además en espejo. La tira solo se
-  // ve de frente.
-  const tiras: Mesh[] = [];
+  // Una tarjeta por balda, la misma que llevan las góndolas y con el precio
+  // del mismo catálogo: la leche del mural vale lo que la leche del estante.
+  // Ver GraficaSupermercado.
+  const tarjetas: Mesh[] = [];
   for (let m = 0; m < MODULOS; m++) {
     const x = IZQUIERDA_X + (m + 0.5) * ANCHO_MODULO;
-    const ancho = ANCHO_MODULO - ESPESOR_TABIQUE - 0.02;
     BALDAS.forEach((alto, i) => {
-      const tira = MeshBuilder.CreatePlane(`refriPrecio_${m}_${i}`, { width: ancho, height: 0.032 }, scene);
-      tira.position.set(x, piso + alto + 0.019, baldaZ - FONDO_BALDA / 2 - 0.004);
-      const uv = tira.getVerticesData(VertexBuffer.UVKind);
-      if (uv) {
-        const ventana = (m + i) % 3;
-        for (let k = 0; k < uv.length; k += 2) uv[k] = (ventana + uv[k]) / 3;
-        tira.setVerticesData(VertexBuffer.UVKind, uv);
-      }
-      tiras.push(tira);
+      const tipo = PLAN[i][m];
+      const tarjeta = tarjetaPrecio(
+        scene,
+        `refriPrecio_${m}_${i}`,
+        // Las mismas claves del catálogo de la sala: así la leche del mural
+        // vale lo que la leche de la góndola. Ver GraficaSupermercado.
+        tipo === "lata" ? "Latas 03" : "Leches",
+        x,
+        piso + alto + 0.026,
+        baldaZ - FONDO_BALDA / 2 - 0.004,
+        0
+      );
+      if (tarjeta) tarjetas.push(tarjeta);
     });
   }
+
+  // --- Los portaprecios (retirados) ---------------------------------------
+  //
+  // Lo que había aquí era una tira corrida con precios repetidos cada palmo.
+  // De lejos pasaba; de cerca era una regla de medir, y encima decía cuatro
+  // precios distintos para la misma leche. Ahora va la tarjeta de arriba.
 
   // --- Las puertas --------------------------------------------------------
   //
@@ -349,7 +336,7 @@ export function montarRefrigerados(scene: Scene, piso: number, productos: Produc
     fundir(piezasBlancas, "refrigeradosInterior", blancoFrio),
     fundir(piezasAluminio, "refrigeradosAluminio", aluminio),
     fundir(piezasRegleta, "refrigeradosRegleta", regleta),
-    fundir(tiras, "refrigeradosPrecios", precios),
+    fundir(tarjetas, "refrigeradosPrecios", materialDePrecios(scene)),
     fundir(cristales, "refrigeradosVidrio", vidrio),
     ...porTipo,
   ];

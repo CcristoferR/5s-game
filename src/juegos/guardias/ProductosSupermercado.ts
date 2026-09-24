@@ -58,7 +58,10 @@ const DE_DONDE: Record<TipoProducto, string> = {
   cereal: "Cereales",
   pasta: "Pastas",
   leche: "Leches",
-  lata: "Latas 01",
+  // La 03 y no la 01: comprobado dejando visible una sola malla, la 01 es una
+  // conserva y la 03 la bebida en lata. En el mural de frío —y en la mano de
+  // quien se lleva algo del refrigerador— tiene que haber bebida, no conserva.
+  lata: "Latas 03",
 };
 
 /**

@@ -310,6 +310,15 @@ export function crearPalletConCarga(
   film.roughness = 0.12;
   film.metallic = 0;
   film.backFaceCulling = false;
+  // ─── POR QUÉ EN DOS PASADAS ───────────────────────────────────────────
+  //
+  // El film es una caja transparente vista por sus dos lados, y sin esto
+  // Babylon dibuja sus seis caras en el orden en que vienen: según desde dónde
+  // se mire, la cara de atrás tapa a la de delante y el pallet entero cambia
+  // de brillo al caminar, como si la carga flotara o parpadeara. Con la pasada
+  // separada se dibujan primero las caras de atrás y después las de delante,
+  // que es el orden en que se ven, y el envoltorio queda quieto.
+  film.separateCullingPass = true;
   const envoltura = bloque(scene, "filmPalletBodega", ANCHO + 0.02, CAJA.y * 3, LARGO - 0.04, cx, piso + ALTO_PALLET + CAJA.y * 1.5, cz);
   envoltura.material = film;
   envoltura.isPickable = false;

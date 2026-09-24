@@ -33,6 +33,7 @@ import { crearActores } from "./ActoresSupermercado";
 import { colgarLetrerosPasillos } from "./PasillosSupermercado";
 import { montarRefrigerados, reflejarRefrigerados } from "./RefrigeradosSupermercado";
 import { montarGrafica } from "./GraficaSupermercado";
+import { montarLineaDeCajas } from "./CajaSupermercado";
 import { colgarLuminarias, encenderFocosSala, separarSueloSala, pulirSuelo, sombrasAlPie } from "./LuzSalaSupermercado";
 import { construirExterior, separarLoDeFuera, type Exterior } from "./ExteriorSupermercado";
 import { extraerProductos } from "./ProductosSupermercado";
@@ -49,7 +50,13 @@ import {
 import type { FilaSituacion, ErrorEnInforme } from "./PanelesSupermercado";
 import { calificarTurno, DESCUENTOS, type ErrorTurno } from "./CalificacionSupermercado";
 import { registrarTurno, NOTA_APROBACION } from "./HistorialTurnos";
-import { reproducir, iniciarAmbienteSala, agacharAmbienteSala, detenerAmbienteSala } from "../../core/Sonido";
+import {
+  reproducir,
+  precargarAmbienteSala,
+  iniciarAmbienteSala,
+  agacharAmbienteSala,
+  detenerAmbienteSala,
+} from "../../core/Sonido";
 
 // ===========================================================================
 // Escenario 2 — Supermercado
@@ -175,8 +182,35 @@ export async function crearRecorridoSupermercado(
   scene.collisionsEnabled = true;
   camara.checkCollisions = true;
   camara.applyGravity = false;
-  camara.ellipsoid = new Vector3(0.35, ALTURA_OJO / 2, 0.35);
-  camara.ellipsoidOffset = new Vector3(0, ALTURA_OJO / 2, 0);
+  // ─── EL CUERPO VA DE LOS PIES A LA CABEZA, NO DE LA CINTURA ARRIBA ─────
+  //
+  // Babylon pone el centro del elipsoide en `posición − ellipsoid.y +
+  // ellipsoidOffset` (ver FreeCamera._collideWithWorld). Con el desplazamiento
+  // en media altura, ese centro caía JUSTO EN LOS OJOS y el cuerpo iba de 0,99
+  // a 2,63 m: por debajo del metro no había nada que chocara.
+  //
+  // De ahí salían dos fallos que parecían distintos y eran el mismo:
+  //
+  //   · El mostrador de caja mide 1,10 y el pallet de la bodega 1,40, así que
+  //     solo tocaban la punta de abajo del elipsoide —donde su radio ya casi
+  //     es cero—. Al empujar contra ellos, el choque resolvía subiendo, como
+  //     quien sube un escalón.
+  //   · Y arriba está `alturaFija`, que devuelve la cámara a su altura en
+  //     cada cuadro. Subido al mostrador, ese tirón hacia abajo te dejaba
+  //     DENTRO del mueble, y desde dentro todas las caras empujan al revés:
+  //     ya no se sale.
+  //
+  // El desplazamiento de verdad se pone más abajo, cuando ya se sabe a qué
+  // altura está el piso (ver "LOS PIES, JUSTO SOBRE EL PISO"): aquí todavía no
+  // hay modelo cargado que medir.
+  //
+  // Treinta centímetros de radio y no treinta y cinco: con el cuerpo entero
+  // chocando, el radio decide a qué distancia te frenas de cada mueble, y
+  // treinta y cinco dejaban al jugador parado a un paso largo del mostrador,
+  // como si hubiera una caja invisible delante. Treinta es el ancho de hombros
+  // de una persona y sigue sin dejar pasar por ningún hueco que no exista.
+  camara.ellipsoid = new Vector3(0.3, ALTURA_OJO / 2, 0.3);
+  camara.ellipsoidOffset = new Vector3(0, 0.1, 0);
 
   usarCamara(scene, camara);
 
@@ -246,6 +280,24 @@ export async function crearRecorridoSupermercado(
   // Antes de las luces, para que sus materiales entren en la ampliación del
   // tope de luces que se hace más abajo.
   const piso = medirPisoSala(scene, supermercado);
+
+  // ─── LOS PIES, JUSTO SOBRE EL PISO ────────────────────────────────────
+  //
+  // La cámara camina a 1,65 de altura de MUNDO, y el piso de la sala no está
+  // en cero: la losa asoma a 0,156 (ver medirPisoSala). O sea que los ojos van
+  // a 1,49 del suelo que se pisa, no a 1,65.
+  //
+  // Eso hay que meterlo en el choque o el cuerpo queda enterrado. Con un
+  // desplazamiento fijo, los pies del elipsoide caían en 0,10 —cinco
+  // centímetros y medio POR DEBAJO de la losa— y el jugador chocaba contra el
+  // propio suelo en cada paso: medido, el choque devolvía "sueloSala"
+  // caminase hacia donde caminase. En campo abierto se avanzaba a duras penas
+  // y junto a cualquier mueble el paso se moría del todo.
+  //
+  // Calculado desde el piso medido, los pies quedan seis centímetros por
+  // encima de la losa: no la rozan, no hay escalón que subir y el cuerpo sigue
+  // cubriendo de los tobillos a la cabeza.
+  camara.ellipsoidOffset.y = piso + 0.06 - alturaCaminando + 2 * camara.ellipsoid.y;
   // El suelo de la sala, aparte del resto del edificio: se pule y refleja.
   // Ver LuzSalaSupermercado.
   const murosYSuelo = supermercado.mallas.find((m) => m.name === "Edificio: muros y estructura");
@@ -270,11 +322,20 @@ export async function crearRecorridoSupermercado(
   // ampliación. Ver ClientesSupermercado.
   // Un producto de cada clase, copiado de la góndola: lo que la gente saca del
   // estante es lo mismo que hay en él. Ver ProductosSupermercado.
+  // El ambiente de la sala se va bajando y decodificando mientras se monta el
+  // resto: así está listo cuando el jugador cierra la tarjeta del turno, en vez
+  // de entrar el local mudo y encenderse a los cinco segundos.
+  precargarAmbienteSala();
+
   const productos = await extraerProductos(scene, supermercado.mallas);
   // Los refrigerados, contra el muro ciego de la izquierda: el único paño
   // grande del local que no tenía nada. Van aquí porque se llenan con esas
   // mismas plantillas. Ver RefrigeradosSupermercado.
   montarRefrigerados(scene, piso, productos);
+  // La cinta, el embolsado, el pinpad y los canastos. También va aquí porque
+  // pone la compra del cliente sobre la cinta, y esa compra son las mismas
+  // plantillas. Ver CajaSupermercado.
+  montarLineaDeCajas(scene, piso, productos);
   const clientes = crearClientes(scene, camara, piso, productos);
 
   // La luz de la sala: el relleno, los focos bajo las luminarias y las
@@ -304,6 +365,19 @@ export async function crearRecorridoSupermercado(
   scene.lights
     .filter((luz) => !exterior.luces.includes(luz))
     .forEach((luz) => luz.excludedMeshes.push(...exterior.mallas));
+  // ─── LO DE FUERA NO SE MUEVE MÁS ──────────────────────────────────────
+  //
+  // El barrio, los autos del estacionamiento, los árboles, los faroles y el
+  // corral de carros se colocan una vez y ahí se quedan: lo único que les
+  // cambia con la hora es el color de sus materiales y las luces, no dónde
+  // están (revisado archivo por archivo: ninguno toca posiciones después de
+  // montarse).
+  //
+  // Congelarles la matriz de mundo le ahorra a Babylon recalcularla —y con
+  // ella su caja envolvente— para casi cien mallas en cada cuadro, que es
+  // parte de los cinco milisegundos que se iban en decidir qué se dibuja. No
+  // cambia un solo píxel: la matriz congelada es la que ya tenían.
+  exterior.mallas.forEach((malla) => malla.freezeWorldMatrix());
 
   camara.attachControl(true);
 
@@ -339,6 +413,29 @@ export async function crearRecorridoSupermercado(
   // comprime las luces altas con una curva y deja sitio por arriba: la sala
   // puede estar clara y el sol seguir viéndose por encima de ella.
   tuberia.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+
+  // ─── AQUÍ NO VA OCLUSIÓN AMBIENTAL (SSAO), Y ESTÁ PROBADO ─────────────
+  //
+  // Se montó y se quitó. La idea era buena sobre el papel —una sombra suave
+  // donde dos cosas se tocan hace que los envases se apoyen en la balda en vez
+  // de flotar— y en una góndola abierta funcionaba. El problema es que este
+  // local está lleno de MUEBLES CERRADOS, y un SSAO no distingue entre "hay un
+  // rincón" y "estoy metido en una caja":
+  //
+  //   · Dentro del mural de frío, cada envase tiene fondo, techo, baldas y dos
+  //     costados alrededor. Oclusión máxima: las leches y las bebidas salían
+  //     casi negras detrás del vidrio.
+  //   · Lo mismo en el cajón de la cinta de la caja y dentro del carro de la
+  //     compra, donde la reja rodea la mercadería por los cuatro lados.
+  //
+  // Bajándolo hasta que eso dejara de pasar, el efecto ya no se veía en
+  // ninguna parte. No hay un punto intermedio con estos muebles, así que no
+  // hay efecto: el nivel se lee limpio, que es lo que tiene que ser.
+  //
+  // Si algún día hace falta que los muebles no floten sobre el piso, la
+  // manera de aquí es la que ya usa la gente: una mancha oscura pegada al
+  // suelo siguiendo su huella (ver sombrasAlPie en LuzSalaSupermercado). Esa
+  // no puede ensuciar nada, porque solo está donde se la pone.
 
 
   let cerrado = false;
@@ -452,7 +549,12 @@ export async function crearRecorridoSupermercado(
     // Se queda un pelo corto a propósito: llegando justo, el rayo toca al
     // propio actor —el mostrador de la cajera, la hoja de la puerta— y diría
     // que está tapado por sí mismo.
-    const golpe = scene.pickWithRay(new Ray(ojo, hacia, distancia - 0.12), solido);
+    // `true` al final: con eso el rayo se queda con el PRIMER estorbo que
+    // encuentra en vez de recorrerlos todos para quedarse con el más cercano.
+    // Aquí no importa cuál tape: importa si tapa alguno. Es el mismo resultado
+    // y cuesta menos, y este rayo se lanza en todos los cuadros mientras haya
+    // una situación abierta.
+    const golpe = scene.pickWithRay(new Ray(ojo, hacia, distancia - 0.12), solido, true);
     return !golpe?.hit;
   };
 

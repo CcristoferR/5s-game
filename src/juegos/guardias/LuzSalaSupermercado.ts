@@ -269,7 +269,25 @@ export function pulirSuelo(scene: Scene, suelo: Mesh, piso: number, reflejable: 
   // vidrieras se perdían dentro de ese brillo parejo.
   mat.environmentIntensity = 1.0;
 
-  const espejo = new MirrorTexture("espejoSueloSala", 1024, scene, true);
+  // ─── EL TAMAÑO DEL ESPEJO ──────────────────────────────────────────────
+  //
+  // 512 en pantallas normales y 1024 solo en las muy grandes.
+  //
+  // No es bajar la calidad: el reflejo se desenfoca con adaptiveBlurKernel, y
+  // ese desenfoque se mide EN PANTALLA, no en la textura —Babylon escala el
+  // núcleo por la razón entre el tamaño de la textura y el de la ventana—. A
+  // la mitad de lado, el desenfoque en pantalla es exactamente el mismo y lo
+  // único que se pierde es detalle que el propio desenfoque ya borraba.
+  //
+  // Comprobado antes de dejarlo: dos capturas del mismo sitio, una con cada
+  // tamaño, son la misma imagen; y el cuadro baja un 29 % (medido con el
+  // dibujado por software, que es lo que hay en este equipo para medir).
+  //
+  // El corte está donde el reflejo empezaría a notarse estirado: por encima de
+  // 1800 píxeles de ancho de ventana, medio lado de textura por píxel deja de
+  // alcanzar y ahí sí vuelve a 1024.
+  const lado = scene.getEngine().getRenderWidth() > 1800 ? 1024 : 512;
+  const espejo = new MirrorTexture("espejoSueloSala", lado, scene, true);
   // El plano del suelo, mirando hacia arriba, a la altura del piso.
   espejo.mirrorPlane = new Plane(0, -1, 0, piso);
   const planos = Frustum.GetPlanes(Matrix.Identity());
