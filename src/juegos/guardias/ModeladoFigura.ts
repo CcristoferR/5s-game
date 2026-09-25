@@ -344,25 +344,135 @@ export function puntoDeLaCara(objetivoX: number, objetivoY: number, rasgos: Rasg
   return mejor;
 }
 
+/**
+ * Como puntoDeLaCara, pero EXACTO: el punto de la superficie que cae justo en
+ * (x, y), no el vértice de la malla más cercano a él.
+ *
+ * Para un ojo da igual —se apoya en un punto—, pero una ceja es una tira que
+ * recorre la frente, y apoyada vértice a vértice cada tramo saltaba a la fila
+ * de arriba o a la de abajo: salía en zigzag, como una grapa. Aquí se busca
+ * primero a trazos gruesos por la mitad de delante y luego se afina el paso
+ * hasta la centésima de milímetro.
+ */
+export function sobreLaCara(objetivoX: number, objetivoY: number, rasgos: Rasgos = {}): Vector3 {
+  const lejos = (fi: number, te: number): number => {
+    const [x, y] = puntoCabeza(Math.sin(fi) * Math.sin(te), Math.cos(fi), Math.sin(fi) * Math.cos(te), rasgos);
+    return Math.hypot(x - objetivoX, y - objetivoY);
+  };
+  let fi = Math.PI / 2;
+  let te = 0;
+  let distancia = lejos(fi, te);
+  for (let i = 1; i < 16; i++) {
+    for (let j = -8; j <= 8; j++) {
+      const f = (i / 16) * Math.PI;
+      const t = (j / 17) * Math.PI;
+      const d = lejos(f, t);
+      if (d < distancia) {
+        distancia = d;
+        fi = f;
+        te = t;
+      }
+    }
+  }
+  let paso = Math.PI / 32;
+  while (paso > 2e-6) {
+    let mejor = false;
+    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const d = lejos(fi + a * paso, te + b * paso);
+      if (d < distancia) {
+        distancia = d;
+        fi += a * paso;
+        te += b * paso;
+        mejor = true;
+        break;
+      }
+    }
+    if (!mejor) paso /= 2;
+  }
+  const [x, y, z] = puntoCabeza(Math.sin(fi) * Math.sin(te), Math.cos(fi), Math.sin(fi) * Math.cos(te), rasgos);
+  return new Vector3(x, y, z);
+}
+
 export type Peinado = "corto" | "largo" | "rapado";
+
+/**
+ * Por dónde pasa la línea del pelo, dando la vuelta a la cabeza: el ángulo
+ * desde la nariz —cero delante, medio giro en la nuca— y la altura, respecto
+ * al centro del cráneo.
+ *
+ * Antes era una sola rampa de la frente a la nuca, y así se leía: un casco
+ * puesto, con el borde en línea recta por encima de la oreja. Lo que hace que
+ * un pelo corto sea pelo son sus quiebres: las entradas en la frente, la sien,
+ * la patilla que baja por delante de la oreja, el pelo que rodea la oreja por
+ * arriba y vuelve a bajar detrás hasta la nuca.
+ *
+ * La oreja cae entre 1,42 y 1,80 (ver la cara en VestuarioFigura): la patilla
+ * termina justo antes y por encima de la oreja la línea no baja de su borde.
+ */
+const LINEA_CORTO: readonly (readonly [number, number])[] = [
+  [0, 0.05],
+  [0.5, 0.056],
+  [1.02, 0.046],
+  [1.2, 0.014],
+  [1.29, -0.002],
+  [1.37, 0.0],
+  [1.46, 0.03],
+  [1.64, 0.034],
+  [1.82, 0.027],
+  [1.98, -0.012],
+  [2.5, -0.055],
+  [Math.PI, -0.07],
+];
+/**
+ * Pelo largo recogido: sin entradas ni patilla. Tapa la sien y baja por
+ * delante de la oreja, que es lo que enmarca la cara —con el borde cortado
+ * en horizontal por encima de la sien, de frente se leía un tazón—, pasa por
+ * encima de la oreja y baja a la nuca.
+ */
+const LINEA_LARGO: readonly (readonly [number, number])[] = [
+  [0, 0.05],
+  [0.5, 0.048],
+  [0.95, 0.034],
+  [1.18, 0.008],
+  [1.33, -0.01],
+  [1.43, 0.022],
+  [1.64, 0.033],
+  [1.85, 0.02],
+  [2.1, -0.04],
+  [2.6, -0.11],
+  [Math.PI, -0.125],
+];
+
+function porTramos(tabla: readonly (readonly [number, number])[], a: number): number {
+  for (let i = 0; i < tabla.length - 1; i++) {
+    const [a0, y0] = tabla[i];
+    const [a1, y1] = tabla[i + 1];
+    if (a <= a1) return y0 + (y1 - y0) * suave((a - a0) / (a1 - a0));
+  }
+  return tabla[tabla.length - 1][1];
+}
 
 /**
  * El pelo: la cabeza un poco más grande, hundida bajo la línea del pelo.
  *
- * La línea sube en la frente, baja detrás de las orejas y más aún en la nuca.
- * Por debajo de ella la capa se mete dentro del cráneo, así que el borde se
- * funde con la piel en lugar de terminar en un escalón de casquete.
+ * Por debajo de la línea la capa queda dentro del cráneo, y por encima sale
+ * DE A POCO: fina en el borde y con todo su grosor un par de dedos más
+ * arriba. Así el borde se funde con la piel —como un pelo corto rebajado a
+ * los lados— en vez de terminar en el escalón de un casquete. Por lo mismo
+ * los costados y la nuca van más finos que la coronilla.
  */
 export function peloEsculpido(scene: Scene, nombre: string, peinado: Peinado, rasgos: Rasgos = {}): Mesh {
   const grosor = peinado === "rapado" ? 0.003 : peinado === "largo" ? 0.011 : 0.008;
-  const nuca = peinado === "largo" ? -0.125 : -0.07;
-  return esfera(scene, nombre, 36, 56, (dx, dy, dz) => {
+  const tabla = peinado === "largo" ? LINEA_LARGO : LINEA_CORTO;
+  const costados = peinado === "largo" ? 0.75 : 0.45;
+  // Más fina que la de la cabeza alrededor: la patilla mide un par de
+  // centímetros de ancho, y con la de antes caía entera en una sola columna.
+  return esfera(scene, nombre, 40, 96, (dx, dy, dz) => {
     const [x, y, z] = puntoCabeza(dx, dy, dz, { ...rasgos, nariz: 0 });
-    const delante = Math.max(0, dz);
-    const detras = Math.max(0, -dz);
-    const linea = 0.05 * delante + nuca * detras + 0.02 * (1 - delante - detras);
-    const dentro = suave((y - linea) / 0.014);
-    const capa = -0.016 + (grosor + 0.009 * Math.max(0, dy) + 0.016) * dentro;
+    const linea = porTramos(tabla, Math.atan2(Math.abs(dx), dz));
+    const dentro = suave((y - linea) / 0.02);
+    const espesor = grosor * (costados + (1 - costados) * suave((y - 0.02) / 0.05)) + 0.009 * Math.max(0, dy);
+    const capa = -0.005 + (espesor + 0.005) * dentro;
     const largo = Math.hypot(x, y, z) || 1;
     return [x + (x / largo) * capa, y + (y / largo) * capa, z + (z / largo) * capa];
   });

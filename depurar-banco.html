@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Depurar banco (temporal)</title>
+    <style>
+      html, body { margin: 0; overflow: hidden; height: 100%; font-family: system-ui, sans-serif; background: #000; }
+      #renderCanvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <script type="module">
+      import { Engine, Scene, Vector3, Ray, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
+      import { crearPuestoBanco } from "/src/juegos/guardias/PuestoBanco.ts";
+      import { iniciarAudio } from "/src/core/Sonido.ts";
+      iniciarAudio();
+
+      const canvas = document.getElementById("renderCanvas");
+      const engine = new Engine(canvas, true, undefined, false);
+      const scene = new Scene(engine);
+      engine.runRenderLoop(() => {
+        if (scene.activeCamera) scene.render();
+      });
+
+      const montar = async () => {
+        window.__listo = false;
+        const puesto = await crearPuestoBanco(scene, (motivo) => {
+          window.__salio = motivo ?? "menu";
+          if (motivo === "repetir") void montar();
+        });
+        await Promise.race([scene.whenReadyAsync(true), new Promise((r) => setTimeout(r, 15000))]);
+        puesto.comenzar?.();
+        window.__depurar = { scene, engine, puesto, camara: scene.activeCamera, Vector3, Ray, MeshBuilder, StandardMaterial, Color3 };
+        window.__listo = true;
+      };
+      window.__reentrar = async () => {
+        window.__depurar.puesto.dispose();
+        window.__salio = false;
+        await montar();
+      };
+      await montar();
+    </script>
+  </body>
+</html>

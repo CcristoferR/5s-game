@@ -38,7 +38,9 @@ export type EfectoSonido =
   | "pregunta"
   | "cerrar"
   | "marca"
-  | "mirada";
+  | "mirada"
+  // El llamador de turnos del banco.
+  | "turnoBanco";
 
 interface DefinicionEfecto {
   archivo: string;
@@ -80,6 +82,9 @@ const EFECTOS: Record<EfectoSonido, DefinicionEfecto> = {
   cerrar: { archivo: "cerrar.wav", volumen: 0.4, copias: 2 },
   marca: { archivo: "marca.wav", volumen: 0.4, copias: 3 },
   mirada: { archivo: "mirada.wav", volumen: 0.3, copias: 2 },
+  // El "tin-tón" de la pantalla de turnos. Es de la sala, no de la interfaz:
+  // va bajo, como algo que suena al fondo del hall y no en el oído.
+  turnoBanco: { archivo: "turno-banco.wav", volumen: 0.32, copias: 1 },
 };
 
 const CARPETA = "/audio/";
@@ -255,9 +260,28 @@ const VOLUMEN_SALA = 0.25;
 /** Lo que baja cuando el turno se pausa, sin llegar a apagarse. */
 const AGACHADO = 0.25;
 
+/**
+ * Los ambientes de sala que hay, cada uno con su archivo y su nivel.
+ *
+ * El del banco va algo más alto que el del súper porque la grabación es más
+ * baja —un RMS de 0,025 contra 0,036—: a 0,3 suena en 0,0075, un punto por
+ * debajo del súper, que es lo que tiene que sonar un hall de banco.
+ *
+ * Y se le SUAVIZAN LOS PICOS al cargar (ver suavizarPicos): trae cinco golpes
+ * secos —una puerta, un timbre, algo que cae— y en ese nivel un golpe en el
+ * fondo se confunde con algo que está pasando en la sala.
+ */
+const AMBIENTES = {
+  supermercado: { archivo: "ambiente-supermercado.mp3", volumen: VOLUMEN_SALA, suavizar: false },
+  banco: { archivo: "ambiente-banco.mp3", volumen: 0.3, suavizar: true },
+} as const;
+export type AmbienteSala = keyof typeof AMBIENTES;
+
 let contexto: AudioContext | null = null;
-let bufferSala: AudioBuffer | null = null;
-let cargaSala: Promise<AudioBuffer | null> | null = null;
+/** Lo cargado de cada ambiente, ya preparado. Se carga una vez por partida. */
+const cargasSala = new Map<AmbienteSala, Promise<AudioBuffer | null>>();
+/** El que suena, o el último que sonó: su volumen es el que manda. */
+let ambienteActual: AmbienteSala = "supermercado";
 let sala: { fuente: AudioBufferSourceNode; ganancia: GainNode } | null = null;
 let arrancandoSala = false;
 let salaAgachada = false;
@@ -272,7 +296,7 @@ function obtenerContexto(): AudioContext | null {
 
 /** Nivel al que debe estar sonando ahora mismo el ambiente de sala. */
 function nivelSala(): number {
-  return VOLUMEN_SALA * volumenGeneral * (salaAgachada ? AGACHADO : 1);
+  return AMBIENTES[ambienteActual].volumen * volumenGeneral * (salaAgachada ? AGACHADO : 1);
 }
 
 /** Lleva la ganancia al nivel que toca, sin saltos. */
@@ -285,23 +309,79 @@ function ponerNivelSala(segundos: number): void {
 }
 
 /** Descarga el ambiente, lo decodifica y lo deja empalmado para el bucle. */
-function cargarSala(): Promise<AudioBuffer | null> {
-  if (bufferSala) return Promise.resolve(bufferSala);
-  if (cargaSala) return cargaSala;
-  cargaSala = (async () => {
+function cargarSala(cual: AmbienteSala): Promise<AudioBuffer | null> {
+  const ya = cargasSala.get(cual);
+  if (ya) return ya;
+  const carga = (async () => {
     const ctx = obtenerContexto();
     if (!ctx) return null;
     try {
-      const respuesta = await fetch(CARPETA + "ambiente-supermercado.mp3");
+      const definicion = AMBIENTES[cual];
+      const respuesta = await fetch(CARPETA + definicion.archivo);
       if (!respuesta.ok) return null;
-      bufferSala = empalmar(ctx, await ctx.decodeAudioData(await respuesta.arrayBuffer()));
-      return bufferSala;
+      const crudo = await ctx.decodeAudioData(await respuesta.arrayBuffer());
+      if (definicion.suavizar) suavizarPicos(crudo);
+      return empalmar(ctx, crudo);
     } catch {
       // Sin ambiente se juega igual: es lo mismo que hace un efecto que falta.
       return null;
     }
   })();
-  return cargaSala;
+  cargasSala.set(cual, carga);
+  return carga;
+}
+
+/**
+ * Baja los golpes secos de una grabación sin tocar el resto.
+ *
+ * Un limitador hecho a mano, una vez, sobre el audio ya decodificado: mide la
+ * energía en tramos de 50 ms y, donde un tramo pasa de dos veces y cuarto la
+ * mediana, lo baja justo hasta ahí. La ganancia se prepara con anticipación
+ * —se toma el mínimo de un entorno de 100 ms a cada lado— y se suaviza, así
+ * que el golpe se queda en un roce, sin el bombeo de un compresor que se
+ * dispara tarde. Las voces y el murmullo, que viven por debajo, no cambian.
+ */
+function suavizarPicos(buffer: AudioBuffer): void {
+  const sr = buffer.sampleRate;
+  const canales = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  const tramo = Math.round(sr * 0.05);
+  const cuantos = Math.floor(buffer.length / tramo);
+  const energia = new Float32Array(cuantos);
+  for (let t = 0; t < cuantos; t++) {
+    let s = 0;
+    for (let i = t * tramo; i < (t + 1) * tramo; i++) {
+      let v = 0;
+      for (const c of canales) v += c[i];
+      v /= canales.length;
+      s += v * v;
+    }
+    energia[t] = Math.sqrt(s / tramo);
+  }
+  const mediana = Float32Array.from(energia).sort()[Math.floor(cuantos / 2)];
+  const techo = mediana * 2.25;
+  const ganancia = new Float32Array(cuantos);
+  for (let t = 0; t < cuantos; t++) ganancia[t] = energia[t] > techo ? techo / energia[t] : 1;
+  // Anticipación: el mínimo de ±2 tramos. Y suavizado: media de ±2 tramos.
+  const anticipada = ganancia.map((_, t) => {
+    let m = 1;
+    for (let k = -2; k <= 2; k++) m = Math.min(m, ganancia[Math.min(cuantos - 1, Math.max(0, t + k))]);
+    return m;
+  });
+  const suave = anticipada.map((_, t) => {
+    let s = 0;
+    for (let k = -2; k <= 2; k++) s += anticipada[Math.min(cuantos - 1, Math.max(0, t + k))];
+    return s / 5;
+  });
+  // Muestra a muestra, entre el centro de un tramo y el del siguiente.
+  for (let i = 0; i < buffer.length; i++) {
+    const pos = i / tramo - 0.5;
+    const a = Math.min(cuantos - 1, Math.max(0, Math.floor(pos)));
+    const b = Math.min(cuantos - 1, a + 1);
+    const f = Math.min(1, Math.max(0, pos - a));
+    const g = suave[a] + (suave[b] - suave[a]) * f;
+    if (g >= 0.9999) continue;
+    for (const c of canales) c[i] *= g;
+  }
 }
 
 /** Devuelve el mismo audio con el final fundido sobre el principio. */
@@ -339,19 +419,20 @@ function empalmar(ctx: AudioContext, crudo: AudioBuffer): AudioBuffer {
  * No suena nada ni hace falta que el navegador esté desbloqueado: decodificar
  * se puede con el contexto dormido.
  */
-export function precargarAmbienteSala(): void {
-  void cargarSala();
+export function precargarAmbienteSala(cual: AmbienteSala = "supermercado"): void {
+  void cargarSala(cual);
 }
 
 /**
  * Arranca el ambiente de la sala, entrando poco a poco. Llamarlo dos veces no
  * lo apila.
  */
-export function iniciarAmbienteSala(): void {
+export function iniciarAmbienteSala(cual: AmbienteSala = "supermercado"): void {
   if (!desbloqueado || silenciado || sala || arrancandoSala) return;
   arrancandoSala = true;
+  ambienteActual = cual;
   void (async () => {
-    const buffer = await cargarSala();
+    const buffer = await cargarSala(cual);
     const ctx = obtenerContexto();
     arrancandoSala = false;
     // Entre la descarga y aquí el jugador ha podido salirse del nivel o

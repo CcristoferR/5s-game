@@ -451,6 +451,15 @@ const ALTURA_ENTREPANO = 1.15;
  */
 const BULTO = 0.3;
 
+/**
+ * Por dónde se coge un envase de cada balda, en altura de mundo.
+ *
+ * Las baldas de las góndolas están a 0,38 · 0,88 · 1,38 (medidas cara por cara
+ * sobre la malla "Estanterías"; ver GraficaSupermercado), y un envase se coge
+ * por el medio, una mano por encima de la balda.
+ */
+const ALTURAS_DE_COGER = [0.48, 0.98, 1.48] as const;
+
 /** El gesto que hace cada cliente cuando nadie le manda otro. */
 function gestoDe(cliente: Cliente): Gesto | null {
   return cliente.compras ? "comprar" : null;
@@ -588,6 +597,11 @@ export function crearClientes(scene: Scene, camara: Camera, piso: number, produc
       },
       telefono: cliente.telefono,
       carro: carro?.nodo,
+      // Las tres baldas de las góndolas, medidas sobre el modelo (ver
+      // GraficaSupermercado), más diez centímetros: el medio de un envase
+      // apoyado en ellas, que es por donde se coge. Con esto la mano va a una
+      // balda de verdad y no a un punto fijo delante del pecho.
+      alturasEstante: ALTURAS_DE_COGER,
     });
     // Ya de cara a su estante, no a la parada siguiente: los que arrancan más
     // tarde pasan varios segundos quietos, y en esos segundos tienen que estar

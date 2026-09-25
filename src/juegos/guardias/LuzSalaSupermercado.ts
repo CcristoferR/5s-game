@@ -352,12 +352,23 @@ export function sombrasAlPie(scene: Scene, figuras: TransformNode[]): Mesh[] {
   mat.zOffset = -2;
   mat.backFaceCulling = true;
 
+  // El material se va con el último disco. Los discos cuelgan de las figuras,
+  // y una figura se desecha con sus hijos pero sin sus materiales: sin esto,
+  // cada vez que se sale del nivel quedaban el material y su textura sueltos.
+  let quedan = figuras.length;
+  const alIrse = (): void => {
+    quedan -= 1;
+    if (quedan === 0 && scene.materials.includes(mat)) mat.dispose(true, true);
+  };
+  if (quedan === 0) mat.dispose(true, true);
+
   return figuras.map((raiz) => {
     const disco = MeshBuilder.CreateGround(`${raiz.name}_sombraAlPie`, { width: 0.95, height: 0.95 }, scene);
     disco.material = mat;
     disco.parent = raiz;
     disco.position.y = 0.004;
     disco.isPickable = false;
+    disco.onDisposeObservable.addOnce(alIrse);
     return disco;
   });
 }

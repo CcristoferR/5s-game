@@ -6,20 +6,21 @@ import {
   AbstractMesh,
   Mesh,
   ShadowGenerator,
-  HemisphericLight,
-  PointLight,
-  Color3,
-  Color4,
-  FreeCamera,
-  DefaultRenderingPipeline,
   Ray,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
-import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
 import { afinarMateriales } from "./MaterialesModelo";
 
+// ===========================================================================
+// El modelo del banco
+// ===========================================================================
+//
+// Solo carga el edificio y lo deja medido: centrado, apoyado en el suelo y con
+// su interior conocido. Lo que pasa dentro —el puesto del guardia, la luz, la
+// gente— está en PuestoBanco.
+
 /** Altura de los ojos de una persona de pie. */
-const ALTURA_OJO = 1.65;
+export const ALTURA_OJO = 1.65;
 
 export interface OpcionesBanco {
   ruta?: string;
@@ -59,7 +60,7 @@ export async function cargarBanco(
   opciones: OpcionesBanco = {}
 ): Promise<BancoCargado> {
   const ruta = opciones.ruta ?? "/models/banco.glb";
-  // POR 2, Y NO POR 0,01.
+  // POR 3, Y NO POR 0,01 NI POR 2.
   //
   // El GLB ya viene en metros: convertir_banco.py pasa los centímetros de Maya
   // a metros en Blender antes de exportar. Aquí se llegó a multiplicar otra
@@ -67,11 +68,21 @@ export async function cargarBanco(
   // nivel se veía como un fondo azul vacío, porque la cámara, a 1,65 m, no
   // tenía nada delante.
   //
-  // El ×2 es porque el modelo de Maya está hecho a media escala: el mesón mide
-  // 66 cm, la puerta 90 y el cielo queda a 1,75 m del piso. A ese tamaño una
-  // persona no cabe por la puerta. Doblado: mesón de 1,3 m, puerta de 1,8 y
-  // cielo a unos 3,5 m.
-  const escala = opciones.escala ?? 2;
+  // El modelo de Maya está hecho a escala reducida, y estuvo doblado. Doblado
+  // se recorría bien con la cámara sola, pero en cuanto hubo gente dentro
+  // —figuras de 1,75— se vio que no alcanzaba, medido con rayos contra el
+  // modelo:
+  //
+  //   · la puerta dejaba 1,33 m libres sobre el piso de la sala: una persona
+  //     le pasaba por encima con los hombros;
+  //   · el mesón llegaba a 0,49 m, a medio muslo, y el asiento de las sillas de
+  //     espera a 0,28, a la altura del tobillo de alguien de pie.
+  //
+  // Por tres: puerta de 2,0 m de alto y 1,2 de ancho, asiento a 0,42, mesón a
+  // 0,74 —la altura de un escritorio de atención— y el cielo a 5,25 m, que es
+  // un hall de banco con columnas en la fachada. Las piezas coinciden entre sí
+  // a este factor, así que el modelo solo estaba chico, no deformado.
+  const escala = opciones.escala ?? 3;
 
   const resultado = await ImportMeshAsync(ruta, scene);
 
@@ -258,7 +269,7 @@ function medirConjunto(
  * el techo— y solo prueba las mallas del banco. Con predicado propio Babylon
  * ignora isPickable, que en el escenario está en false.
  */
-function medirPiso(
+export function medirPiso(
   scene: Scene,
   mallas: AbstractMesh[],
   x: number,
@@ -267,272 +278,4 @@ function medirPiso(
   const rayo = new Ray(new Vector3(x, ALTURA_OJO + 0.5, z), Vector3.Down(), 10);
   const impacto = scene.pickWithRay(rayo, (malla) => mallas.includes(malla));
   return impacto?.hit && impacto.pickedPoint ? impacto.pickedPoint.y : 0;
-}
-
-function iluminarBanco(
-  scene: Scene,
-  interior: InteriorBanco,
-  pisoY: number
-): void {
-  const relleno =
-    (scene.getLightByName(
-      "luzRellenoBanco"
-    ) as HemisphericLight | null) ??
-    new HemisphericLight(
-      "luzRellenoBanco",
-      new Vector3(0, 1, 0),
-      scene
-    );
-
-  relleno.intensity = 1.0;
-  relleno.diffuse = new Color3(
-    1,
-    0.98,
-    0.94
-  );
-
-  relleno.groundColor = new Color3(
-    0.42,
-    0.44,
-    0.48
-  );
-
-  // Colgados bajo el cielo y repartidos por la sala real. Antes iban fijos en
-  // ±1,7 m y a la altura total del modelo, que incluye el techo exterior: los
-  // focos quedaban por encima del cielo y lejos de todo.
-  const alturaLuz = pisoY + 3.0;
-  const xs = [0.25, 0.75].map(
-    (f) => interior.minX + (interior.maxX - interior.minX) * f
-  );
-  const zs = [0.25, 0.75].map(
-    (f) => interior.minZ + (interior.maxZ - interior.minZ) * f
-  );
-  const focos = zs.flatMap((z) =>
-    xs.map((x) => new Vector3(x, alturaLuz, z))
-  );
-
-  focos.forEach((posicion, i) => {
-    const existente =
-      scene.getLightByName(
-        `luzBanco_${i}`
-      ) as PointLight | null;
-
-    const luz =
-      existente ??
-      new PointLight(
-        `luzBanco_${i}`,
-        posicion,
-        scene
-      );
-
-    luz.position.copyFrom(posicion);
-
-    luz.diffuse = new Color3(
-      1,
-      0.97,
-      0.92
-    );
-
-    luz.specular = new Color3(
-      0.85,
-      0.88,
-      0.92
-    );
-
-    luz.intensity = 0.55;
-    luz.range = 9;
-  });
-}
-
-export async function crearRecorridoBanco(
-  scene: Scene,
-  onSalir: () => void
-): Promise<BancoCargado> {
-  // Lo primero, y antes de nada: vaciar lo que dejó el escenario anterior.
-  // Sin esto, el banco se monta encima del hall del condominio y del
-  // supermercado — con sus mallas, sus luces y su post-proceso.
-  limpiarEscena(scene);
-
-  scene.clearColor = new Color4(
-    0.08,
-    0.09,
-    0.12,
-    1
-  );
-
-  // Una cámara provisional ANTES de cargar el modelo.
-  //
-  // limpiarEscena deja scene.activeCamera en null, y el bucle de render de
-  // main.ts sigue corriendo mientras se descarga el .glb. Sin cámara, cada uno
-  // de esos cuadros lanzaba "No camera defined" y la escena se quedaba en
-  // negro aunque el modelo terminara de llegar.
-  //
-  // Con ella el bucle siempre tiene a qué apuntar: durante la carga dibuja una
-  // escena vacía, que es justo lo que la pantalla de carga está tapando. Más
-  // abajo se la recoloca con las medidas reales del banco.
-  const camara = new FreeCamera(
-    "camaraRecorridoBanco",
-    new Vector3(0, ALTURA_OJO, 0),
-    scene
-  );
-  usarCamara(scene, camara);
-
-  const banco = await cargarBanco(scene, {
-    diagnostico: true,
-  });
-
-  camara.minZ = 0.1;
-  camara.speed = 0.12;
-  camara.angularSensibility = 3200;
-  camara.inertia = 0.82;
-
-  camara.keysUp.push(87); // W
-  camara.keysDown.push(83); // S
-  camara.keysLeft.push(65); // A
-  camara.keysRight.push(68); // D
-
-  scene.collisionsEnabled = true;
-  camara.checkCollisions = true;
-
-  // La elipse va de los pies a los ojos. Babylon la centra en
-  // posición − ellipsoid.y + ellipsoidOffset, así que con el offset en cero su
-  // borde de abajo queda en los pies. Antes el offset valía lo mismo que el
-  // radio: la elipse quedaba centrada en los ojos y chocaba con el cielo.
-  camara.ellipsoid = new Vector3(0.3, ALTURA_OJO / 2, 0.3);
-  camara.ellipsoidOffset = Vector3.Zero();
-
-  // El jugador entra DENTRO de la sala, justo pasada la puerta y mirando al
-  // mesón del fondo, por el pasillo que dejan libre las filas de sillas.
-  //
-  // Se usa el interior del edificio y no las medidas del conjunto: el modelo
-  // trae una losa más grande que la sala, así que colocar desde el conjunto
-  // dejaba al jugador sobre el piso pero fuera de los muros.
-  const { interior } = banco;
-  const centroX = (interior.minX + interior.maxX) / 2;
-  const entradaZ = interior.minZ + 0.8;
-  const pisoY = medirPiso(scene, banco.mallas, centroX, entradaZ);
-
-  // Dos centímetros de holgura para no arrancar con la elipse metida en la losa.
-  camara.position.set(centroX, pisoY + ALTURA_OJO + 0.02, entradaZ);
-  camara.setTarget(new Vector3(centroX, pisoY + 1.5, interior.maxZ));
-
-  // La gravedad se enciende recién ahora, con el piso ya debajo: durante la
-  // descarga no había nada y la cámara habría caído sin fin.
-  //
-  // Es lo que impide volar: la cámara avanza hacia donde se mira, inclinación
-  // incluida, y sin gravedad mirar arriba y pulsar W la despegaba del suelo.
-  scene.gravity = new Vector3(0, -9.81 / 60, 0);
-  camara.applyGravity = true;
-
-  iluminarBanco(scene, interior, pisoY);
-
-  camara.attachControl(true);
-
-  const tuberia =
-    new DefaultRenderingPipeline(
-      "postProcesoBanco",
-      true,
-      scene,
-      [camara]
-    );
-
-  tuberia.samples = 4;
-  tuberia.bloomEnabled = false;
-  tuberia.imageProcessingEnabled = true;
-
-  tuberia.imageProcessing.contrast =
-    1.04;
-
-  tuberia.imageProcessing.exposure =
-    1;
-
-  tuberia.imageProcessing.toneMappingEnabled =
-    true;
-
-  const ayuda =
-    document.createElement("div");
-
-  ayuda.textContent =
-    "WASD o flechas para caminar · " +
-    "arrastrar para mirar · " +
-    "ESC para volver";
-
-  Object.assign(
-    ayuda.style,
-    {
-      position: "fixed",
-      left: "50%",
-      bottom: "24px",
-      transform:
-        "translateX(-50%)",
-      padding: "10px 18px",
-      borderRadius: "8px",
-      background:
-        "rgba(10, 12, 16, 0.78)",
-      color: "#e8ecf4",
-      font:
-        "500 13px/1 system-ui, sans-serif",
-      letterSpacing: "0.3px",
-      pointerEvents: "none",
-      zIndex: "40",
-    }
-  );
-
-  document.body.appendChild(
-    ayuda
-  );
-
-  let cerrado = false;
-
-  /**
-   * Desmonta el recorrido.
-   *
-   * Antes destruía la cámara a mano y no ponía ninguna en su lugar, así que la
-   * escena se quedaba sin cámara activa y dejaba de dibujarse: al pulsar ESC
-   * aparecía un color liso en vez del menú. Ahora lo hace limpiarEscena, que
-   * además deja una cámara neutra y devuelve el fondo del portal.
-   */
-  const limpiarEscenario = (): void => {
-    camara.detachControl();
-    window.removeEventListener("keydown", alPulsar);
-    ayuda.remove();
-    tuberia.dispose();
-    limpiarEscena(scene);
-  };
-
-  const salir = (): void => {
-    if (cerrado) {
-      return;
-    }
-
-    cerrado = true;
-
-    limpiarEscenario();
-    onSalir();
-  };
-
-  const alPulsar =
-    (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        salir();
-      }
-    };
-
-  window.addEventListener(
-    "keydown",
-    alPulsar
-  );
-
-  return {
-    ...banco,
-
-    dispose: () => {
-      if (cerrado) {
-        return;
-      }
-
-      cerrado = true;
-      limpiarEscenario();
-    },
-  };
 }

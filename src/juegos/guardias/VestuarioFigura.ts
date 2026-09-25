@@ -1,5 +1,5 @@
 import { Scene, Mesh, MeshBuilder, PBRMaterial, Color3, TransformNode, Vector3 } from "@babylonjs/core";
-import { loft, capsula, cabezaEsculpida, peloEsculpido, puntoDeLaCara, texturaTela, type Anillo } from "./ModeladoFigura";
+import { loft, capsula, cabezaEsculpida, peloEsculpido, puntoDeLaCara, sobreLaCara, texturaTela, type Anillo } from "./ModeladoFigura";
 import type { PaletaFigura, Prenda } from "./Figura";
 
 // ===========================================================================
@@ -127,7 +127,9 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   const matDetalle = mat("detalle", paleta.detalle, 0.7, { tela: true });
   // Sin brillo de canto: sobre la piel se leía como una capa blanca de yeso.
   const matPiel = mat("piel", paleta.piel, 0.52);
-  const matPelo = mat("pelo", paleta.pelo ?? new Color3(0.05, 0.04, 0.035), 0.5, { brillo: 0.25 });
+  // Algo más rugoso que la piel: a 0,5 el brillo de la coronilla era una
+  // mancha blanca redonda, de casco de plástico. El pelo brilla, pero ancho.
+  const matPelo = mat("pelo", paleta.pelo ?? new Color3(0.05, 0.04, 0.035), 0.62, { brillo: 0.22 });
   const matZapato = mat("zapato", paleta.zapato ?? new Color3(0.025, 0.025, 0.03), paleta.gorra ? 0.3 : 0.6);
   const matSuela = mat("suela", paleta.suela ?? new Color3(0.02, 0.02, 0.02), 0.8);
   const matOscuro = mat("oscuro", new Color3(0.02, 0.02, 0.025), 0.45);
@@ -418,28 +420,48 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
     bola(`pupila_${lado}`, esq.cabeza, matPupila, o.x + lado * 0.001, CENTRO_CRANEO + o.y - 0.0005, o.z + 0.0018, 0.0042, 0.0042, 0.003);
     const parpado = bola(`parpado_${lado}`, esq.cabeza, matPiel, o.x, CENTRO_CRANEO + o.y + 0.0072, o.z - 0.0055, 0.0232, 0.0115, 0.0145);
     parpado.rotation.z = -lado * 0.1;
-    // La ceja: un arco continuo apoyado en la frente, más gruesa por dentro y
-    // afinándose hacia la sien. Con trozos sueltos —y más aún con una barra
-    // recta— se leía como una pegatina pegada encima del ojo.
-    const arco = [-0.95, -0.55, -0.15, 0.25, 0.65, 1.05, 1.3].map((t) => {
-      const px = o.x + lado * t * 0.0086;
-      const alto = 0.0235 + 0.003 * Math.cos(t * 1.1) - 0.0018 * Math.max(0, t);
-      const sitio = puntoDeLaCara(px, o.y + alto, paleta.rasgos);
-      // Apenas hundida: un milímetro más y el arco se mete en la piel y solo
-      // asoman trozos, como si la ceja fueran cuatro lunares.
-      return new Vector3(px, CENTRO_CRANEO + sitio.y, sitio.z - 0.0012);
-    });
-    const ceja = MeshBuilder.CreateTube(
+    // ─── LA CEJA ─────────────────────────────────────────────────────────
+    //
+    // Una franja apoyada en la piel, no un tubo: más alta por dentro, con el
+    // arco a dos tercios y afinándose hacia la sien, que es la forma de una
+    // ceja de verdad. De perfil apenas abulta —milímetro y medio en el lomo—
+    // y los bordes entran en la piel, así que no se lee pegada encima.
+    //
+    // Antes era un tubo redondo apoyado vértice a vértice en la malla de la
+    // cabeza, y cada tramo saltaba a una fila distinta: de cerca salía en
+    // zigzag, como una grapa. Ahora cada punto se busca EXACTO sobre la
+    // superficie (ver sobreLaCara).
+    const TRAMOS = 12;
+    const PERFIL = [
+      { alto: 0, sale: 0 },
+      { alto: 0.25, sale: 0.8 },
+      { alto: 0.5, sale: 1 },
+      { alto: 0.75, sale: 0.8 },
+      { alto: 1, sale: 0 },
+    ];
+    const bandas: Vector3[][] = PERFIL.map(() => []);
+    for (let k = 0; k <= TRAMOS; k++) {
+      const t = k / TRAMOS;
+      const px = o.x + lado * (-0.012 + 0.028 * t);
+      // El borde de abajo sube hasta el arco y baja hacia la sien; el ancho
+      // de la ceja se va afinando, y en la cabeza —la punta de dentro— se
+      // redondea un poco en vez de cortar en seco.
+      const bajo = o.y + 0.0172 + 0.0042 * Math.sin(Math.PI * t * 0.85) - 0.003 * t * t;
+      const ancho = (0.0062 - 0.0012 * t - 0.0032 * t * t) * (0.75 + 0.25 * Math.min(1, t / 0.12));
+      // El lomo se levanta en los extremos de a poco: sin esto, las puntas de
+      // la franja quedan abiertas y de lado se ve el hueco por debajo.
+      const lomo = -0.0004 + 0.0016 * Math.pow(Math.sin(Math.PI * t), 0.35);
+      PERFIL.forEach((p, b) => {
+        const sitio = sobreLaCara(px, bajo + ancho * p.alto, paleta.rasgos);
+        // Los bordes medio milímetro dentro de la piel y el lomo fuera.
+        const sale = p.sale > 0 ? lomo * p.sale : -0.0004;
+        const r = sitio.length() || 1;
+        bandas[b].push(new Vector3(sitio.x * (1 + sale / r), CENTRO_CRANEO + sitio.y * (1 + sale / r), sitio.z * (1 + sale / r)));
+      });
+    }
+    const ceja = MeshBuilder.CreateRibbon(
       `${nombre}_ceja_${lado}`,
-      {
-        path: arco,
-        // Fina y afinándose hacia la sien. Nada de aplastarla con scaling: el
-        // tubo tiene su origen en el centro de la cabeza, así que escalarlo en
-        // Y no lo adelgaza, lo BAJA —la ceja se hundía dentro del cráneo—.
-        radiusFunction: (i) => 0.0042 - 0.0018 * (i / (arco.length - 1)),
-        tessellation: 8,
-        cap: Mesh.CAP_ALL,
-      },
+      { pathArray: bandas, sideOrientation: Mesh.DOUBLESIDE },
       scene
     );
     poner(ceja, esq.cabeza, matPelo);
@@ -497,20 +519,85 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
     const lado = i === 0 ? -1 : 1;
     poner(capsula(scene, `${nombre}_brazo_${lado}`, MEDIDAS.brazo, 0.05 + grueso, 0.043 + grueso, { bulto: 0.004, fondo: 0.95 }), esq.hombros[i], matRopa);
     poner(capsula(scene, `${nombre}_antebrazo_${lado}`, MEDIDAS.antebrazo - 0.02, 0.045 + grueso, 0.037 + grueso, { fondo: 0.92 }), esq.codos[i], matRopa);
-    // La mano, con la palma hacia el muslo: fina en X, ancha en Z.
-    const mano = poner(loft(scene, `${nombre}_mano_${lado}`, [
-      { y: -0.18, x: 0.005, delante: 0.01 },
-      { y: -0.17, x: 0.01, delante: 0.022, cz: 0.004 },
-      { y: -0.14, x: 0.013, delante: 0.033, cz: 0.004 },
-      { y: -0.1, x: 0.016, delante: 0.04, cz: 0.002 },
-      { y: -0.065, x: 0.018, delante: 0.042 },
-      { y: -0.03, x: 0.02, delante: 0.03 },
-      { y: 0.015, x: 0.018, delante: 0.023 },
-    ], { lados: 16, tapaAbajo: true, tapaArriba: true }), esq.codos[i], matPiel, 0, -MEDIDAS.antebrazo, 0);
+    // ─── LA MANO ─────────────────────────────────────────────────────────
+    //
+    // Con la palma hacia el muslo: fina en X, ancha en Z, el pulgar delante.
+    //
+    // Era una paleta que se afinaba hasta una punta, con el pulgar como un
+    // palito aparte: de frente, un palo; de lado, una manopla. Ahora es una
+    // palma que acaba en los nudillos y cuatro dedos, cada uno con su largo
+    // —el medio el más largo, el meñique bastante más corto— y la punta roma.
+    // Colgando relajados se recogen hacia la palma, más cuanto más cerca de
+    // la punta, que es donde se doblan. El pulgar nace de la palma —de su
+    // almohadilla, que abulta— y baja por delante del índice.
+    //
+    // Todo se funde en una sola malla: una llamada de dibujo por mano, como
+    // antes eran dos con el pulgar aparte.
+    const palma = -lado;
+    const piezasMano: Mesh[] = [
+      // Acaba redondeada en los nudillos, por debajo de donde nacen los
+      // dedos: con un corte plano, el borde asomaba entre ellos en picos.
+      loft(scene, `${nombre}_palma_${lado}`, [
+        { y: -0.1005, x: 0.004, delante: 0.02, atras: 0.018, cx: palma * 0.002, forma: 2.4 },
+        { y: -0.0995, x: 0.0068, delante: 0.03, atras: 0.028, cx: palma * 0.002, forma: 2.5 },
+        { y: -0.097, x: 0.0095, delante: 0.036, atras: 0.034, cx: palma * 0.002, forma: 2.6 },
+        { y: -0.093, x: 0.013, delante: 0.041, atras: 0.04, cx: palma * 0.0018, forma: 2.8 },
+        { y: -0.088, x: 0.0145, delante: 0.043, atras: 0.042, cx: palma * 0.0015, forma: 2.8 },
+        { y: -0.06, x: 0.0175, delante: 0.043, atras: 0.041, cx: palma * 0.001, forma: 2.5 },
+        { y: -0.03, x: 0.019, delante: 0.037, cx: palma * 0.0005 },
+        { y: -0.005, x: 0.0165, delante: 0.027 },
+        { y: 0.015, x: 0.016, delante: 0.024 },
+      ], { lados: 32, tapaAbajo: true, tapaArriba: true }),
+    ];
+    // [dónde en Z, dónde nace, largo, grosor en la base, grosor en la punta]
+    const DEDOS = [
+      [0.03, -0.086, 0.076, 0.0095, 0.0078],
+      [0.0105, -0.089, 0.085, 0.0098, 0.008],
+      [-0.0095, -0.087, 0.08, 0.0092, 0.0075],
+      [-0.0285, -0.081, 0.064, 0.0082, 0.0066],
+    ] as const;
+    DEDOS.forEach(([z, nace, largo, r0, r1], k) => {
+      // Los dedos van juntos y, hacia la punta, se cierran un poco hacia el
+      // del medio.
+      const cierra = (0.0105 - z) * 0.08;
+      const anillos: Anillo[] = [];
+      const radio = (d: number): number => {
+        const recto = largo - r1;
+        if (d <= recto) return r0 + (r1 - r0) * (d / largo);
+        return Math.max(0.0008, r1 * Math.sqrt(Math.max(0, 1 - ((d - recto) / r1) ** 2)));
+      };
+      // Nace bien dentro de la palma, para que la unión quede tapada; algo
+      // más anchos que gruesos, y juntos: entre dedo y dedo no queda hueco.
+      [largo, largo - 0.25 * r1, largo - 0.6 * r1, largo - r1, 0.62 * largo, 0.3 * largo, 0, -0.016].forEach((d) => {
+        const t = Math.max(0, d) / largo;
+        const r = radio(Math.max(0, d));
+        // En la base, con el grueso del nudillo: se funde con la palma.
+        const grueso = 0.86 + 0.18 * Math.max(0, 1 - t / 0.3);
+        anillos.push({ y: nace - d, x: r * grueso, delante: r * 1.08, cx: palma * 0.016 * t * t, cz: z + cierra * t });
+      });
+      piezasMano.push(loft(scene, `${nombre}_dedo${k}_${lado}`, anillos, { lados: 12, tapaAbajo: true, tapaArriba: true }));
+    });
+    // Nace hundido en la palma, junto a la muñeca, y asoma por delante del
+    // índice a media mano: así sale de ella, no queda pegado encima.
+    const pulgar = capsula(scene, `${nombre}_pulgar_${lado}`, 0.078, 0.013, 0.0082, { lados: 12, fondo: 0.85 });
+    pulgar.position.set(palma * 0.005, -0.012, 0.014);
+    pulgar.rotation.set(-0.37, 0, palma * 0.09);
+    const almohadilla = MeshBuilder.CreateSphere(`${nombre}_tenar_${lado}`, { diameter: 1, segments: 10 }, scene);
+    almohadilla.position.set(palma * 0.011, -0.037, 0.02);
+    almohadilla.scaling.set(0.021, 0.044, 0.028);
+    piezasMano.push(pulgar, almohadilla);
+    piezasMano.forEach((m) => m.computeWorldMatrix(true));
+    const unida = Mesh.MergeMeshes(piezasMano, true, true) ?? piezasMano[0];
+    unida.name = `${nombre}_mano_${lado}`;
+    const mano = poner(unida, esq.codos[i], matPiel, 0, -MEDIDAS.antebrazo, 0);
     mano.rotation.z = lado * 0.08;
+    // Algo girada hacia dentro, con el dorso asomando por delante: es como
+    // cuelga una mano suelta. Justo de canto, de frente se veía un palo. La
+    // que sujeta la tablilla o el paraguas queda como estaba, cerrada sobre
+    // lo que lleva.
+    const sujeta = (paleta.accesorio === "tablilla" && i === 0) || (paleta.accesorio === "paraguas" && i === 1);
+    if (!sujeta) mano.rotation.y = -lado * 0.4;
     mano.scaling.setAll(0.9);
-    const pulgar = poner(capsula(scene, `${nombre}_pulgar_${lado}`, 0.045, 0.011, 0.009, { lados: 10 }), esq.codos[i], matPiel, -lado * 0.004, -MEDIDAS.antebrazo - 0.04, 0.03);
-    pulgar.rotation.x = -0.45;
   });
 
   if (paleta.accesorio === "tablilla") {

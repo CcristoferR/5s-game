@@ -59,3 +59,21 @@ se pasan a MP3 y solo hay que cambiar el nombre del archivo en
 `src/core/Sonido.ts`.
 
 Los efectos anteriores del juego (5S) no vienen de aquí y no se tocaron.
+
+## El banco
+
+| Archivo del juego | Origen | Autor | Licencia |
+|---|---|---|---|
+| `ambiente-banco.mp3` | [freesound.org/people/TRP/sounds/577495](https://freesound.org/people/TRP/sounds/577495/) — "Bank, interior ambience, office, doors, footsteps, printer, typing, voices" | TRP | CC0 |
+| `turno-banco.wav` | Hecho aquí: dos notas de campana electrónica (mi y do) con la cola de un hall | — | propio |
+
+El ambiente es la vista previa en MP3 de Freesound (3:56, estéreo 48 kHz),
+grabada dentro de un banco de verdad: voces, puertas, pasos, impresora y
+teclados. Tampoco se le tocó el archivo: al cargar, además del empalme del
+bucle, se le **suavizan los golpes** —cinco sobresaltos de puerta y timbre que
+en un nivel donde lo que pasa en la sala importa se confunden con algo real—.
+Está en `src/core/Sonido.ts` (`suavizarPicos`).
+
+El tin-tón del llamador de turnos se generó con un guion de Node (síntesis
+aditiva con parciales de campana, ecos cortos de sala y el volumen igualado
+por RMS a 0,11 como los demás efectos del turno). No viene de ningún pack.

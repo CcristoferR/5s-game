@@ -78,7 +78,7 @@
       // Para las pruebas: mirar a alguien de cerca, ponerle un gesto o hacerlo
       // caminar en círculos.
       window.__estudio = {
-        scene, engine, camara, figuras, Vector3,
+        scene, engine, camara, figuras, Vector3, MeshBuilder, PBRMaterial, Color3,
         mirar(nombre, distancia = 1.1, altura = 1.45, angulo = 0.6) {
           const f = figuras.find((x) => x.nombre === nombre) ?? figuras[0];
           const cx = f.x + Math.sin(angulo) * distancia;

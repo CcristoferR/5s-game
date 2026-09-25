@@ -24,8 +24,16 @@ import {
   crearPuestoConserjeria,
 } from "./guardias/PuestoConserjeria";
 import {
-  crearRecorridoBanco,
-} from "./guardias/EscenaBanco";
+  crearPuestoBanco,
+  type PuestoBanco,
+} from "./guardias/PuestoBanco";
+import {
+  horaDe,
+} from "./guardias/LibroNovedades";
+import {
+  INICIO_TURNO as INICIO_TURNO_BANCO,
+  FIN_ATENCION as FIN_ATENCION_BANCO,
+} from "./guardias/TurnoBanco";
 
 // ===========================================================================
 // Curso de Guardias de Seguridad
@@ -61,13 +69,18 @@ const BRIEFINGS: Record<
     color: "#79a8bd",
   },
 
+  // No anticipa lo que va a pasar: es el turno de cualquier mañana en el
+  // acceso de una sucursal. El nivel tiene que llegar sin aviso.
   3: {
     rotulo: "Escenario 03",
     fase: "Banco",
-    traduccion: "Recorrido del escenario",
+    traduccion: "Puesto de acceso",
     contexto:
-      "Recorre el escenario bancario y familiarízate con sus espacios, " +
-      "accesos, sectores de atención y circulación interna.",
+      `Turno de mañana, de ${horaDe(INICIO_TURNO_BANCO)} a ${horaDe(FIN_ATENCION_BANCO)}, ` +
+      "en el acceso principal de una sucursal bancaria. Es un puesto fijo: " +
+      "desde la puerta se vigila el ingreso y el hall entero, con la fila, " +
+      "las sillas de espera y las cajas. No hay rondas que hacer; el trabajo " +
+      "es estar y mirar.",
     color: "#8ba6c9",
   },
 };
@@ -98,7 +111,7 @@ const ESCENARIOS: NivelMenuInfo[] = [
   {
     numero: 3,
     nombre:
-      "BANCO - Recorrido del escenario",
+      "BANCO - Puesto de acceso",
     desbloqueado: true,
     completado: false,
   },
@@ -265,42 +278,57 @@ export function abrirMenuGuardias(
       // ESCENARIO 3 — BANCO
       // =========================================================
       if (numero === 3) {
-        void cargarConPantalla(
-          numero,
+        // Como el supermercado: el turno arranca cuando se levanta la
+        // pantalla de carga, y "repetir" lo vuelve a montar sin pasar por el
+        // menú.
+        const montarTurno = (): void => {
+          let puesto: PuestoBanco | null = null;
 
-          async () => {
-            await crearRecorridoBanco(
-              scene,
+          void cargarConPantalla(
+            numero,
 
-              () => {
-                abrirMenuGuardias(
-                  scene,
-                  onVolverAlPortal,
-                  usuario
-                );
-              }
-            );
+            async () => {
+              puesto = await crearPuestoBanco(
+                scene,
 
-            const TOPE_MS =
-              10000;
+                (motivo) => {
+                  if (motivo === "repetir") {
+                    montarTurno();
+                    return;
+                  }
+                  abrirMenuGuardias(
+                    scene,
+                    onVolverAlPortal,
+                    usuario
+                  );
+                },
 
-            await Promise.race([
-              scene.whenReadyAsync(
-                true
-              ),
+                quienJuega
+              );
 
-              new Promise<void>(
-                (listo) =>
-                  setTimeout(
-                    listo,
-                    TOPE_MS
-                  )
-              ),
-            ]);
-          },
+              const TOPE_MS =
+                10000;
 
-          BRIEFINGS[numero]
-        );
+              await Promise.race([
+                scene.whenReadyAsync(
+                  true
+                ),
+
+                new Promise<void>(
+                  (listo) =>
+                    setTimeout(
+                      listo,
+                      TOPE_MS
+                    )
+                ),
+              ]);
+            },
+
+            BRIEFINGS[numero]
+          ).then(() => puesto?.comenzar());
+        };
+
+        montarTurno();
 
         return;
       }

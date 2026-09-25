@@ -75,7 +75,7 @@ const FONDO_PERFIL = 0.06;
 /** El marco va a haces de la cara de fuera, dos milímetros por dentro. */
 const MARCO_Z1 = MURO_FUERA_Z - 0.002;
 const MARCO_Z0 = MARCO_Z1 - FONDO_PERFIL;
-const VIDRIO_Z = (MARCO_Z0 + MARCO_Z1) / 2;
+export const VIDRIO_Z = (MARCO_Z0 + MARCO_Z1) / 2;
 
 /** Plano de las hojas de la puerta: por dentro, corriendo sobre el muro. */
 const HOJAS_Z = MURO_DENTRO_Z - 0.032;

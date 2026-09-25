@@ -7,6 +7,7 @@ import {
   Ray,
   DefaultRenderingPipeline,
   ImageProcessingConfiguration,
+  PBRMaterial,
   type AbstractMesh,
 } from "@babylonjs/core";
 import {
@@ -37,7 +38,8 @@ import { montarLineaDeCajas } from "./CajaSupermercado";
 import { colgarLuminarias, encenderFocosSala, separarSueloSala, pulirSuelo, sombrasAlPie } from "./LuzSalaSupermercado";
 import { construirExterior, separarLoDeFuera, type Exterior } from "./ExteriorSupermercado";
 import { extraerProductos } from "./ProductosSupermercado";
-import { construirFachada, esCaraDeFueraFachada } from "./FachadaSupermercado";
+import { construirFachada, esCaraDeFueraFachada, VIDRIO_Z } from "./FachadaSupermercado";
+import { prepararNocheSala, type NocheSala } from "./NocheSala";
 import {
   DURACION_TURNO,
   ETIQUETA_TURNO,
@@ -113,6 +115,8 @@ export interface RecorridoSupermercado {
   comenzar: () => void;
   /** Lo de fuera. El reloj le pone la hora; de fuera, solo para mirarlo a otra. */
   exterior: Exterior;
+  /** La sala a esa hora: el reloj la mueve junto con lo de fuera. */
+  sala: NocheSala;
   dispose: () => void;
 }
 
@@ -341,7 +345,7 @@ export async function crearRecorridoSupermercado(
   // La luz de la sala: el relleno, los focos bajo las luminarias y las
   // luminarias. Ver LuzSalaSupermercado.
   iluminarSupermercado(scene);
-  encenderFocosSala(scene);
+  const focosSala = encenderFocosSala(scene);
   colgarLuminarias(scene);
   ampliarLucesSupermercado(scene);
 
@@ -495,7 +499,9 @@ export async function crearRecorridoSupermercado(
   // La fachada va después de todos los que caminan: la puerta automática se
   // abre para cualquiera de ellos, y al montarla tiene que poder contarlos.
   const fachada = construirFachada(scene, camara, piso);
-  exterior.alReflejar((reflejo) => fachada.reflejar(reflejo));
+  // El vidrio de las vidrieras ya no refleja la sonda de fuera: desde DENTRO
+  // un vidrio refleja lo que tiene delante, que es la sala. Ese reflejo lo
+  // pone la noche de la sala, más abajo (ver NocheSala).
   // La sombra al pie de cada uno y el suelo pulido, que ya puede reflejar a
   // todos: se monta cuando la sala está completa. Lo de fuera no entra en el
   // reflejo —por las vidrieras apenas se vería, y se pagaría entero—, ni
@@ -509,6 +515,19 @@ export async function crearRecorridoSupermercado(
   // El cristal de los refrigerados, ahora que la sala está entera: refleja lo
   // que hay. Ver reflejarRefrigerados.
   reflejarRefrigerados(scene, piso);
+
+  // La sala al anochecer: las vidrieras se vuelven espejo, la luz pasa a ser
+  // la de los focos y las luminarias se marcan. Se mueve con el reloj, igual
+  // que lo de fuera. Ver NocheSala.
+  const deFueraONoSeRefleja = new Set<AbstractMesh>([...exterior.mallas, ...fachada.mallas]);
+  const nocheSala: NocheSala = prepararNocheSala(scene, {
+    focos: focosSala,
+    tuberia,
+    vidrio: scene.getMaterialByName("matVidrioFachada") as PBRMaterial | null,
+    vidrioZ: VIDRIO_Z,
+    excluir: (m) => deFueraONoSeRefleja.has(m),
+  });
+  nocheSala.ajustarHora(horaDelDia(0));
 
   // ─── ¿LO TIENE DELANTE? ───────────────────────────────────────────────
   //
@@ -642,6 +661,7 @@ export async function crearRecorridoSupermercado(
     alAvanzar: (minuto) => {
       hud.ponerHora(horaDelTurno(minuto));
       exterior.ajustarHora(horaDelDia(minuto));
+      nocheSala.ajustarHora(horaDelDia(minuto));
       hud.ponerAdelanto(reloj.estaAdelantando());
       rondas.alPasarMinuto(minuto);
       if (minuto >= DURACION_TURNO) {
@@ -1128,6 +1148,7 @@ export async function crearRecorridoSupermercado(
     supermercado,
     comenzar,
     exterior,
+    sala: nocheSala,
     // salir() ya desmonta la escena entera, así que esto es solo el atajo por
     // si alguien cierra el recorrido desde fuera sin pasar por ESC.
     dispose: salir,

@@ -727,7 +727,7 @@ export function construirExterior(scene: Scene, proyectan: AbstractMesh[], deFue
 // Materiales y texturas pintadas
 // ===========================================================================
 
-function pbr(scene: Scene, nombre: string, tex: DynamicTexture, rugosidad: number): PBRMaterial {
+export function pbr(scene: Scene, nombre: string, tex: DynamicTexture, rugosidad: number): PBRMaterial {
   const m = new PBRMaterial(nombre, scene);
   m.albedoTexture = tex;
   m.roughness = rugosidad;
@@ -735,7 +735,7 @@ function pbr(scene: Scene, nombre: string, tex: DynamicTexture, rugosidad: numbe
   return m;
 }
 
-function fundir(nombre: string, piezas: Mesh[], material: PBRMaterial): Mesh {
+export function fundir(nombre: string, piezas: Mesh[], material: PBRMaterial): Mesh {
   const m = Mesh.MergeMeshes(piezas, true, true) ?? piezas[0];
   m.name = nombre;
   m.material = material;
@@ -746,7 +746,7 @@ function fundir(nombre: string, piezas: Mesh[], material: PBRMaterial): Mesh {
  * Funde las piezas de un objeto quieto por material: una malla por material,
  * en coordenadas del mundo. Lo que no se puede fundir queda como estaba.
  */
-function porMaterial(piezas: Mesh[]): Mesh[] {
+export function porMaterial(piezas: Mesh[]): Mesh[] {
   const grupos = new Map<unknown, Mesh[]>();
   for (const m of piezas) {
     m.computeWorldMatrix(true);
@@ -781,7 +781,7 @@ function porMaterial(piezas: Mesh[]): Mesh[] {
 }
 
 /** Multiplica las UV de una malla: la textura se repite tantas veces. */
-function escalarUV(m: Mesh, su: number, sv: number): void {
+export function escalarUV(m: Mesh, su: number, sv: number): void {
   const uv = m.getVerticesData(VertexBuffer.UVKind);
   if (!uv) return;
   for (let i = 0; i < uv.length; i += 2) {
@@ -836,7 +836,7 @@ function grano(ctx: CanvasRenderingContext2D, ancho: number, alto: number, semil
   }
 }
 
-function texturaAsfalto(scene: Scene): DynamicTexture {
+export function texturaAsfalto(scene: Scene): DynamicTexture {
   const L = 1024;
   const { tex, ctx } = lienzo(scene, "texAsfaltoExterior", L, L);
   ctx.fillStyle = "#56585b";
@@ -848,7 +848,7 @@ function texturaAsfalto(scene: Scene): DynamicTexture {
   return tex;
 }
 
-function texturaBaldosa(scene: Scene): DynamicTexture {
+export function texturaBaldosa(scene: Scene): DynamicTexture {
   // Baldosa microvibrada de 40 cm, la de las veredas: cada una con su
   // cuadriculado de nueve y un tono apenas distinto al de al lado.
   const L = 512;
@@ -888,7 +888,7 @@ function texturaBaldosa(scene: Scene): DynamicTexture {
   return tex;
 }
 
-function texturaPasto(scene: Scene): DynamicTexture {
+export function texturaPasto(scene: Scene): DynamicTexture {
   const L = 512;
   const { tex, ctx } = lienzo(scene, "texPastoExterior", L, L);
   ctx.fillStyle = "#4f6b2e";
@@ -927,7 +927,7 @@ function texturaPreferencial(scene: Scene): DynamicTexture {
   return tex;
 }
 
-interface Edificio {
+export interface Edificio {
   x0: number;
   x1: number;
   alto: number;
@@ -946,7 +946,7 @@ interface Edificio {
  * ventanas con marco, reflejo de cielo y alguna cortina, el local de abajo
  * con su vitrina y su letrero, y la cornisa.
  */
-function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: number): { albedo: DynamicTexture; luz: DynamicTexture } {
+export function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: number): { albedo: DynamicTexture; luz: DynamicTexture } {
   const ancho = e.x1 - e.x0;
   const PX_M = 64;
   const W = Math.min(2048, Math.round(ancho * PX_M));
@@ -1146,7 +1146,7 @@ function texturaFachada(scene: Scene, nombre: string, e: Edificio, semilla: numb
   return { albedo: tex, luz: capa.tex };
 }
 
-function texturaToldo(scene: Scene, nombre: string, [a, b]: [string, string]): DynamicTexture {
+export function texturaToldo(scene: Scene, nombre: string, [a, b]: [string, string]): DynamicTexture {
   const { tex, ctx } = lienzo(scene, nombre, 512, 128);
   const franjas = 12;
   for (let k = 0; k < franjas; k++) {
@@ -1254,7 +1254,7 @@ function texturaCordillera(scene: Scene): DynamicTexture {
   return tex;
 }
 
-type EstiloCielo = "tarde" | "ocaso" | "noche";
+export type EstiloCielo = "tarde" | "ocaso" | "noche";
 
 /**
  * Los colores de cada cielo: el degradado de cenit a bajo el horizonte y el
@@ -1279,7 +1279,7 @@ const CIELOS: Record<EstiloCielo, { paradas: [number, string][]; nube: [string, 
   },
 };
 
-function texturaCielo(scene: Scene, nombre: string, estilo: EstiloCielo): DynamicTexture {
+export function texturaCielo(scene: Scene, nombre: string, estilo: EstiloCielo): DynamicTexture {
   const W = 2048;
   const H = 1024;
   const { tex, ctx } = lienzo(scene, nombre, W, H);
