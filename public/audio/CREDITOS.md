@@ -77,3 +77,17 @@ Está en `src/core/Sonido.ts` (`suavizarPicos`).
 El tin-tón del llamador de turnos se generó con un guion de Node (síntesis
 aditiva con parciales de campana, ecos cortos de sala y el volumen igualado
 por RMS a 0,11 como los demás efectos del turno). No viene de ningún pack.
+
+## El asalto al banco
+
+| Archivo del juego | Origen | Autor | Licencia |
+|---|---|---|---|
+| `puerta-golpe.wav` | [freesound.org/people/hisoul/sounds/462665](https://freesound.org/people/hisoul/sounds/462665/) — "Angry Door - Wooden Entrance Open Close Slam Hard" (solo el golpe) | hisoul | CC0 |
+| `exclamacion.wav` | [freesound.org/people/dreamstobecome/sounds/439258](https://freesound.org/people/dreamstobecome/sounds/439258/) — "gasps small crowd" (la primera) | dreamstobecome | CC0 |
+| `pasos-corriendo.wav` | [freesound.org/people/leoanderson67/sounds/710765](https://freesound.org/people/leoanderson67/sounds/710765/) — "multiple people running" | leoanderson67 | CC0 |
+
+Recortados de la vista previa MP3, pasados a WAV mono 44,1 kHz e igualados
+en volumen como los demás efectos del turno. El silencio de la sala cuando
+entran lo genera el juego (ruido grave filtrado, sin archivo): ver
+`cortarAmbienteSala` en `src/core/Sonido.ts`. La carpeta completa con los
+originales está en el escritorio, `audio-banco/asalto`.

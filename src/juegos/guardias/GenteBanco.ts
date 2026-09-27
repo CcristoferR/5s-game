@@ -39,21 +39,21 @@ import { montarPantallaTurnos, type PantallaTurnos } from "./PantallaTurnosBanco
 // y la explanada de fuera en 0,46.
 
 /** El eje de cada caja, por su placa, y su silla. */
-const CAJAS = [
+export const CAJAS = [
   { placa: -3.15, silla: -3.18 },
   { placa: -1.15, silla: -1.05 },
   { placa: 1.09, silla: 1.05 },
   { placa: 3.07, silla: 3.18 },
 ] as const;
 /** Donde se para quien atienden: a cuarenta centímetros del mesón. */
-const Z_CLIENTE = 3.95;
+export const Z_CLIENTE = 3.95;
 /** La cadera del cajero: en la parte delantera del asiento, hacia el mesón. */
-const Z_CAJERO = 5.25;
+export const Z_CAJERO = 5.25;
 /** Alto del asiento de las sillas de oficina y de las de espera, sobre el piso. */
 const ASIENTO_OFICINA = 0.531;
 const ASIENTO_ESPERA = 0.448;
 /** Alto de la cubierta del mesón sobre el piso. */
-const MESON = 0.737;
+export const MESON = 0.737;
 
 /** El pasillo de la fila, entre los postes: su eje y los puestos, de la cabeza a la cola. */
 const FILA_X = 0.73;
@@ -65,21 +65,21 @@ const ASIENTOS_IZQ = [-2.34, -1.92, -1.5, -1.08, -0.66] as const;
 const ASIENTOS_DER = [2.16, 2.58, 3.0, 3.42, 3.84] as const;
 
 /** Los dos pasillos junto a los muros, entre los asientos y las ventanas. */
-const PASILLO_IZQ = -3.4;
+export const PASILLO_IZQ = -3.4;
 const PASILLO_DER = 4.75;
 /** La calle entre las cajas y la fila, de un muro al otro. */
-const Z_FRENTE_CAJAS = 2.7;
+export const Z_FRENTE_CAJAS = 2.7;
 
 /** La puerta, por dentro y por fuera, y la vereda. */
-const PUERTA_X = 0.667;
-const Z_PUERTA_DENTRO = -3.45;
-const Z_PUERTA_FUERA = -4.8;
-const Z_VEREDA = -9.7;
+export const PUERTA_X = 0.667;
+export const Z_PUERTA_DENTRO = -3.45;
+export const Z_PUERTA_FUERA = -4.8;
+export const Z_VEREDA = -9.7;
 /** Por dónde se llega y por dónde se va: la gente entra por la derecha y sale por la izquierda. */
 const LEJOS_DER = 12.5;
 const LEJOS_IZQ = -12;
-/** Alto de la explanada de fuera. Ver alturaDelSuelo. */
-const Y_FUERA = 0.458;
+/** Alto de la explanada de fuera. */
+export const Y_FUERA = 0.458;
 
 /** Paso de quien camina por un banco: sin prisa, pero tampoco paseando. */
 const PASO = 1.1;
@@ -346,9 +346,33 @@ const CLIENTES: Record<string, Persona> = {
   },
 };
 
+/** Quién está dónde en el momento en que empieza el asalto. Ver GenteBanco.asalto. */
+export interface SalaEnAsalto {
+  /** Los tres cajeros, por caja. */
+  cajeros: Figura[];
+  /** Quién está en el mesón de cada caja abierta, si hay alguien. */
+  enCaja: (Figura | null)[];
+  /** Todos los clientes que están dentro del hall en ese momento. */
+  clientes: Figura[];
+  puerta: PuertaBanco | null;
+  pantalla: PantallaTurnos;
+}
+
 export interface GenteBanco {
   /** Todas las figuras, estén o no en escena. */
   figuras: Figura[];
+  /**
+   * Se acaba la mañana: el guion se detiene y nadie sigue con lo suyo —los
+   * cajeros dejan de teclear, nadie mira ya la pantalla—. Desde aquí cada uno
+   * hace lo que le mande el asalto. Devuelve quién está dónde.
+   */
+  asalto(): SalaEnAsalto;
+  /**
+   * Suma una figura que viene de fuera —los del asalto—: la puerta se abre
+   * para ella, pisa el escalón del umbral, se congela con la pausa y se
+   * desecha con las demás.
+   */
+  registrar(f: Figura): void;
   /** Arranca el guion de la mañana. Hasta entonces cada uno está en su sitio, quieto en lo suyo. */
   comenzar(): void;
   /** Clava a todos, la puerta y la pantalla como están, o los suelta. */
@@ -615,10 +639,12 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
     { t: 68, hacer: () => { llamar(0); pasaLaFila(0); } },
     { t: 78, hacer: () => irse(2) },
     { t: 80, hacer: () => { llamar(2); deAsientoACaja(sentados[1].f, sentados[1].fila, 2); } },
-    { t: 100, hacer: () => irse(1) },
+    { t: 92, hacer: () => irse(1) },
     // Este llamado es para la señora de rojo, que esperaba sentada mirando el
-    // teléfono: así la fila no se vacía y queda gente de pie en el hall.
-    { t: 102, hacer: () => { llamar(1); deAsientoACaja(sentados[0].f, sentados[0].fila, 1); } },
+    // teléfono: así la fila no se vacía y queda gente de pie en el hall. A
+    // los 94 y no más tarde: llega al mesón a los 104, bien antes de las
+    // 9:45, y cuando pasa lo que pasa no queda nadie a medio camino.
+    { t: 94, hacer: () => { llamar(1); deAsientoACaja(sentados[0].f, sentados[0].fila, 1); } },
   ];
   let proximo = 0;
 
@@ -627,6 +653,8 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
   let enMarcha = false;
   let quietos = false;
   let cerrado = false;
+  /** Desde que empieza el asalto, la sala es suya. Ver asalto(). */
+  let enAsalto = false;
   /** Segundos que le quedan a la gente mirando la pantalla tras un llamado. */
   let miranPantalla = 0;
   /** El centro de la pantalla de turnos, adonde se mira tras un llamado. */
@@ -635,7 +663,7 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
   const observador: Observer<Scene> | null = scene.onBeforeRenderObservable.add(() => {
     if (quietos || cerrado) return;
     const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
-    if (enMarcha) {
+    if (enMarcha && !enAsalto) {
       tiempo += dt;
       while (proximo < guion.length && guion[proximo].t <= tiempo) guion[proximo++].hacer();
       for (let k = esperas.length - 1; k >= 0; k--) {
@@ -654,6 +682,7 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
       const t = Math.min(1, Math.max(0, (p.z + 4.35) / 0.45));
       p.y = Y_FUERA + (piso - Y_FUERA) * t;
     });
+    if (enAsalto) return;
 
     // Los cajeros: al cliente cuando lo tienen delante, al monitor el resto,
     // y tecleando mientras miran el monitor. Si viene alguien, lo miran venir.
@@ -702,6 +731,23 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
     figuras,
     comenzar() {
       enMarcha = true;
+    },
+    asalto() {
+      enAsalto = true;
+      esperas.length = 0;
+      // Dentro del hall: de la puerta hacia dentro, y en escena.
+      const dentro = clientes.filter((f) => f.raiz.isEnabled() && f.raiz.position.z > Z_PUERTA_DENTRO - 0.3);
+      return {
+        cajeros: [...cajeros],
+        enCaja: [...atendiendo],
+        clientes: dentro,
+        puerta,
+        pantalla,
+      };
+    },
+    registrar(f) {
+      figuras.push(f);
+      if (quietos) f.congelar(true);
     },
     congelar(q) {
       quietos = q;

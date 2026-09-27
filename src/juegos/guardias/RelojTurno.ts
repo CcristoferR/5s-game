@@ -100,6 +100,14 @@ export interface RelojTurno {
   estaAdelantando(): boolean;
   /** Salta directamente a un minuto. Nunca hacia atrás. */
   saltarA(minuto: number): void;
+  /**
+   * Cambia cuántos minutos de turno pasan por segundo real, desde ya.
+   *
+   * Para cuando el turno deja de ser una mañana que pasa y se vuelve un
+   * momento que se vive: en el banco, durante el asalto el reloj va a tiempo
+   * real —un minuto por minuto—, que es lo que dura de verdad.
+   */
+  ritmo(minutosPorSegundo: number): void;
   dispose(): void;
 }
 
@@ -177,6 +185,8 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
   let terminado = false;
   /** Segundos que quedan de pausa por una novedad recién ocurrida. */
   let respiro = 0;
+  /** El ritmo puesto con ritmo(); si no hay, el de las opciones. */
+  let ritmoPuesto: number | null = null;
 
   const observador: Observer<Scene> | null = scene.onBeforeRenderObservable.add(() => {
     if (!corriendo || terminado) return;
@@ -192,7 +202,7 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
       return;
     }
 
-    const velocidad = opciones.minutosPorSegundo ?? MINUTOS_POR_SEGUNDO;
+    const velocidad = ritmoPuesto ?? opciones.minutosPorSegundo ?? MINUTOS_POR_SEGUNDO;
     minutoExacto += dt * velocidad * (adelantando ? FACTOR_ADELANTO : 1);
 
     // Frenada en el próximo hito. Se comprueba SIEMPRE, no solo adelantando:
@@ -260,6 +270,9 @@ export function crearRelojTurno(scene: Scene, opciones: OpcionesReloj): RelojTur
       minutoExacto = Math.min(minuto, opciones.minutoFinal);
       adelantando = false;
       avisarHasta(Math.floor(minutoExacto));
+    },
+    ritmo(minutosPorSegundo) {
+      ritmoPuesto = minutosPorSegundo;
     },
     dispose() {
       corriendo = false;

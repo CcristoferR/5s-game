@@ -40,7 +40,11 @@ export type EfectoSonido =
   | "marca"
   | "mirada"
   // El llamador de turnos del banco.
-  | "turnoBanco";
+  | "turnoBanco"
+  // El asalto.
+  | "puertaGolpe"
+  | "exclamacion"
+  | "pasosCorriendo";
 
 interface DefinicionEfecto {
   archivo: string;
@@ -85,6 +89,16 @@ const EFECTOS: Record<EfectoSonido, DefinicionEfecto> = {
   // El "tin-tón" de la pantalla de turnos. Es de la sala, no de la interfaz:
   // va bajo, como algo que suena al fondo del hall y no en el oído.
   turnoBanco: { archivo: "turno-banco.wav", volumen: 0.32, copias: 1 },
+  // ─── EL ASALTO ──────────────────────────────────────────────────────
+  //
+  // Freesound, CC0 (ver public/audio/CREDITOS.md): la puerta que se abre de
+  // un golpe contra el tope, la exclamación ahogada de un grupo chico y
+  // varias personas corriendo por un pasillo. Igualados en volumen como los
+  // demás; aquí se reparte cuánto pesa cada uno. El golpe y la exclamación
+  // tienen que sobresaltar: son lo que avisa a quien está mirando a otra parte.
+  puertaGolpe: { archivo: "puerta-golpe.wav", volumen: 0.85, copias: 1 },
+  exclamacion: { archivo: "exclamacion.wav", volumen: 0.5, copias: 1 },
+  pasosCorriendo: { archivo: "pasos-corriendo.wav", volumen: 0.55, copias: 1 },
 };
 
 const CARPETA = "/audio/";
@@ -211,6 +225,7 @@ export function ajustarVolumen(valor: number): void {
     audio.volume = ambiente.volumen * volumenGeneral;
   }
   ponerNivelSala(0.15);
+  ponerNivelTono(0.15);
 }
 
 // ===========================================================================
@@ -283,6 +298,10 @@ const cargasSala = new Map<AmbienteSala, Promise<AudioBuffer | null>>();
 /** El que suena, o el último que sonó: su volumen es el que manda. */
 let ambienteActual: AmbienteSala = "supermercado";
 let sala: { fuente: AudioBufferSourceNode; ganancia: GainNode } | null = null;
+/** Si la sala se calló de golpe. Ver cortarAmbienteSala. */
+let salaCallada = false;
+/** El zumbido del local que queda cuando se calla la gente. */
+let tono: { fuente: AudioBufferSourceNode; ganancia: GainNode } | null = null;
 let arrancandoSala = false;
 let salaAgachada = false;
 
@@ -296,6 +315,7 @@ function obtenerContexto(): AudioContext | null {
 
 /** Nivel al que debe estar sonando ahora mismo el ambiente de sala. */
 function nivelSala(): number {
+  if (salaCallada) return 0;
   return AMBIENTES[ambienteActual].volumen * volumenGeneral * (salaAgachada ? AGACHADO : 1);
 }
 
@@ -458,10 +478,93 @@ export function iniciarAmbienteSala(cual: AmbienteSala = "supermercado"): void {
 export function agacharAmbienteSala(agachado: boolean): void {
   salaAgachada = agachado;
   ponerNivelSala(0.35);
+  ponerNivelTono(0.35);
+}
+
+/**
+ * La sala se calla de golpe: nadie habla, nadie se mueve.
+ *
+ * Las voces y los ruidos del local se cortan en un tercio de segundo, y lo que
+ * queda es el zumbido del edificio —la ventilación, las luces—, bajo. Sin él
+ * el corte sería silencio digital, que no existe en ninguna sala y se lee como
+ * que se rompió el audio.
+ *
+ * El zumbido se genera aquí: ruido filtrado hacia los graves, en bucle de tres
+ * segundos. No hace falta ningún archivo para eso.
+ */
+export function cortarAmbienteSala(): void {
+  salaCallada = true;
+  ponerNivelSala(0.3);
+  arrancarTono();
+}
+
+/** Lo contrario: la sala vuelve a sonar, entrando en esos segundos. */
+export function devolverAmbienteSala(segundos = 3): void {
+  salaCallada = false;
+  ponerNivelSala(segundos);
+  ponerNivelTono(segundos);
+}
+
+/** Nivel del zumbido: solo con la sala callada. */
+function nivelTono(): number {
+  return salaCallada ? 0.02 * volumenGeneral * (salaAgachada ? AGACHADO : 1) : 0;
+}
+
+function ponerNivelTono(segundos: number): void {
+  if (!tono || !contexto) return;
+  const ahora = contexto.currentTime;
+  tono.ganancia.gain.cancelScheduledValues(ahora);
+  tono.ganancia.gain.setValueAtTime(tono.ganancia.gain.value, ahora);
+  tono.ganancia.gain.linearRampToValueAtTime(nivelTono(), ahora + segundos);
+}
+
+function arrancarTono(): void {
+  if (!desbloqueado || silenciado) return;
+  const ctx = obtenerContexto();
+  if (!ctx) return;
+  if (!tono) {
+    const largo = Math.round(ctx.sampleRate * 3);
+    const buffer = ctx.createBuffer(1, largo, ctx.sampleRate);
+    const datos = buffer.getChannelData(0);
+    // Ruido rojo: blanco integrado con fuga, que deja casi solo los graves.
+    let v = 0;
+    for (let i = 0; i < largo; i++) {
+      v = v * 0.985 + (Math.random() * 2 - 1) * 0.12;
+      datos[i] = v;
+    }
+    // Empalme de medio segundo, como el del ambiente: sin chasquido al volver.
+    const cruce = Math.round(ctx.sampleRate * 0.5);
+    for (let i = 0; i < cruce; i++) {
+      const p = i / cruce;
+      datos[i] = datos[i] * Math.sqrt(p) + datos[largo - cruce + i] * Math.sqrt(1 - p);
+    }
+    const fuente = ctx.createBufferSource();
+    fuente.buffer = buffer;
+    fuente.loop = true;
+    fuente.loopEnd = (largo - cruce) / ctx.sampleRate;
+    const ganancia = ctx.createGain();
+    ganancia.gain.value = 0;
+    fuente.connect(ganancia);
+    ganancia.connect(ctx.destination);
+    fuente.start();
+    tono = { fuente, ganancia };
+  }
+  ponerNivelTono(1.2);
 }
 
 /** Corta el ambiente de la sala con un fundido corto. */
 export function detenerAmbienteSala(): void {
+  // El zumbido también, si estaba.
+  const zumbido = tono;
+  tono = null;
+  salaCallada = false;
+  if (zumbido && contexto) {
+    const ahora = contexto.currentTime;
+    zumbido.ganancia.gain.cancelScheduledValues(ahora);
+    zumbido.ganancia.gain.setValueAtTime(zumbido.ganancia.gain.value, ahora);
+    zumbido.ganancia.gain.linearRampToValueAtTime(0, ahora + 0.6);
+    zumbido.fuente.stop(ahora + 0.65);
+  }
   const actual = sala;
   sala = null;
   salaAgachada = false;

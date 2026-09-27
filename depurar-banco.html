@@ -31,7 +31,14 @@
         });
         await Promise.race([scene.whenReadyAsync(true), new Promise((r) => setTimeout(r, 15000))]);
         puesto.comenzar?.();
-        window.__depurar = { scene, engine, puesto, camara: scene.activeCamera, Vector3, Ray, MeshBuilder, StandardMaterial, Color3 };
+        window.__depurar = {
+          scene, engine, puesto, camara: scene.activeCamera, Vector3, Ray, MeshBuilder, StandardMaterial, Color3,
+          __asaltoTiempo: () => puesto.asalto.tiempo(),
+          __asaltoFase: () => puesto.asalto.fase(),
+          // Lo que alcanzó a ver y lo que eligió: solo para las pruebas.
+          __observado: () => puesto.observacion.resumen(),
+          __decisiones: () => puesto.decisiones().map((d) => ({ momento: d.momento, minuto: d.minuto, correcta: d.opcion.correcta, falta: d.opcion.falta ?? null, texto: d.opcion.texto })),
+        };
         window.__listo = true;
       };
       window.__reentrar = async () => {

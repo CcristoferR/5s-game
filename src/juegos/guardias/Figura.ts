@@ -14,7 +14,7 @@ import {
 } from "@babylonjs/core";
 import { vestir, MEDIDAS, type Esqueleto } from "./VestuarioFigura";
 import { CARRO } from "./CarroSupermercado";
-import type { Peinado, Rasgos } from "./ModeladoFigura";
+import { loft, capsula, type Peinado, type Rasgos } from "./ModeladoFigura";
 
 // ===========================================================================
 // Figura humana
@@ -116,6 +116,9 @@ function suave(x: number): number {
   const t = Math.max(0, Math.min(1, x));
   return t * t * (3 - 2 * t);
 }
+
+/** El centro del cráneo sobre la articulación del cuello (ver VestuarioFigura). */
+const CENTRO_CABEZA = 0.112;
 
 /** De 0 a 1 según cuánto se ha recorrido del tramo [a, b] del ciclo. */
 /**
@@ -281,7 +284,7 @@ function resolverBrazo(hombro: Vector3, objetivo: Vector3, polo: Vector3, salida
 
 
 export type Prenda = "uniforme" | "parka" | "abrigo" | "chaqueta" | "poleron" | "camisa";
-export type Accesorio = "tablilla" | "mochila" | "bolso" | "paraguas" | "canasto";
+export type Accesorio = "tablilla" | "mochila" | "bolso" | "paraguas" | "canasto" | "bolsoMano";
 
 export interface PaletaFigura {
   /** Chaqueta, abrigo o parka. */
@@ -299,6 +302,8 @@ export interface PaletaFigura {
   prenda?: Prenda;
   accesorio?: Accesorio;
   gorroLana?: boolean;
+  /** El polerón con la capucha puesta, tapando el pelo y las orejas. */
+  capuchaPuesta?: boolean;
   zapato?: Color3;
   suela?: Color3;
   rasgos?: Rasgos;
@@ -393,7 +398,38 @@ export interface OpcionesFigura {
    * CarroSupermercado). Ver "EL CARRO" más abajo.
    */
   carro?: TransformNode;
+  /**
+   * La contextura: 1 corriente, más es más grueso y menos más delgado. Ensancha
+   * el tronco —más de fondo que de ancho, que es donde engorda una persona—,
+   * los brazos, las piernas y el cuello, y separa los hombros lo que haga
+   * falta para que los brazos sigan saliendo del tronco. La cabeza, las manos y
+   * los pies no cambian.
+   *
+   * Es lo primero que se dice de alguien en una descripción ("contextura
+   * gruesa"), así que tiene que leerse desde lejos.
+   */
+  contextura?: number;
+  /**
+   * Un arma de fuego en la mano derecha, empuñada: una silueta oscura sin
+   * marca ni detalle. Ver montarArma.
+   */
+  arma?: boolean;
+  /**
+   * Con qué brazo gesticula. Por defecto el que no lleva nada colgando; quien
+   * tiene el arma en la derecha gesticula con la izquierda.
+   */
+  manoDelGesto?: 0 | 1;
 }
+
+/**
+ * Adónde va una mano cuando se la manda a un sitio (ver apoyarManos):
+ *
+ *   · un punto del mundo: el teclado, el borde del mesón, hacia dónde apunta;
+ *   · "arriba": las manos en alto, a los lados de la cabeza, palmas afuera;
+ *   · "cabeza": sobre la nuca, cubriéndose, que es lo que hace quien se agacha;
+ *   · null: esa mano queda a su aire.
+ */
+export type DestinoMano = Vector3 | "arriba" | "cabeza" | null;
 
 /**
  * Los gestos que sabe hacer una figura.
@@ -410,8 +446,10 @@ export interface OpcionesFigura {
  *               cambiado, y ese final es lo único que hay que mirar.
  *   · celular:  el teléfono en la mano, delante del pecho, y la cabeza gacha
  *               mirándolo. Lo que hace medio mundo en una sala de espera.
+ *   · ordenar:  el brazo hacia delante y abajo, barriendo de lado a lado: "¡al
+ *               suelo!". Lo que acompaña a un grito dando una orden.
  */
-export type Gesto = "guardar" | "comprar" | "llamar" | "telefono" | "leer" | "celular";
+export type Gesto = "guardar" | "comprar" | "llamar" | "telefono" | "leer" | "celular" | "ordenar";
 
 interface Coreografia {
   /** Segundos que dura el ciclo entero. */
@@ -559,6 +597,22 @@ const COREOGRAFIA: Record<Gesto, Coreografia> = {
     remate: [0.05, 0.975],
     inclina: 0.5,
   },
+  // Tres segundos: el brazo sale hacia delante y abajo, señalando el suelo, y
+  // barre de un lado a otro mientras dura la orden. Sin estante y sin nada en
+  // la mano; la cabeza, al frente, a quien se le grita.
+  ordenar: {
+    ciclo: 3,
+    vistazo: false,
+    sinEstante: true,
+    tramos: [0, 0, 0.02, 0.1, 0.84, 0.98],
+    pose: [-0.95, -0.2, -0.3],
+    encorva: 0.05,
+    producto: null,
+    visible: [0.1, 0.84],
+    remate: [0.1, 0.84],
+    saluda: 0.32,
+    inclina: 0,
+  },
   // Doce segundos: alarga la mano, coge, se lo pone delante de la cara cinco
   // segundos, lo devuelve a la balda y baja el brazo vacío. El remate es ESO,
   // la mano volviendo sin nada: es lo que lo separa del gesto de guardar.
@@ -666,6 +720,8 @@ export interface Figura {
   mirarHacia(punto: Vector3): void;
   /** Si ya no le queda camino por andar. */
   quieta(): boolean;
+  /** Deja de andar donde está, sin terminar el camino ni avisar de que llegó. */
+  detener(): void;
   /**
    * Pone un gesto, que se repite mientras esté puesto. Null lo quita.
    *
@@ -757,11 +813,41 @@ export interface Figura {
    */
   avanceAlSentarse(alturaAsiento: number): number;
   /**
-   * Lleva las dos palmas a dos puntos del mundo —izquierda y derecha— y las
-   * deja ahí: el cajero sobre el teclado. `teclea` les pone el tecleo encima.
-   * Null las suelta. Un gesto las suelta mientras dure.
+   * Lleva cada palma a su sitio —izquierda y derecha, ver DestinoMano— y la
+   * deja ahí: el cajero sobre el teclado, el brazo que apunta, las manos en
+   * alto. `teclea` les pone el tecleo encima a las que van a un punto. Null
+   * suelta las dos; un null en una sola suelta esa. El gesto suelta la mano
+   * con la que se gesticula mientras dure.
+   *
+   * Se puede llamar en cada cuadro con un punto que se mueve: la mano lo sigue.
    */
-  apoyarManos(puntos: [Vector3, Vector3] | null, teclea?: boolean): void;
+  apoyarManos(puntos: [DestinoMano, DestinoMano] | null, teclea?: boolean): void;
+  /**
+   * Se agacha y se cubre la cabeza con las dos manos. De pie, en cuclillas y
+   * con los talones levantados, sin mover los pies del sitio; sentada, se
+   * encoge sobre las rodillas. En medio segundo: es un reflejo, no se piensa.
+   */
+  cubrirse(si: boolean): void;
+  /** Las dos manos en alto, a los lados de la cabeza. Sentada o de pie. */
+  manosArriba(si: boolean): void;
+  /**
+   * Habla —o grita— durante esos segundos: la boca se abre y se cierra por
+   * sílabas y, si grita, la barbilla se adelanta. Es lo que dice QUIÉN habla
+   * a quien lo está mirando.
+   */
+  hablar(segundos: number, grita?: boolean): void;
+  /**
+   * Echa el tronco hacia delante, en radianes, además de lo que ya haga: el
+   * cajero que se estira hacia el mesón. Cero lo devuelve.
+   */
+  inclinarse(radianes: number): void;
+  /**
+   * Pone algo en la palma de esa mano —y ahí va con ella a todas partes— o lo
+   * suelta, dejándolo donde está en el mundo. Devuelve lo que soltó.
+   */
+  sostener(malla: Mesh | null, mano: 0 | 1): Mesh | null;
+  /** Dónde está ahora la palma de esa mano, en el mundo. */
+  palmaEnMundo(mano: 0 | 1): Vector3;
   /**
    * Mira ese punto girando solo la cabeza, sin mover el cuerpo, hasta donde
    * da el cuello. Null vuelve a mirar al frente.
@@ -769,6 +855,79 @@ export interface Figura {
   mirarA(punto: Vector3 | null): void;
   visible(v: boolean): void;
   dispose(): void;
+}
+
+/**
+ * El arma de fuego en la mano derecha, y el puño que la empuña.
+ *
+ * ─── UNA SILUETA, NO UN MODELO ────────────────────────────────────────────
+ *
+ * Negra mate, sin marca, sin mira, sin detalle que permita decir qué es: la
+ * corredera, el armazón y la empuñadura, y nada más. Es a propósito. Quien lo
+ * vio puede declarar que llevaba "un arma de fuego, oscura, en la mano
+ * derecha"; quien dice "una nueve milímetros" está inventando, porque eso no
+ * se puede ver desde ninguna parte del banco.
+ *
+ * ─── EL PUÑO ──────────────────────────────────────────────────────────────
+ *
+ * La mano de las figuras está abierta, con los dedos juntos colgando. Con una
+ * empuñadura atravesándola se leía como una mano que sostiene una caja, así
+ * que la de este brazo se cambia por un puño cerrado sobre la empuñadura, con
+ * el pulgar por encima.
+ *
+ * En el marco del antebrazo: su −Y sigue al antebrazo, y su +Z es el lado del
+ * pulgar, que con el brazo estirado al frente queda arriba. La corredera va
+ * por encima del puño y sigue la línea del antebrazo, que es como se apunta.
+ */
+function montarArma(scene: Scene, nombre: string, codo: TransformNode, piezas: Mesh[]): void {
+  const mano = piezas.find((m) => m.name === `${nombre}_mano_1`);
+  const piel = mano?.material ?? null;
+  if (mano) mano.isVisible = false;
+
+  const A = MEDIDAS.antebrazo;
+  // El puño: un bloque redondeado de nudillos, más ancho de canto que de grueso,
+  // y el pulgar cruzado por encima.
+  const puno = loft(scene, `${nombre}_puno`, [
+    { y: -A + 0.012, x: 0.017, delante: 0.03 },
+    { y: -A - 0.02, x: 0.022, delante: 0.043, forma: 2.6 },
+    { y: -A - 0.065, x: 0.024, delante: 0.046, forma: 3 },
+    { y: -A - 0.092, x: 0.022, delante: 0.042, forma: 2.8 },
+    { y: -A - 0.104, x: 0.012, delante: 0.026, forma: 2.4 },
+  ], { lados: 20, tapaAbajo: true, tapaArriba: true });
+  puno.parent = codo;
+  puno.material = piel;
+  const pulgar = capsula(scene, `${nombre}_pulgarPuno`, 0.05, 0.011, 0.009, { lados: 10 });
+  pulgar.parent = codo;
+  pulgar.position.set(0.012, -A - 0.022, 0.04);
+  pulgar.rotation.set(0.35, 0, -0.5);
+  pulgar.material = piel;
+
+  // El arma, en tres piezas fundidas en una.
+  const corredera = MeshBuilder.CreateBox(`${nombre}_corredera`, { width: 0.03, height: 0.19, depth: 0.034 }, scene);
+  corredera.position.set(0, -A - 0.1, 0.067);
+  const armazon = MeshBuilder.CreateBox(`${nombre}_armazon`, { width: 0.026, height: 0.1, depth: 0.022 }, scene);
+  armazon.position.set(0, -A - 0.14, 0.04);
+  const empunadura = MeshBuilder.CreateBox(`${nombre}_empunadura`, { width: 0.028, height: 0.052, depth: 0.105 }, scene);
+  empunadura.position.set(0, -A - 0.052, 0.018);
+  empunadura.rotation.x = 0.28;
+  const guarda = MeshBuilder.CreateTorus(`${nombre}_guarda`, { diameter: 0.042, thickness: 0.006, tessellation: 16 }, scene);
+  guarda.position.set(0, -A - 0.1, 0.03);
+  guarda.rotation.y = Math.PI / 2;
+  guarda.scaling.set(1, 0.9, 0.7);
+  const partes = [corredera, armazon, empunadura, guarda];
+  partes.forEach((m) => m.computeWorldMatrix(true));
+  const arma = Mesh.MergeMeshes(partes, true, true) ?? corredera;
+  arma.name = `${nombre}_arma`;
+  arma.parent = codo;
+  const mat = new PBRMaterial(`${nombre}_matArma`, scene);
+  mat.albedoColor = new Color3(0.022, 0.022, 0.025);
+  mat.metallic = 0.25;
+  mat.roughness = 0.42;
+  arma.material = mat;
+  [puno, pulgar, arma].forEach((m) => {
+    m.isPickable = false;
+    piezas.push(m);
+  });
 }
 
 export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigura): Figura {
@@ -802,6 +961,49 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   const piezas: Mesh[] = vestir(scene, nombre, esq, opciones.paleta);
   /** Lo que lleva colgando de una mano, si lleva algo. Lo pone vestir. */
   const carga = esq.carga;
+
+  // ─── LA CONTEXTURA ────────────────────────────────────────────────────
+  //
+  // Cada pieza se ensancha en SU marco —su posición y su escala en X y Z—, no
+  // escalando los huesos: un hueso escalado sin uniformidad deforma todo lo
+  // que cuelga de él en cuanto gira, y un brazo que bracea se vería torcido.
+  // Así cada pieza engorda por su cuenta y los huesos siguen rígidos.
+  //
+  // El tronco engorda más de fondo que de ancho —la barriga y la espalda— y
+  // los miembros algo menos que el tronco. Los hombros se separan lo mismo que
+  // se ensancha el pecho, o los brazos saldrían de dentro de la chaqueta.
+  const contextura = opciones.contextura ?? 1;
+  const anchoHombro = MEDIDAS.hombroX * contextura;
+  if (contextura !== 1) {
+    const c = contextura;
+    const miembro = 1 + (c - 1) * 0.8;
+    const porHueso = new Map<TransformNode, [number, number]>([
+      [cuerpo, [c, 1 + (c - 1) * 1.35]],
+      ...esq.hombros.map((h): [TransformNode, [number, number]] => [h, [miembro, miembro]]),
+      ...esq.codos.map((h): [TransformNode, [number, number]] => [h, [miembro, miembro]]),
+      ...esq.caderas.map((h): [TransformNode, [number, number]] => [h, [miembro, miembro]]),
+      ...esq.rodillas.map((h): [TransformNode, [number, number]] => [h, [1 + (c - 1) * 0.6, 1 + (c - 1) * 0.6]]),
+    ]);
+    piezas.forEach((m) => {
+      const hueso = m.parent as TransformNode | null;
+      // Las manos se quedan como son: una mano gruesa se lee como un guante.
+      if (!hueso || m.name.includes("_mano_") || m.name.includes("_pulgar_")) return;
+      const escalas = porHueso.get(hueso);
+      if (!escalas) return;
+      const [sx, sz] = escalas;
+      m.position.x *= sx;
+      m.position.z *= sz;
+      m.scaling.x *= sx;
+      m.scaling.z *= sz;
+    });
+    const cuello = piezas.find((m) => m.name === `${nombre}_cuello`);
+    if (cuello) {
+      cuello.scaling.x *= miembro;
+      cuello.scaling.z *= miembro;
+    }
+    esq.hombros.forEach((h) => (h.position.x = Math.sign(h.position.x) * anchoHombro));
+    esq.caderas.forEach((h) => (h.position.x *= 1 + (c - 1) * 0.7));
+  }
 
   // --- Cuerpo sólido --------------------------------------------------------
   //
@@ -840,8 +1042,14 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   let velocidad = 0;
   let alLlegar: (() => void) | undefined;
 
-  /** Metros recorridos en total. Es lo que manda la fase del paso. */
+  /** Metros recorridos en total. */
   let recorrido = 0;
+  /**
+   * La fase del paso, en radianes. Se acumula paso a paso y no se calcula de
+   * los metros recorridos: corriendo la zancada se alarga, y con la fórmula de
+   * antes cambiar de zancada a mitad de camino hacía saltar la pierna.
+   */
+  let fasePaso = 0;
   let rumbo = 0;
   let rumboDeseado = 0;
   /** Cuánto está caminando ahora, de 0 a 1. Suaviza arrancar y parar. */
@@ -934,15 +1142,47 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
 
   // ─── LAS MANOS EN UN SITIO ────────────────────────────────────────────
   //
-  // Dos puntos del mundo a los que van las palmas —el teclado del cajero—, y
-  // cuánto pesa eso. Encima, un tecleo: cada mano se levanta un dedo y vuelve,
-  // a su ritmo, con pausas. Ver apoyarManos().
-  let manosEn: [Vector3, Vector3] | null = null;
-  /** Los últimos puntos: al soltar, las manos se van desde ahí y no de golpe. */
-  let manosUltimas: [Vector3, Vector3] | null = null;
-  let pesoManos = 0;
+  // Adónde va cada palma —el teclado del cajero, hacia dónde apunta, arriba o
+  // a la nuca— y cuánto pesa eso en cada brazo. Encima, un tecleo: cada mano
+  // se levanta un dedo y vuelve, a su ritmo, con pausas. Ver apoyarManos().
+  const manosEn: [DestinoMano, DestinoMano] = [null, null];
+  /** Los últimos destinos: al soltar, cada mano se va desde ahí y no de golpe. */
+  const manosUltimas: [DestinoMano, DestinoMano] = [null, null];
+  const pesoMano = [0, 0];
+  /**
+   * Adónde va de verdad cada palma, en el marco del tronco: persigue al
+   * destino en vez de saltar a él. Así, cambiar de destino —del teclado a las
+   * manos en alto, del bolso al cajón— es un movimiento y no un corte.
+   */
+  const manoSuave = [new Vector3(), new Vector3()];
+  /** El lado hacia el que sale el codo de cada brazo, según adónde va la mano. */
+  const poloMano = [new Vector3(-0.35, -1, -0.45), new Vector3(0.35, -1, -0.45)];
   /** Si teclea o solo apoya. */
   let tecleando = false;
+
+  // ─── AGACHADA ─────────────────────────────────────────────────────────
+  //
+  // Cuánto está agachada y cubriéndose, de 0 a 1, y adónde va. Ver cubrirse().
+  let agachada = 0;
+  let quiereAgachada = 0;
+  /** Lo que se echa hacia delante a pedido, suavizado. Ver inclinarse(). */
+  let inclinacion = 0;
+  let quiereInclinacion = 0;
+
+  // ─── LA BOCA ──────────────────────────────────────────────────────────
+  //
+  // El labio de abajo y el interior oscuro de la boca, que se abre al hablar.
+  // Ver hablar().
+  const labioAbajo = piezas.find((m) => m.name === `${nombre}_labioAbajo`) ?? null;
+  const bocaAbierta = piezas.find((m) => m.name === `${nombre}_boca`) ?? null;
+  const labioY = labioAbajo?.position.y ?? 0;
+  const bocaY = bocaAbierta?.position.y ?? 0;
+  const bocaAlto = bocaAbierta?.scaling.y ?? 0;
+  let hablando = 0;
+  let relojHabla = 0;
+  let grito = false;
+  /** Lo que tiene cada mano en la palma. Ver sostener(). */
+  const sostenido: (Mesh | null)[] = [null, null];
 
   // ─── LA CABEZA, A SU AIRE ─────────────────────────────────────────────
   //
@@ -1000,7 +1240,7 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
    * soltarlo primero, y eso ya es otra animación. Con la libre no hay nada
    * que explicar.
    */
-  const brazoLibre = carga ? 1 - carga.brazo : 1;
+  const brazoLibre = opciones.manoDelGesto ?? (carga ? 1 - carga.brazo : 1);
 
   // Lo que sale en la mano a mitad del gesto. Nace apagado y solo se enciende
   // en el tramo en que la mano va del estante al pecho.
@@ -1068,6 +1308,9 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     telefono.isPickable = false;
     piezas.push(telefono);
   }
+  // El arma, empuñada en la derecha. Ver montarArma.
+  if (opciones.arma) montarArma(scene, nombre, esq.codos[1], piezas);
+
   /** Dónde va lo que cuelga de la mano, para devolverlo ahí al recogerlo. */
   const cargaEnMano = carga
     ? { padre: carga.nodo.parent, posicion: carga.nodo.position.clone() }
@@ -1331,7 +1574,7 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     cuerpo.computeWorldMatrix(true);
     cuerpo.getWorldMatrix().invertToRef(ikMundoATronco);
     Vector3.TransformCoordinatesToRef(ikEstante, ikMundoATronco, ikEstanteLocal);
-    ikHombroLocal.set(lado * MEDIDAS.hombroX, MEDIDAS.hombroY, 0);
+    ikHombroLocal.set(lado * anchoHombro, MEDIDAS.hombroY, 0);
     poseNatural.x = hombro.rotation.x;
     poseNatural.y = hombro.rotation.y;
     poseNatural.z = hombro.rotation.z;
@@ -1389,6 +1632,9 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     // Sentada no se anda: si le dan camino, primero se levanta (ver caminar),
     // y echa a andar cuando ya está de pie.
     let avanzando = false;
+    // Cuánto de lo que anda es correr: nada a paso de calle, del todo a tres
+    // metros por segundo.
+    const deCarrera = Math.min(1, Math.max(0, (velocidad - 1.8) / 1.2));
     if (indiceRuta < ruta.length && !enElAsiento) {
       const destino = ruta[indiceRuta];
       const dx = destino.x - raiz.position.x;
@@ -1422,6 +1668,7 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
           raiz.position.z = z;
           rumboPaso = Math.atan2(dx, dz);
           recorrido += paso;
+          fasePaso += (paso / (ZANCADA * manera.zancada * (1 + 0.55 * deCarrera))) * Math.PI * 2;
           avanzando = paso > 0.0005;
         }
       }
@@ -1433,8 +1680,28 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
 
     // --- Ciclo de caminata --------------------------------------------------
     marcha += ((avanzando ? 1 : 0) - marcha) * Math.min(1, dt * 6);
-    const fase = (recorrido / (ZANCADA * manera.zancada)) * Math.PI * 2;
+    const fase = fasePaso;
     const amplitud = marcha;
+    // ─── CORRER ────────────────────────────────────────────────────────
+    //
+    // No es andar más grande: cambia la forma de cada cosa.
+    //
+    //   · El tronco, apenas echado hacia delante —un palmo de más sobre el
+    //     andar—. Estuvo al doble y, con los brazos doblados, las manos no
+    //     bajaban nunca del pecho: parecía alguien corriendo con una bandeja.
+    //   · Los brazos, desde el hombro y más hacia atrás que hacia delante —el
+    //     tronco inclinado ya los adelanta—. Y el codo NO va fijo: se cierra
+    //     cuando el brazo viene delante, con la mano a la altura del pecho, y
+    //     se abre cuando va atrás, con la mano pasando junto a la cadera. Con
+    //     el codo clavado en ángulo recto, de lejos y de espaldas los codos
+    //     asomaban hacia atrás y se leía como correr con las manos atrás.
+    //   · Las piernas: el muslo sube delante y el talón sube atrás, pero no
+    //     hasta la nalga —eso es un velocista, no alguien que huye cargando
+    //     un bolso—.
+    //   · El cuerpo sube un poco en el vuelo de cada zancada.
+    //
+    // Solo mientras avanza: parada, se apaga con la marcha.
+    const carrera = deCarrera * amplitud;
 
     if (carro) {
       // El carro sigue la dirección en que ella AVANZA —la del tramo que
@@ -1469,7 +1736,7 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
 
     // Inclinación hacia delante al caminar, balanceo de hombros y un vaivén
     // de peso muy leve estando quieto: nadie está perfectamente clavado.
-    cuerpo.rotation.x = manera.inclina * amplitud;
+    cuerpo.rotation.x = manera.inclina * amplitud + 0.11 * carrera;
     cuerpo.rotation.y = Math.sin(fase) * 0.07 * amplitud;
     cuerpo.rotation.z = Math.sin(fase) * manera.balanceo * amplitud + Math.sin(reloj * 0.6) * 0.008 * (1 - amplitud) + ladeo;
     cuerpo.position.x = corrida;
@@ -1479,11 +1746,15 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       // La pierna que afloja: la de la izquierda con apoyo positivo.
       const afloja = Math.max(0, i === 0 ? apoyo : -apoyo);
       // Positivo lleva la pierna hacia atrás (la figura avanza hacia su +Z).
-      cadera.rotation.x = Math.sin(f) * APERTURA_PIERNA * amplitud - 0.06 * afloja;
+      // Corriendo, el muslo sube más por delante que lo que se va por detrás.
+      cadera.rotation.x =
+        Math.sin(f) * APERTURA_PIERNA * amplitud * (1 + 0.35 * carrera) -
+        0.16 * carrera * Math.max(0, -Math.sin(f)) -
+        0.06 * afloja;
       cadera.rotation.z = -(ladeo + corrida / (MEDIDAS.muslo + MEDIDAS.canilla));
       // La rodilla solo se dobla en el tramo en que la pierna pasa hacia
       // delante, con el talón hacia atrás (giro positivo).
-      const andando = Math.max(0, -Math.sin(f - 0.6)) * 1.0 * amplitud;
+      const andando = Math.max(0, -Math.sin(f - 0.6)) * 1.0 * amplitud * (1 + 0.42 * carrera);
       // La que afloja dobla la rodilla lo justo para que la pierna acorte lo
       // que baja ese lado de la cadera: el pie sigue apoyado, plano.
       const doblez = andando + 0.16 * afloja;
@@ -1501,12 +1772,19 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     esq.hombros.forEach((hombro, i) => {
       const lado = i === 0 ? -1 : 1;
       const f = fase + (i === 0 ? Math.PI : 0);
+      // Sin giro sobre su eje, de base. Lo ponen el gesto, las manos y la
+      // postura sentada, cada cuadro, lo que necesiten; sin esta vuelta a
+      // cero, el brazo que apuntó con el arma se quedaba torcido después y
+      // corría con el hombro girado.
+      hombro.rotation.y = 0;
       if (carga?.brazo === i && !cargaSuelta) {
         // Con peso en la mano el brazo apenas bracea, va estirado y se abre
         // del cuerpo: es lo que separa el canasto de la pierna al caminar.
-        hombro.rotation.x = Math.sin(f) * 0.08 * amplitud + Math.sin(reloj * 0.8 + i) * 0.01 * (1 - amplitud);
-        hombro.rotation.z = lado * 0.24;
-        esq.codos[i].rotation.x = -0.05;
+        // Corriendo, algo más de vaivén y el codo apenas flexionado: se
+        // sujeta el bolso, no se lo lleva a peso muerto.
+        hombro.rotation.x = Math.sin(f) * 0.08 * amplitud * (1 + 1.3 * carrera) + Math.sin(reloj * 0.8 + i) * 0.01 * (1 - amplitud);
+        hombro.rotation.z = lado * (0.24 - 0.06 * carrera);
+        esq.codos[i].rotation.x = -0.05 - 0.22 * carrera;
         return;
       }
       // Los brazos van al revés que las piernas y algo separados del cuerpo,
@@ -1514,10 +1792,21 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       // Los dos brazos no bracean igual —nadie lo hace—: uno va un poco más
       // suelto que el otro.
       const suyo = manera.brazo * (i === 0 ? 1 : 0.88);
-      hombro.rotation.x = Math.sin(f) * suyo * amplitud + Math.sin(reloj * 0.8 + i) * 0.015 * (1 - amplitud);
-      hombro.rotation.z = lado * (0.07 + 0.02 * amplitud);
-      // El codo nunca se estira del todo, ni parado.
-      esq.codos[i].rotation.x = -(0.16 + Math.max(0, Math.sin(f)) * 0.3) * amplitud - 0.12;
+      const s = Math.sin(f);
+      // Andando: el vaivén de siempre. Corriendo: hacia atrás (positivo) algo
+      // menos que hacia delante, porque el tronco inclinado ya lleva el brazo
+      // hacia delante; medido desde la vertical quedan parejos.
+      const andar = s * suyo * amplitud;
+      const correr = s > 0 ? 0.55 * s : 0.78 * s;
+      hombro.rotation.x =
+        andar * (1 - carrera) + correr * carrera + Math.sin(reloj * 0.8 + i) * 0.015 * (1 - amplitud);
+      hombro.rotation.z = lado * (0.07 + 0.02 * amplitud + 0.03 * carrera);
+      // El codo nunca se estira del todo, ni parado. Corriendo, se cierra con
+      // el brazo delante (la mano al pecho) y se abre con el brazo atrás (la
+      // mano junto a la cadera).
+      const codoAndar = -(0.16 + Math.max(0, s) * 0.3) * amplitud - 0.12;
+      const codoCorrer = -(1.3 + 0.36 * Math.max(0, -s) - 0.4 * Math.max(0, s));
+      esq.codos[i].rotation.x = codoAndar * (1 - carrera) + codoCorrer * carrera;
     });
 
     // Empujando el carro: las dos manos al manillar y el cuerpo algo echado
@@ -1765,6 +2054,57 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
 
     if (pantallaTelefono && telefono) pantallaTelefono.isVisible = telefono.isVisible;
 
+    // --- Agachada y cubriéndose ----------------------------------------------
+    //
+    // En medio segundo, que es lo que tarda un reflejo. Va antes de las piernas
+    // de sentada porque, sentada, lo único que hace es echar el tronco sobre
+    // las rodillas, y esas piernas se calculan contando con él.
+    //
+    // De pie, en cuclillas: el muslo casi horizontal hacia delante, la canilla
+    // inclinada, los talones levantados —nadie baja en cuclillas con el pie
+    // plano— y las rodillas algo abiertas. Las dos piernas no quedan iguales,
+    // que es lo que hace que no parezca una pose de catálogo. La altura de la
+    // cadera sale sola de las piernas (ver caida) y la cadera se va hacia
+    // atrás lo justo para que los pies no se muevan del sitio (más abajo).
+    const SEGUNDOS_AGACHARSE = 0.55;
+    const faltaAgachada = quiereAgachada - agachada;
+    agachada += Math.sign(faltaAgachada) * Math.min(Math.abs(faltaAgachada), dt / SEGUNDOS_AGACHARSE);
+    const agachado = suave(agachada);
+    inclinacion += (quiereInclinacion - inclinacion) * Math.min(1, dt * 3);
+    cuerpo.rotation.x += inclinacion;
+    let pieAdelante = 0;
+    if (agachado > 0) {
+      if (enElAsiento) {
+        cuerpo.rotation.x += 0.62 * agachado;
+      } else {
+        const w = agachado * (1 - sentado);
+        // Hecha un ovillo: el pecho casi sobre los muslos. Es lo más bajo que
+        // se queda alguien en cuclillas, y es lo que hace quien oye "¡al
+        // suelo!" con un arma delante.
+        cuerpo.rotation.x += (0.95 - cuerpo.rotation.x) * w;
+        cuerpo.rotation.y *= 1 - w;
+        cuerpo.rotation.z *= 1 - w;
+        cuerpo.position.x *= 1 - w;
+        esq.caderas.forEach((cadera, i) => {
+          const lado = i === 0 ? -1 : 1;
+          const muslo = i === 0 ? -1.3 : -1.42;
+          const canilla = i === 0 ? 0.78 : 0.9;
+          cadera.rotation.x += (muslo - cuerpo.rotation.x - cadera.rotation.x) * w;
+          cadera.rotation.y += (lado * 0.2 - cadera.rotation.y) * w;
+          cadera.rotation.z *= 1 - w;
+          const rodilla = esq.rodillas[i];
+          rodilla.rotation.x += (canilla - (cuerpo.rotation.x + cadera.rotation.x) - rodilla.rotation.x) * w;
+          const tobillo = esq.tobillos[i];
+          tobillo.rotation.x +=
+            (0.34 - (cuerpo.rotation.x + cadera.rotation.x + rodilla.rotation.x) - tobillo.rotation.x) * w;
+          // Cuánto quedan los pies por delante de la cadera con esta postura.
+          const m = cuerpo.rotation.x + cadera.rotation.x;
+          const p = m + rodilla.rotation.x;
+          pieAdelante += (-MEDIDAS.muslo * Math.sin(m) - MEDIDAS.canilla * Math.sin(p)) / 2;
+        });
+      }
+    }
+
     // --- Sentada: piernas y brazos ------------------------------------------
     //
     // Va DESPUÉS del gesto, porque el gesto vuelve a poner en cero el giro de
@@ -1806,6 +2146,8 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     // muslo: al sentarse la cadera baja hacia el asiento y los pies no se
     // mueven del sitio. Ver sentarse().
     cuerpo.position.z = enElAsiento ? avanceSentada * (1 - sentado) : 0;
+    // En cuclillas, la cadera atrás de los pies: los pies no se mueven.
+    if (!enElAsiento) cuerpo.position.z -= pieAdelante;
     // Ya de pie del todo: la raíz vuelve adonde están los pies.
     if (enElAsiento && quiereSentada === 0 && sentada <= 0) {
       raiz.position.x += Math.sin(rumbo) * avanceSentada * escala;
@@ -1837,7 +2179,9 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       return -Math.min(suela(MEDIDAS.punta), suela(MEDIDAS.talon));
     };
     const respirar = Math.sin(reloj * 1.1) * 0.005 * (1 - amplitud);
-    cuerpo.position.y = Math.max(caida(0), caida(1)) + respirar;
+    // Corriendo, el cuerpo sube en el vuelo de cada zancada: dos veces por ciclo.
+    const vuelo = 0.022 * carrera * (0.5 - 0.5 * Math.cos(2 * fase));
+    cuerpo.position.y = Math.max(caida(0), caida(1)) + respirar + vuelo;
 
     // --- Las manos en un sitio ------------------------------------------------
     //
@@ -1845,32 +2189,103 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     // su punto (ver resolverBrazo): el codo abajo y hacia fuera, que es como se
     // apoyan los antebrazos en un escritorio. Tecleando, cada mano se levanta un
     // dedo y vuelve, a su ritmo, a ratos: nadie teclea sin parar.
-    pesoManos += ((manosEn && !gesto ? 1 : 0) - pesoManos) * Math.min(1, dt * 3);
-    const manosDestino = manosEn ?? manosUltimas;
-    if (pesoManos > 0.002 && manosDestino) {
+    //
+    // Cada mano por su cuenta. La que gesticula se suelta mientras dure el
+    // gesto, y la que lleva algo colgando no se toca: el canasto y el bolso
+    // tiran del brazo hacia abajo.
+    //
+    // Los destinos con nombre se resuelven aquí, en el marco del tronco:
+    // "arriba", a los lados de la cabeza y un palmo por delante, con un
+    // temblor leve —quien tiene las manos en alto delante de un arma no las
+    // tiene quietas—; "cabeza", sobre la nuca, medida con la cabeza tal como
+    // quedó el cuadro anterior, que es donde está.
+    let algunaMano = false;
+    for (let i = 0; i < 2; i++) {
+      const activa =
+        manosEn[i] !== null && !(gesto !== null && i === brazoLibre) && !(carga?.brazo === i && !cargaSuelta);
+      // Al soltar echando a andar, rápido: quien arranca a correr no se queda
+      // medio segundo con el brazo estirado hacia lo que tenía delante.
+      const rapidez =
+        manosEn[i] === "arriba" || manosEn[i] === "cabeza" ? 5 : manosEn[i] === null && marcha > 0.1 ? 9 : 3;
+      pesoMano[i] += ((activa ? 1 : 0) - pesoMano[i]) * Math.min(1, dt * rapidez);
+      if (pesoMano[i] > 0.002 && (manosEn[i] ?? manosUltimas[i])) algunaMano = true;
+    }
+    if (algunaMano) {
       raiz.computeWorldMatrix(true);
       cuerpo.computeWorldMatrix(true);
       cuerpo.getWorldMatrix().invertToRef(ikMundoATronco);
       const racha = suave((Math.sin(reloj * 0.45 + faseApoyo) + 0.35) * 2.5);
-      manosDestino.forEach((punto, i) => {
+      for (let i = 0; i < 2; i++) {
+        const destino = manosEn[i] ?? manosUltimas[i];
+        if (pesoMano[i] <= 0.002 || !destino) continue;
         const lado = i === 0 ? -1 : 1;
         const hombro = esq.hombros[i];
         const codo = esq.codos[i];
-        ikObjetivo.copyFrom(punto);
-        if (tecleando) {
-          ikObjetivo.y += 0.014 * Math.max(0, Math.sin(reloj * (8.5 + i * 1.3) + i * 1.9)) * racha;
-          ikObjetivo.x += 0.012 * Math.sin(reloj * (1.7 + i * 0.4) + i);
+        ikHombroLocal.set(lado * anchoHombro, MEDIDAS.hombroY, 0);
+        // ─── AL SOLTAR, LA MANO SE QUEDA DONDE ESTÁ ─────────────────────
+        //
+        // Y desde ahí se funde con lo que haga el brazo por su cuenta. No
+        // sigue yendo hacia su último destino: ese destino está en el mundo,
+        // y si la figura se da la vuelta y echa a correr, queda detrás de
+        // ella. Así salía el del arma por la puerta, con el brazo estirado
+        // hacia la sala, y el del bolso con la mano tendida hacia el mesón.
+        if (manosEn[i] === null) {
+          resolverBrazo(ikHombroLocal, ikEstanteLocal.copyFrom(manoSuave[i]), poloMano[i], poseResuelta);
+          const w = pesoMano[i];
+          hombro.rotation.x += acortar(poseResuelta.x - hombro.rotation.x) * w;
+          hombro.rotation.y += acortar(poseResuelta.y - hombro.rotation.y) * w;
+          hombro.rotation.z += acortar(poseResuelta.z - hombro.rotation.z) * w;
+          codo.rotation.x += acortar(poseResuelta.codo - codo.rotation.x) * w;
+          continue;
         }
-        Vector3.TransformCoordinatesToRef(ikObjetivo, ikMundoATronco, ikEstanteLocal);
-        ikHombroLocal.set(lado * MEDIDAS.hombroX, MEDIDAS.hombroY, 0);
-        ikPolo.set(lado * 0.35, -1, -0.45);
-        resolverBrazo(ikHombroLocal, ikEstanteLocal, ikPolo, poseResuelta);
-        const w = pesoManos;
+        let tecleo = false;
+        if (destino === "arriba") {
+          const temblor = 0.006 * Math.sin(reloj * 7.3 + i * 2.1) + 0.004 * Math.sin(reloj * 11.9 + i);
+          ikEstanteLocal.set(lado * (anchoHombro + 0.13), MEDIDAS.hombroY + 0.44 + temblor, 0.12 + temblor);
+          poloMano[i].set(lado, -0.35, 0.1);
+        } else if (destino === "cabeza") {
+          // La palma sobre la nuca, un dedo por fuera del cráneo.
+          Vector3.TransformCoordinatesFromFloatsToRef(
+            lado * 0.05,
+            CENTRO_CABEZA + 0.063,
+            -0.07,
+            cabeza.getWorldMatrix(),
+            ikObjetivo
+          );
+          Vector3.TransformCoordinatesToRef(ikObjetivo, ikMundoATronco, ikEstanteLocal);
+          poloMano[i].set(lado, 0.2, 0.55);
+        } else {
+          Vector3.TransformCoordinatesToRef(destino, ikMundoATronco, ikEstanteLocal);
+          poloMano[i].set(lado * 0.35, -1, -0.45);
+          tecleo = tecleando;
+        }
+        // Desde donde está la mano ahora, si recién se la manda a un sitio.
+        if (pesoMano[i] < 0.03) {
+          poseNatural.x = hombro.rotation.x;
+          poseNatural.y = hombro.rotation.y;
+          poseNatural.z = hombro.rotation.z;
+          poseNatural.codo = codo.rotation.x;
+          palmaConPose(ikHombroLocal, poseNatural, manoSuave[i]);
+        }
+        Vector3.LerpToRef(manoSuave[i], ikEstanteLocal, Math.min(1, dt * 9), manoSuave[i]);
+        ikEstanteLocal.copyFrom(manoSuave[i]);
+        // El tecleo va encima, sin suavizar: es un golpe de dedo, no un viaje.
+        if (tecleo) {
+          ikObjetivo.set(
+            0.012 * Math.sin(reloj * (1.7 + i * 0.4) + i),
+            0.014 * Math.max(0, Math.sin(reloj * (8.5 + i * 1.3) + i * 1.9)) * racha,
+            0
+          );
+          Vector3.TransformNormalToRef(ikObjetivo, ikMundoATronco, ikObjetivo);
+          ikEstanteLocal.addInPlace(ikObjetivo);
+        }
+        resolverBrazo(ikHombroLocal, ikEstanteLocal, poloMano[i], poseResuelta);
+        const w = pesoMano[i];
         hombro.rotation.x += acortar(poseResuelta.x - hombro.rotation.x) * w;
         hombro.rotation.y += acortar(poseResuelta.y - hombro.rotation.y) * w;
         hombro.rotation.z += acortar(poseResuelta.z - hombro.rotation.z) * w;
         codo.rotation.x += acortar(poseResuelta.codo - codo.rotation.x) * w;
-      });
+      }
     }
 
     // --- La mirada, sin girar el cuerpo ---------------------------------------
@@ -1910,9 +2325,37 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     // mira primero y gira después. Sin esto, la cabeza es un añadido rígido
     // del tronco.
     const adelanta = acortar(rumboDeseado - rumbo) * manera.anticipa;
+
+    // Hablando: la boca se abre y se cierra por sílabas —nunca del todo
+    // cerrada mientras dura la frase— y, gritando, más grande y con la barbilla
+    // adelantada y un leve sacudón en cada golpe de voz. De cerca es lo que
+    // dice quién está hablando; de lejos, el sacudón de la cabeza.
+    let abre = 0;
+    let barbilla = 0;
+    if (hablando > 0) {
+      relojHabla += dt;
+      hablando = Math.max(0, hablando - dt);
+      const entra = Math.min(1, relojHabla / 0.08) * Math.min(1, hablando / 0.15);
+      const silaba = Math.pow(Math.abs(Math.sin(relojHabla * 9.5 + Math.sin(relojHabla * 2.7) * 1.3)), 0.7);
+      abre = entra * (0.3 + 0.7 * silaba) * (grito ? 1 : 0.55);
+      barbilla = grito ? entra * (0.07 + 0.04 * silaba) : 0;
+    }
+    if (labioAbajo) labioAbajo.position.y = labioY - 0.0075 * abre;
+    if (bocaAbierta) {
+      bocaAbierta.scaling.y = bocaAlto + 0.013 * abre;
+      bocaAbierta.position.y = bocaY - 0.0038 * abre;
+    }
+
     cabeza.rotation.y = -cuerpo.rotation.y * 0.75 + giroGesto + giroMirada + Math.max(-0.5, Math.min(0.5, adelanta));
+    // Cubriéndose, la cabeza gacha entre los brazos.
     cabeza.rotation.x =
-      -cuerpo.rotation.x * 0.6 + cabeceo + cabeceoMirada + inclinaGesto + Math.sin(reloj * 0.9) * 0.008;
+      -cuerpo.rotation.x * 0.6 +
+      cabeceo +
+      cabeceoMirada +
+      inclinaGesto +
+      0.45 * agachado -
+      barbilla +
+      Math.sin(reloj * 0.9) * 0.008;
     cabeza.rotation.z = -cuerpo.rotation.z * 0.8;
 
     // --- Parpadeo ---------------------------------------------------------
@@ -2011,9 +2454,45 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       return MEDIDAS.muslo * Math.sin(muslo) * escala;
     },
     apoyarManos(puntos, teclea = false) {
-      manosEn = puntos ? [puntos[0].clone(), puntos[1].clone()] : null;
-      if (manosEn) manosUltimas = manosEn;
+      for (let i = 0; i < 2; i++) {
+        const d = puntos ? puntos[i] : null;
+        manosEn[i] = d instanceof Vector3 ? d.clone() : d;
+        if (manosEn[i]) manosUltimas[i] = manosEn[i];
+      }
       tecleando = teclea;
+    },
+    cubrirse(si) {
+      quiereAgachada = si ? 1 : 0;
+      this.apoyarManos(si ? ["cabeza", "cabeza"] : null);
+    },
+    manosArriba(si) {
+      this.apoyarManos(si ? ["arriba", "arriba"] : null);
+    },
+    hablar(segundos, grita = false) {
+      hablando = segundos;
+      relojHabla = 0;
+      grito = grita;
+    },
+    inclinarse(radianes) {
+      quiereInclinacion = radianes;
+    },
+    sostener(malla, mano) {
+      const antes = sostenido[mano];
+      if (antes) antes.setParent(null);
+      sostenido[mano] = malla;
+      if (malla) {
+        malla.parent = esq.codos[mano];
+        malla.position.copyFrom(palma);
+        malla.rotationQuaternion = null;
+        malla.rotation.set(0, 0, 0);
+      }
+      return antes;
+    },
+    palmaEnMundo(mano) {
+      raiz.computeWorldMatrix(true);
+      cuerpo.computeWorldMatrix(true);
+      esq.hombros[mano].computeWorldMatrix(true);
+      return Vector3.TransformCoordinates(palma, esq.codos[mano].computeWorldMatrix(true));
     },
     mirarA(punto) {
       miraA = punto ? punto.clone() : null;
@@ -2021,14 +2500,20 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     quieta() {
       return indiceRuta >= ruta.length;
     },
+    detener() {
+      ruta = [];
+      indiceRuta = 0;
+      alLlegar = undefined;
+    },
     soltarCarga(punto) {
       if (!carga || cargaSuelta) return;
       cargaSuelta = true;
       carga.nodo.parent = null;
       // Fuera de la figura pierde su escala: se le devuelve a mano. Y se
-      // apoya por el fondo, que está 43 cm por debajo del asa.
+      // apoya por el fondo, que está bajo el asa lo que mida lo que se lleva
+      // —el canasto, 43 cm—.
       carga.nodo.scaling.setAll(escala);
-      carga.nodo.position.set(punto.x, punto.y + 0.43 * escala, punto.z);
+      carga.nodo.position.set(punto.x, punto.y + (carga.alto ?? 0.43) * escala, punto.z);
       carga.nodo.rotation.set(0, rumbo, 0);
     },
     recogerCarga() {

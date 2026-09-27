@@ -1,5 +1,5 @@
 import { Scene, Mesh, MeshBuilder, PBRMaterial, Color3, TransformNode, Vector3 } from "@babylonjs/core";
-import { loft, capsula, cabezaEsculpida, peloEsculpido, puntoDeLaCara, sobreLaCara, texturaTela, type Anillo } from "./ModeladoFigura";
+import { loft, capsula, cabezaEsculpida, peloEsculpido, capuchaEsculpida, puntoDeLaCara, sobreLaCara, texturaTela, type Anillo } from "./ModeladoFigura";
 import type { PaletaFigura, Prenda } from "./Figura";
 
 // ===========================================================================
@@ -52,10 +52,11 @@ export interface Esqueleto {
   rodillas: TransformNode[];
   tobillos: TransformNode[];
   /**
-   * Lo que cuelga de una mano —el canasto— y de cuál. Lo pone vestir; Figura
-   * lo mantiene a plomo y deja ese brazo casi quieto.
+   * Lo que cuelga de una mano —el canasto, el bolso— y de cuál. Lo pone
+   * vestir; Figura lo mantiene a plomo y deja ese brazo casi quieto. `alto`
+   * es lo que queda el fondo por debajo del asa: dónde apoya al dejarlo.
    */
-  carga?: { nodo: TransformNode; brazo: number };
+  carga?: { nodo: TransformNode; brazo: number; alto?: number };
 }
 
 /** El tronco de cada prenda, de la cadera al cuello. */
@@ -244,12 +245,26 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   } else if (prenda === "poleron") {
     // Sin cremallera: se pone por la cabeza. De lejos lo delata la capucha
     // caída en la espalda; de cerca, el bolsillo canguro y los cordones.
-    poner(loft(scene, `${nombre}_capucha`, [
-      { y: 0.43, x: 0.11, delante: 0.045, cz: -0.115 },
-      { y: 0.5, x: 0.13, delante: 0.062, cz: -0.125 },
-      { y: 0.565, x: 0.115, delante: 0.058, cz: -0.115 },
-      { y: 0.59, x: 0.07, delante: 0.035, cz: -0.1 },
-    ], { lados: 18, tapaAbajo: true, tapaArriba: true, uVueltas: 2, vPorMetro: 5 }), esq.cuerpo, matRopa);
+    //
+    // Con la capucha PUESTA, lo que queda en el cuerpo es su cuello: la tela
+    // que baja de la nuca y rodea el cuello hasta los hombros, más holgada
+    // detrás. La capucha en sí va en la cabeza (ver capuchaEsculpida).
+    if (paleta.capuchaPuesta) {
+      // Delante queda dentro del cuello y del pecho, así que por delante no se
+      // ve: la garganta queda a la vista, que es como cae una capucha puesta.
+      poner(loft(scene, `${nombre}_cuelloCapucha`, [
+        { y: 0.5, x: 0.14, delante: 0.09, atras: 0.105, cz: -0.015 },
+        { y: 0.55, x: 0.1, delante: 0.045, atras: 0.098, cz: -0.028 },
+        { y: 0.6, x: 0.084, delante: 0.022, atras: 0.088, cz: -0.032 },
+      ], { lados: 24, uVueltas: 2, vPorMetro: 5 }), esq.cuerpo, matRopa);
+    } else {
+      poner(loft(scene, `${nombre}_capucha`, [
+        { y: 0.43, x: 0.11, delante: 0.045, cz: -0.115 },
+        { y: 0.5, x: 0.13, delante: 0.062, cz: -0.125 },
+        { y: 0.565, x: 0.115, delante: 0.058, cz: -0.115 },
+        { y: 0.59, x: 0.07, delante: 0.035, cz: -0.1 },
+      ], { lados: 18, tapaAbajo: true, tapaArriba: true, uVueltas: 2, vPorMetro: 5 }), esq.cuerpo, matRopa);
+    }
     poner(loft(scene, `${nombre}_bolsillo`, [0, 0.03, 0.14, 0.17].map((y, k) => ({
       y,
       x: k < 2 ? 0.125 : 0.1,
@@ -399,6 +414,10 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   const { malla: craneo, ojos } = cabezaEsculpida(scene, `${nombre}_craneo`, paleta.rasgos);
   poner(craneo, esq.cabeza, matPiel, 0, CENTRO_CRANEO, 0);
   poner(peloEsculpido(scene, `${nombre}_pelo`, paleta.peinado ?? "corto", paleta.rasgos), esq.cabeza, matPelo, 0, CENTRO_CRANEO, 0);
+  // La capucha puesta, del color del polerón. Tapa el pelo de arriba y las
+  // orejas; asoma el de la frente, como asoma de verdad.
+  const conCapucha = paleta.capuchaPuesta === true && prenda === "poleron";
+  if (conCapucha) poner(capuchaEsculpida(scene, `${nombre}_capuchaPuesta`, paleta.rasgos), esq.cabeza, matRopa, 0, CENTRO_CRANEO, 0);
   if (paleta.peinado === "largo") bola("mono", esq.cabeza, matPelo, 0, CENTRO_CRANEO + 0.03, -0.108, 0.075, 0.07, 0.065);
 
   const ancho = paleta.rasgos?.ancho ?? 1;
@@ -465,8 +484,11 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
       scene
     );
     poner(ceja, esq.cabeza, matPelo);
-    const oreja = bola(`oreja_${lado}`, esq.cabeza, matPiel, lado * 0.072 * ancho, CENTRO_CRANEO - 0.004, -0.004, 0.02, 0.058, 0.036);
-    oreja.rotation.y = lado * 0.3;
+    // Bajo la capucha no hay orejas que ver: asomarían a través de la tela.
+    if (!conCapucha) {
+      const oreja = bola(`oreja_${lado}`, esq.cabeza, matPiel, lado * 0.072 * ancho, CENTRO_CRANEO - 0.004, -0.004, 0.02, 0.058, 0.036);
+      oreja.rotation.y = lado * 0.3;
+    }
   });
 
   // La boca: dos labios apenas marcados sobre la superficie de la cara, en su
@@ -479,6 +501,11 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   labioArriba.rotation.x = -0.18;
   const labioAbajo = bola("labioAbajo", esq.cabeza, matLabio, 0, CENTRO_CRANEO + bocaAbajo.y + 0.002, bocaAbajo.z - 0.004, 0.0145, 0.005, 0.0085);
   labioAbajo.rotation.x = 0.12;
+  // El interior de la boca: un óvalo oscuro apoyado en la piel entre los dos
+  // labios, cerrado —una línea— hasta que habla. Figura lo abre por sílabas y
+  // baja el labio de abajo con él (ver hablar).
+  const entreLabios = sobreLaCara(0, -0.058, paleta.rasgos);
+  bola("boca", esq.cabeza, mat("boca", new Color3(0.12, 0.03, 0.03), 0.6), 0, CENTRO_CRANEO + entreLabios.y, entreLabios.z - 0.0012, 0.0135, 0.0008, 0.006);
 
   if (paleta.gorra) {
     const c = CENTRO_CRANEO;
@@ -502,10 +529,11 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
   if (paleta.gorroLana) {
     const c = CENTRO_CRANEO;
     poner(loft(scene, `${nombre}_gorroLana`, [
-      // El borde sobre la frente, no sobre las cejas.
-      { y: c + 0.034, x: 0.084, delante: 0.104, atras: 0.108 },
-      { y: c + 0.064, x: 0.086, delante: 0.106, atras: 0.11 },
-      { y: c + 0.07, x: 0.082, delante: 0.1, atras: 0.105 },
+      // El borde sobre la frente, no sobre las cejas: a media frente. Estuvo
+      // un dedo más abajo y tapaba el arco de la ceja.
+      { y: c + 0.046, x: 0.082, delante: 0.1, atras: 0.108 },
+      { y: c + 0.072, x: 0.084, delante: 0.102, atras: 0.11 },
+      { y: c + 0.078, x: 0.08, delante: 0.097, atras: 0.105 },
       { y: c + 0.1, x: 0.077, delante: 0.095, atras: 0.1 },
       { y: c + 0.132, x: 0.058, delante: 0.07, atras: 0.075 },
       { y: c + 0.147, x: 0.03, delante: 0.036, atras: 0.04 },
@@ -661,6 +689,45 @@ export function vestir(scene: Scene, nombre: string, esq: Esqueleto, paleta: Pal
     // (ver la opción compras): el canasto que se llena es el de quien paga, y
     // el del cliente de la parka verde tiene que seguir vacío toda la tarde.
     // Con una leche y un cereal de serie, su canasto nunca lo estuvo.
+  }
+
+  if (paleta.accesorio === "bolsoMano") {
+    // ─── EL BOLSO NEGRO ─────────────────────────────────────────────────
+    //
+    // Un bolso de lona negro, de los de gimnasio, en la mano izquierda: sin
+    // marca, abierto por arriba —el cierre corrido— y con las dos asas juntas
+    // en el puño. Cuelga a plomo como el canasto (ver Figura). Se lee como
+    // bolso por la silueta: largo, blando, más ancho abajo, y las dos asas.
+    const i = 0;
+    const asa = new TransformNode(`${nombre}_asaBolso`, scene);
+    asa.parent = esq.codos[i];
+    asa.position.set(-0.004, -MEDIDAS.antebrazo - 0.085, 0.01);
+    esq.carga = { nodo: asa, brazo: i, alto: 0.4 };
+
+    const lona = mat("bolsoMano", new Color3(0.028, 0.028, 0.032), 0.6, { tela: true, brillo: 0.2 });
+    lona.backFaceCulling = false;
+    lona.twoSidedLighting = true;
+    poner(loft(scene, `${nombre}_bolsoMano`, [
+      { y: -0.4, x: 0.075, delante: 0.19, forma: 2.6 },
+      { y: -0.392, x: 0.095, delante: 0.215, forma: 3 },
+      { y: -0.3, x: 0.102, delante: 0.228, forma: 3.2 },
+      { y: -0.2, x: 0.098, delante: 0.222, forma: 3 },
+      { y: -0.155, x: 0.08, delante: 0.205, forma: 2.6 },
+      { y: -0.14, x: 0.055, delante: 0.19, forma: 2.4 },
+    ], { lados: 32, tapaAbajo: true, uVueltas: 2, vPorMetro: 6 }), asa, lona);
+    // El cierre abierto: dos cintas grises a lo largo de la boca.
+    const matCierre = mat("cierreBolso", new Color3(0.1, 0.1, 0.11), 0.4, { metal: 0.3 });
+    [-1, 1].forEach((s) => caja(`cierreBolso_${s}`, 0.008, 0.006, 0.36, asa, matCierre, s * 0.056, -0.141, 0));
+    // Las dos asas, de la boca al puño.
+    [-1, 1].forEach((s) => {
+      const camino = [
+        new Vector3(0, -0.15, s * 0.12),
+        new Vector3(0, -0.09, s * 0.1),
+        new Vector3(0, -0.03, s * 0.05),
+        new Vector3(0, -0.005, s * 0.015),
+      ];
+      poner(MeshBuilder.CreateTube(`${nombre}_asaBolso_${s}`, { path: camino, radius: 0.0075, tessellation: 8, cap: Mesh.CAP_ALL }, scene), asa, lona);
+    });
   }
 
   // --- Piernas y zapatos --------------------------------------------------

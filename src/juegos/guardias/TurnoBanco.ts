@@ -28,14 +28,38 @@ export const FIN_ATENCION = 14 * 60;
 export const MINUTOS_POR_SEGUNDO = 0.4;
 
 /**
- * Hasta dónde llega la calma: el minuto en que termina la mañana normal.
+ * Hasta dónde llega la calma: el minuto en que termina la mañana normal y
+ * empieza el asalto (ver AsaltoBanco).
  *
  * Cuarenta y cinco minutos de reloj son unos dos minutos reales, que es lo
  * que pide el nivel: tiempo para situarse, mirar la sala y acostumbrarse a
- * ella, de modo que lo que venga después llegue sin aviso. De momento el
- * reloj se detiene aquí; lo que pasa en este minuto es la etapa siguiente.
+ * ella, de modo que lo que venga después llegue sin aviso.
  */
 export const FIN_DE_LA_CALMA = 45;
+
+/**
+ * Minutos de reloj por segundo real durante el asalto: uno por minuto. Lo que
+ * dura un asalto es lo que dura de verdad, y el reloj no puede decir que pasó
+ * media hora mientras alguien apuntaba a la sala.
+ */
+export const RITMO_ASALTO = 1 / 60;
+
+/** Último minuto del turno que existe por ahora: las 10:00. */
+export const MINUTO_FINAL = 60;
+
+/**
+ * ─── PRUEBA RÁPIDA — PONER EN false AL TERMINAR DE PROBAR ───────────────
+ *
+ * Mientras se construye el asalto, esperar los dos minutos de mañana
+ * tranquila en cada prueba es perder el tiempo. Con esto en true, al cerrar
+ * la tarjeta del inicio el reloj salta a las 9:44 y el asalto empieza a los
+ * pocos segundos, con la sala tal como está al abrir: tres en las cajas, tres
+ * en la fila y cuatro sentados.
+ *
+ * En false, el turno es el de verdad: dos minutos de mañana y el asalto sin
+ * aviso.
+ */
+export const PRUEBA_RAPIDA = true;
 
 /** Minuto del turno a hora de reloj. */
 export function horaDelTurno(minuto: number): string {

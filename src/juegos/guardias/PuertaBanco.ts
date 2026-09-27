@@ -20,6 +20,15 @@ import {
 // Se abre hacia fuera, como toda puerta de salida de un local con público, y
 // sola: cuando alguien llega a ella por cualquiera de los dos lados. Se cierra
 // más despacio de lo que se abre, que es lo que hace el cierrapuertas.
+//
+// ─── LA BISAGRA, DEL LADO DEL GUARDIA ────────────────────────────────────
+//
+// El modelo la trae con el pomo a la derecha, o sea, con la bisagra a la
+// izquierda: abierta hacia fuera, la hoja quedaba justo en la línea de vista
+// del puesto y tapaba la vereda de la izquierda, que es por donde se van los
+// del asalto. Se le da media vuelta a la hoja —el pomo pasa a la izquierda,
+// y es igual por las dos caras— y se cuelga de la derecha: abierta, queda
+// del lado del guardia, pegada a la fachada, y la izquierda se ve entera.
 
 /**
  * La hoja, medida triángulo a triángulo en el modelo a escala 3: una losa de
@@ -33,17 +42,23 @@ import {
  */
 const HOJA = { x0: -0.01, x1: 1.34, y0: 0.62, y1: 2.67, z0: -4.15, z1: -3.985 };
 /** La bisagra: el canto izquierdo de la hoja, visto desde dentro, en su cara de fuera. */
-const BISAGRA = new Vector3(-0.002, 0, -4.019);
+const BISAGRA = new Vector3(1.335, 0, -4.019);
 /** Centro del vano, para saber quién está llegando a la puerta. */
 export const CENTRO_PUERTA = new Vector3(0.667, 0, -4.0);
 /** Lo abierta que queda: casi a escuadra con el muro de fuera. */
-const ABIERTA = 1.45;
+const ABIERTA = -1.45;
 /** A qué distancia del vano alguien hace que se abra. */
 const ALCANCE = 1.45;
 
 export interface PuertaBanco {
   /** De 0 cerrada a 1 abierta del todo. */
   apertura(): number;
+  /**
+   * La abre de un empujón y la sujeta abierta esos segundos: quien entra a la
+   * carrera no espera a que la puerta se abra sola. Después la suelta y el
+   * cierrapuertas la cierra como siempre.
+   */
+  forzar(segundos: number): void;
   /** La deja quieta como esté, o la suelta. Para la pausa. */
   congelar(quieta: boolean): void;
   dispose(): void;
@@ -63,23 +78,30 @@ export function montarPuertaBanco(scene: Scene, malla: Mesh, quienes: () => Vect
 
   let angulo = 0;
   let quieta = false;
+  /** Segundos que le quedan sujeta abierta. Ver forzar. */
+  let sujeta = 0;
   const observador: Observer<Scene> | null = scene.onBeforeRenderObservable.add(() => {
     if (quieta) return;
     const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
-    const alguien = quienes().some(
-      (p) => Math.hypot(p.x - CENTRO_PUERTA.x, p.z - CENTRO_PUERTA.z) < ALCANCE
-    );
+    sujeta = Math.max(0, sujeta - dt);
+    const alguien =
+      sujeta > 0 || quienes().some((p) => Math.hypot(p.x - CENTRO_PUERTA.x, p.z - CENTRO_PUERTA.z) < ALCANCE);
     const objetivo = alguien ? ABIERTA : 0;
+    // (ABIERTA es negativa: la bisagra está a la derecha, ver arriba.)
     // Abre en algo más de medio segundo; cierra en un segundo y medio, y los
-    // últimos grados despacio: el cierrapuertas frena antes del golpe.
-    const rapidez = alguien ? 5 : 2.2;
+    // últimos grados despacio: el cierrapuertas frena antes del golpe. De un
+    // empujón, en un cuarto de segundo.
+    const rapidez = sujeta > 0 ? 11 : alguien ? 5 : 2.2;
     angulo += (objetivo - angulo) * Math.min(1, dt * rapidez);
-    if (!alguien && angulo < 0.004) angulo = 0;
+    if (!alguien && Math.abs(angulo) < 0.004) angulo = 0;
     bisagra.rotation.y = angulo;
   });
 
   return {
     apertura: () => angulo / ABIERTA,
+    forzar(segundos) {
+      sujeta = Math.max(sujeta, segundos);
+    },
     congelar(q) {
       quieta = q;
     },
@@ -124,6 +146,14 @@ function separarHoja(malla: Mesh): Mesh | null {
   // la bisagra con su tamaño real y gira sobre ella.
   hoja.setParent(null);
   hoja.bakeCurrentTransformIntoVertices();
+  // Media vuelta sobre su propio eje vertical: el pomo pasa al canto de la
+  // izquierda y la bisagra puede ir a la derecha. Ver la cabecera.
+  const centroX = 0.6665;
+  const centroZ = -4.0045;
+  hoja.setPivotPoint(new Vector3(centroX, 0, centroZ));
+  hoja.rotation.y = Math.PI;
+  hoja.bakeCurrentTransformIntoVertices();
+  hoja.setPivotPoint(Vector3.Zero());
   // La caja envolvente, la de la hoja sola: la del clon era la de la puerta
   // entera, con el marco.
   hoja.refreshBoundingInfo();

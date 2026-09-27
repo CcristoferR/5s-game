@@ -393,6 +393,55 @@ export function sobreLaCara(objetivoX: number, objetivoY: number, rasgos: Rasgos
   return new Vector3(x, y, z);
 }
 
+/**
+ * La capucha puesta: la cabeza entera cubierta de tela menos el óvalo de la
+ * cara.
+ *
+ * Con la técnica del pelo (ver peloEsculpido): la cabeza un poco más grande,
+ * y donde no hay capucha la capa se mete dentro del cráneo, así que el borde
+ * se funde en vez de terminar en un canto de casco.
+ *
+ * Lo que la hace capucha y no gorro:
+ *   · holgada arriba y atrás —la tela sobra y cae—, ajustada a los lados de
+ *     la cara, donde la tira el cordón;
+ *   · el óvalo de la cara va de la frente a la barbilla y de pómulo a pómulo,
+ *     con un reborde algo más grueso, que es la tela doblada del borde;
+ *   · por abajo, delante, queda abierta hasta el cuello; por detrás baja
+ *     hasta la nuca y ahí la sigue el cuello de la prenda (ver VestuarioFigura).
+ */
+export function capuchaEsculpida(scene: Scene, nombre: string, rasgos: Rasgos = {}): Mesh {
+  return esfera(scene, nombre, 44, 80, (dx, dy, dz) => {
+    const [x, y, z] = puntoCabeza(dx, dy, dz, { ...rasgos, nariz: 0 });
+    const ancho = rasgos.ancho ?? 1;
+    // El óvalo de la cara, en las coordenadas de la cara: menos de 1, dentro.
+    const ovalo = (x / (0.071 * ancho)) ** 2 + ((y + 0.03) / 0.096) ** 2;
+    const delante = suave((dz - 0.1) / 0.25);
+    // Abierta en la cara y, por abajo, en el cuello: la parte baja de delante
+    // y los costados bajo la mandíbula.
+    const cara = suave((1 - ovalo) / 0.1) * delante;
+    const cuello = suave((-y - 0.075) / 0.03) * suave((dz + 0.3) / 0.3);
+    const abierta = Math.max(cara, cuello);
+    // El reborde, justo por fuera del óvalo.
+    const reborde = Math.exp(-((ovalo - 1.12) ** 2) / 0.02) * delante;
+    const holgura =
+      0.011 +
+      0.016 * Math.max(0, dy) +
+      0.03 * Math.max(0, -dz) * suave((dy + 0.4) / 0.6) +
+      0.008 * reborde;
+    const capa = -0.006 * abierta + holgura * (1 - abierta);
+    const largo = Math.hypot(x, y, z) || 1;
+    // Por detrás, la tela no termina en la nuca como un casco: cae hasta el
+    // cuello y se abre un poco, donde la sigue el cuello de la prenda.
+    const cae = suave((-dy - 0.15) / 0.6) * suave(-dz / 0.45);
+    const abre = 1 + 0.14 * cae;
+    return [
+      (x + (x / largo) * capa) * abre,
+      y + (y / largo) * capa - 0.06 * cae,
+      (z + (z / largo) * capa) * abre,
+    ];
+  });
+}
+
 export type Peinado = "corto" | "largo" | "rapado";
 
 /**
