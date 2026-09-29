@@ -15,6 +15,7 @@ import {
   type Light,
 } from "@babylonjs/core";
 import { crearAuto, crearArbolFrondoso } from "./ModelosExterior";
+import { crearPatrullaBanco } from "./PatrullaBanco";
 import {
   pbr,
   fundir,
@@ -71,9 +72,28 @@ const Y_CALLE = Y_EXPLANADA - SOLERA;
 export interface ExteriorBanco {
   /** Todo lo de fuera, para dejarlo fuera de las luces del hall. */
   mallas: AbstractMesh[];
-  /** El sol y el cielo: las únicas luces que alumbran fuera. */
+  /**
+   * Las luces que alumbran fuera: el sol, el cielo y las balizas de la
+   * patrulla. Son las que quedan fuera de la exclusión del hall (ver el
+   * puesto): una que no estuviera aquí no alumbraría nada de fuera.
+   */
   luces: Light[];
+  /** La radiopatrulla de Carabineros, que llega después del asalto. Ver PatrullaBanco. */
+  patrulla: {
+    /** Aparece estacionada, con su sombra y las balizas destellando. */
+    aparecer(): void;
+    dispose(): void;
+  };
 }
+
+/**
+ * Dónde queda la patrulla: sobre la explanada, delante del banco y algo
+ * cruzada, como quien llegó rápido y se subió, a unos pasos de la puerta:
+ * el sargento se baja y entra. Medido para que desde el puesto, por la
+ * puerta abierta, se vea entera y cerca: en la vereda la tapaba el marco, y
+ * en la calle quedaba a veinte metros, del tamaño de un dedo.
+ */
+const PATRULLA = { x: -4.3, z: -6.3, giro: 0.12 };
 
 /**
  * @param proyectan  Lo del modelo que da sombra fuera: el edificio del banco
@@ -277,6 +297,19 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   estacionar("autoBanco_0", new Color3(0.62, 0.64, 0.66), "LR·KP·31", 8.2, VEREDA_FIN_Z - 1.25, Math.PI, false);
   estacionar("autoBanco_1", new Color3(0.08, 0.18, 0.32), "FZ·HT·84", -13.5, CALLE_FIN_Z + 1.25, 0, true);
 
+  // La patrulla: montada ya, como un auto más de fuera —con su sol, su
+  // sombra y su reflejo del cielo—, pero apagada hasta que llega.
+  const patrulla = crearPatrullaBanco(scene, new Vector3(PATRULLA.x, Y_EXPLANADA + 0.012, PATRULLA.z), PATRULLA.giro);
+  const piezasPatrulla: Mesh[] = [];
+  for (const m of porMaterial(patrulla.piezas)) {
+    guardar(m);
+    // La mancha de debajo no da sombra: es la sombra.
+    if (!m.name.includes("sombraContacto")) dan.push(m);
+    piezasPatrulla.push(m);
+    if (m.material instanceof PBRMaterial && !reflejanCielo.includes(m.material)) reflejanCielo.push(m.material);
+    m.setEnabled(false);
+  }
+
   // --- El cielo -------------------------------------------------------------------
   //
   // El de la tarde del supermercado, que es un cielo de día despejado: azul
@@ -310,6 +343,9 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   cieloLuz.intensity = 1.0;
   sol.includedOnlyMeshes = [...mallas];
   cieloLuz.includedOnlyMeshes = [...mallas];
+  // Las balizas, igual que el sol: solo lo de fuera. Sin sombras, una luz que
+  // alumbrara el edificio le pintaría también las paredes de dentro.
+  patrulla.luces.forEach((l) => (l.includedOnlyMeshes = [...mallas]));
 
   // Sombras: una vez. Fuera no se mueve nada.
   const sombras = new ShadowGenerator(2048, sol);
@@ -345,5 +381,18 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   // Nada de esto se mueve.
   mallas.forEach((m) => m.freezeWorldMatrix());
 
-  return { mallas, luces: [sol, cieloLuz] };
+  return {
+    mallas,
+    luces: [sol, cieloLuz, ...patrulla.luces],
+    patrulla: {
+      aparecer() {
+        piezasPatrulla.forEach((m) => m.setEnabled(true));
+        // Las sombras de fuera se dibujaron una vez, sin ella: otra vez, con
+        // ella dentro, o quedaría flotando sobre la explanada.
+        mapa?.resetRefreshCounter();
+        patrulla.encender();
+      },
+      dispose: () => patrulla.dispose(),
+    },
+  };
 }

@@ -375,6 +375,14 @@ export interface GenteBanco {
   registrar(f: Figura): void;
   /** Arranca el guion de la mañana. Hasta entonces cada uno está en su sitio, quieto en lo suyo. */
   comenzar(): void;
+  /**
+   * Veinte minutos después del asalto: cada uno donde lo dejó lo que pasó, y
+   * con lo suyo (ver LA SALA DESPUÉS). Se llama con la pantalla en negro.
+   *
+   * @param haciaElPuesto  Adónde mira quien no tiene otra cosa que mirar:
+   *                       el acceso, donde está Carabineros con el guardia.
+   */
+  recomponer(haciaElPuesto: Vector3): void;
   /** Clava a todos, la puerta y la pantalla como están, o los suelta. */
   congelar(quietos: boolean): void;
   dispose(): void;
@@ -648,6 +656,165 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
   ];
   let proximo = 0;
 
+  // ─── LA SALA DESPUÉS ────────────────────────────────────────────────────
+  //
+  // Veinte minutos después del asalto nadie está como estaba, ni mirando al
+  // frente. Cada uno con lo que le dejó:
+  //
+  //   · el cajero de la caja 2, al que le vaciaron el cajón, fuera del mesón,
+  //     sentado en la sala con la cara entre las manos;
+  //   · la señora de rojo, que estaba en esa caja con el del bolso al lado,
+  //     sentada, con las manos juntas en la falda, y otra clienta de pie
+  //     delante de ella, inclinada, con la mano en su hombro, hablándole;
+  //   · la que se sentó a su lado, mirándola;
+  //   · dos hombres junto a las ventanas, contándose en voz baja lo que vio
+  //     cada uno, por turnos;
+  //   · uno al teléfono, de cara a la ventana, avisando a alguien;
+  //   · la cajera de la caja 1 mirando a su compañero, y el de la caja 3
+  //     escribiendo en su pantalla: el informe de lo que pasó.
+  //
+  // Todo a la izquierda del hall, que es lo que queda a la vista mientras el
+  // sargento toma la declaración (la tarjeta tapa la derecha). Quien no tiene
+  // papel ya se fue: dejó sus datos y Carabineros lo dejó ir.
+  /** Si ya es después del asalto: la sala recompuesta, cada uno con su papel. */
+  let trasElAsalto = false;
+  let tDespues = 0;
+  let papeles: ((t: number) => void)[] = [];
+
+  /** Deja a alguien de pie, de golpe, donde se le pide y mirando hacia allá. */
+  const dePie = (f: Figura, x: number, z: number, haciaX: number, haciaZ: number): void => {
+    f.cubrirse(false);
+    f.gesticular(null);
+    f.inclinarse(0);
+    f.situar(en(x, z), en(haciaX, haciaZ));
+    f.visible(true);
+  };
+  /** Lo sienta, de golpe, en un asiento de espera. */
+  const sentado = (f: Figura, x: number, filaAsiento: number): void => {
+    f.cubrirse(false);
+    f.gesticular(null);
+    f.inclinarse(0);
+    f.situar(paraSentarse(f, x, filaAsiento), en(x, 20));
+    f.visible(true);
+    f.sentarse(ASIENTO_ESPERA, true);
+  };
+  /**
+   * Habla por turnos: dentro de cada vuelta de `vuelta` segundos, desde
+   * `desde` y durante `dura`. Avisa a la boca una vez por turno.
+   */
+  const porTurnos = (f: Figura, vuelta: number, desde: number, dura: number): ((t: number) => void) => {
+    let ultimo = -1;
+    return (t) => {
+      const n = Math.floor((t - desde) / vuelta);
+      if (t >= desde && n !== ultimo && (t - desde) % vuelta < dura) {
+        ultimo = n;
+        f.hablar(dura);
+      }
+    };
+  };
+
+  const recomponer = (haciaElPuesto: Vector3): void => {
+    trasElAsalto = true;
+    tDespues = 0;
+    esperas.length = 0;
+    const quien = (n: string): Figura | null => figuraDe.get(n) ?? null;
+    const senora = quien("chaquetaRojaBanco");
+    const consuela = quien("abrigoCamelBanco");
+    const vecina = quien("parkaBeige");
+    const uno = quien("camisaAzul");
+    const otro = quien("chaquetaVerdeBanco");
+    const alFono = quien("poleronGris");
+    const sentadaDer = quien("poleronBurdeo");
+    const conPapel = new Set([senora, consuela, vecina, uno, otro, alFono, sentadaDer].filter(Boolean));
+    clientes.forEach((f) => {
+      if (conPapel.has(f)) return;
+      f.cubrirse(false);
+      f.visible(false);
+    });
+    papeles = [];
+
+    // El cajero de la caja 2, en la segunda fila de la izquierda.
+    const cajero = cajeros[1];
+    sentado(cajero, ASIENTOS_IZQ[3], 2);
+    cajero.manosArriba(false);
+    cajero.inclinarse(0.34);
+    papeles.push(() => {
+      cajero.apoyarManos([cajero.puntoDeLaCabeza(0.085, -0.03, -0.04), cajero.puntoDeLaCabeza(0.085, -0.03, 0.04)]);
+      cajero.mirarA(cajero.raiz.position.add(new Vector3(0, ASIENTO_ESPERA, 0.6)));
+    });
+
+    // La señora, dos asientos más allá, y quien la consuela, de pie delante.
+    if (senora) {
+      sentado(senora, ASIENTOS_IZQ[1], 2);
+      senora.inclinarse(0.12);
+      const falda = (lado: number): Vector3 =>
+        senora.raiz.position.add(new Vector3(lado * 0.04, ASIENTO_ESPERA + 0.14, 0.26));
+      papeles.push((t) => {
+        senora.apoyarManos([falda(-1), falda(1)]);
+        // Mira abajo, y a ratos a quien le habla.
+        const aElla = consuela && (t % 9) > 5.5 && (t % 9) < 8;
+        senora.mirarA(aElla ? consuela.puntoDeLaCabeza(0.06, 0, 0) : falda(0).add(new Vector3(0, 0, 0.3)));
+      });
+      if (consuela) {
+        dePie(consuela, ASIENTOS_IZQ[1] + 0.1, FILAS_ASIENTOS[2] + 0.64, ASIENTOS_IZQ[1], FILAS_ASIENTOS[2]);
+        consuela.inclinarse(0.24);
+        const habla = porTurnos(consuela, 9, 1, 3.2);
+        papeles.push((t) => {
+          // La derecha, en el hombro izquierdo de la señora, que le queda
+          // del mismo lado.
+          consuela.apoyarManos([null, senora.puntoDeLaCabeza(-0.03, -0.2, -0.13)]);
+          consuela.mirarA(senora.puntoDeLaCabeza(0.05, 0, 0));
+          habla(t);
+        });
+      }
+      if (vecina) {
+        sentado(vecina, ASIENTOS_IZQ[0], 2);
+        papeles.push(() => vecina.mirarA(senora.puntoDeLaCabeza(0, 0, 0)));
+      }
+    }
+
+    // Los dos que conversan, junto a las ventanas de la izquierda.
+    if (uno && otro) {
+      dePie(uno, PASILLO_IZQ + 0.1, -1.95, PASILLO_IZQ + 0.2, -1.2);
+      dePie(otro, PASILLO_IZQ + 0.2, -1.2, PASILLO_IZQ + 0.1, -1.95);
+      const hablaUno = porTurnos(uno, 7.5, 0.5, 2.8);
+      const hablaOtro = porTurnos(otro, 7.5, 4, 2.6);
+      papeles.push((t) => {
+        uno.mirarA(otro.puntoDeLaCabeza(0.05, 0, 0));
+        otro.mirarA(uno.puntoDeLaCabeza(0.05, 0, 0));
+        hablaUno(t);
+        hablaOtro(t);
+      });
+    }
+
+    // Al teléfono, de cara a la ventana.
+    if (alFono) {
+      dePie(alFono, PASILLO_IZQ - 0.15, 2.45, PASILLO_IZQ - 1.2, 2.9);
+      alFono.gesticular("telefono");
+      const habla = porTurnos(alFono, 5.5, 0.3, 3);
+      papeles.push((t) => habla(t));
+    }
+
+    // La de la derecha, en su asiento, mirando al acceso.
+    if (sentadaDer) {
+      sentado(sentadaDer, ASIENTOS_DER[4], 0);
+      sentadaDer.mirarA(haciaElPuesto);
+    }
+
+    // Los otros dos cajeros, en su mesón.
+    const [caja1, , caja3] = cajeros;
+    caja1.manosArriba(false);
+    caja1.inclinarse(0);
+    caja3.manosArriba(false);
+    caja3.inclinarse(0);
+    papeles.push(() => {
+      caja1.apoyarManos(teclado(0), false);
+      caja1.mirarA(cajero.puntoDeLaCabeza(0, 0, 0));
+      caja3.apoyarManos(teclado(2), true);
+      caja3.mirarA(en(CAJAS[2].silla, 4.72, piso + 1.05));
+    });
+  };
+
   // --- Cada cuadro --------------------------------------------------------------
   let tiempo = 0;
   let enMarcha = false;
@@ -682,6 +849,11 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
       const t = Math.min(1, Math.max(0, (p.z + 4.35) / 0.45));
       p.y = Y_FUERA + (piso - Y_FUERA) * t;
     });
+    if (trasElAsalto) {
+      tDespues += dt;
+      papeles.forEach((hacer) => hacer(tDespues));
+      return;
+    }
     if (enAsalto) return;
 
     // Los cajeros: al cliente cuando lo tienen delante, al monitor el resto,
@@ -732,6 +904,7 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
     comenzar() {
       enMarcha = true;
     },
+    recomponer,
     asalto() {
       enAsalto = true;
       esperas.length = 0;

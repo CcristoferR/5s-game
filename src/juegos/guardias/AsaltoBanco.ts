@@ -22,7 +22,7 @@ import {
   type SalaEnAsalto,
 } from "./GenteBanco";
 import type { Subtitulos } from "./SubtitulosTurno";
-import { reproducir, cortarAmbienteSala } from "../../core/Sonido";
+import { reproducir, cortarAmbienteSala, pisada, precargarPisadas } from "../../core/Sonido";
 
 // ===========================================================================
 // El asalto
@@ -100,6 +100,13 @@ const APARTARSE = { x: -2.35, z: 3.7 };
  */
 const HUIDA_1 = [{ x: 0.7, z: -4.9 }, { x: 0.15, z: -6.1 }, { x: -6.3, z: -6.6 }, { x: -6.9, z: 1 }, { x: -7.1, z: 12 }];
 const HUIDA_2 = [{ x: 0.62, z: -4.9 }, { x: 0.05, z: -6.0 }, { x: -6.6, z: -6.3 }, { x: -7.3, z: 1 }, { x: -7.5, z: 12 }];
+
+/**
+ * Dónde empieza lo de fuera: pasado el muro de la fachada (−3,81 a −4,19) o
+ * el de la izquierda. Lo mismo que usa ObservacionBanco para la huida.
+ */
+const FACHADA_Z = -4.2;
+const COSTADO_X = -4.5;
 
 /** A qué paso va cada cosa. */
 const ANDAR_FUERA = 1.35;
@@ -205,6 +212,43 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
   };
   /** Hasta cuándo el del arma no le quita la vista —ni el arma— al guardia. */
   let vigilaGuardia = -1;
+
+  // --- Sus pasos --------------------------------------------------------------
+  //
+  // Pisada a pisada, cuando el pie toca el suelo (ver pisada en Sonido). Solo
+  // corriendo: un paso andando no se oye por encima de un hall con gente, y
+  // uno corriendo sí —es lo que hace girar la cabeza al que mira a otra parte—.
+  // Se oyen desde el puesto: más fuerte cerca, a su lado, y apagados fuera,
+  // detrás de los vidrios de la fachada o del costado.
+  precargarPisadas();
+  const pisadasOidas = [s1.pisadas(), s2.pisadas()];
+  const derechaDelGuardia = new Vector3();
+  const oirPisadas = (): void => {
+    [s1, s2].forEach((f, i) => {
+      const n = f.pisadas();
+      if (n === pisadasOidas[i]) return;
+      pisadasOidas[i] = n;
+      const carrera = f.carreraDeLaPisada();
+      if (carrera < 0.35 || !f.raiz.isEnabled()) return;
+      const oido = o.guardia();
+      const p = f.raiz.position;
+      const dx = p.x - oido.x;
+      const dz = p.z - oido.z;
+      const distancia = Math.hypot(dx, dz);
+      let lado = 0;
+      const camara = scene.activeCamera;
+      if (camara && distancia > 0.3) {
+        camara.getDirectionToRef(Vector3.RightReadOnly, derechaDelGuardia);
+        lado = (derechaDelGuardia.x * dx + derechaDelGuardia.z * dz) / distancia;
+      }
+      const deFuera = p.z < FACHADA_Z || p.x < COSTADO_X;
+      pisada({
+        volumen: Math.min(1, 2.2 / Math.max(2.2, distancia)) * (0.6 + 0.4 * carrera) * (deFuera ? 0.55 : 1),
+        lado: lado * 0.8,
+        fuera: deFuera,
+      });
+    });
+  };
 
   let sala: SalaEnAsalto | null = null;
   const cajero = (): Figura | null => sala?.cajeros[1] ?? null;
@@ -463,7 +507,6 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
         CORRER,
         () => {
           sala?.puerta?.forzar(5);
-          reproducir("pasosCorriendo");
           momento("salen");
           s2.caminar(HUIDA_2.map(fuera), CORRER + 0.3, () => s2.visible(false));
         }
@@ -484,6 +527,7 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
       k -= 1;
       p.hacer();
     }
+    oirPisadas();
 
     // El arma: hacia el guardia cuando le toca, o al sitio del barrido.
     if (fase === "dentro" || fase === "huida") {

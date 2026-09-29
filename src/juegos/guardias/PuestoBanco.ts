@@ -21,7 +21,8 @@ import { separarSueloSala, pulirSuelo, sombrasAlPie } from "./LuzSalaSupermercad
 import { crearHudRecorrido } from "./HudRecorrido";
 import { crearRelojTurno } from "./RelojTurno";
 import { crearPanelesTurno } from "./PanelesSupermercado";
-import { crearGenteBanco } from "./GenteBanco";
+import { crearGenteBanco, PUERTA_X } from "./GenteBanco";
+import { CENTRO_PUERTA } from "./PuertaBanco";
 import { crearAsaltoBanco, type AsaltoBanco, type MomentoAsalto } from "./AsaltoBanco";
 import {
   MOMENTOS,
@@ -32,11 +33,19 @@ import {
 } from "./MomentosBanco";
 import { crearObservacionBanco, type ObservacionBanco } from "./ObservacionBanco";
 import { crearSubtitulos } from "./SubtitulosTurno";
+import { crearCarabinerosBanco } from "./CarabinerosBanco";
+import { crearPanelDeclaracion } from "./PanelDeclaracion";
+import { prepararPregunta, TOTAL_PREGUNTAS, type RespuestaDeclaracion } from "./DeclaracionBanco";
 import {
   precargarAmbienteSala,
   iniciarAmbienteSala,
   agacharAmbienteSala,
+  devolverAmbienteSala,
   detenerAmbienteSala,
+  congelarSonidosSala,
+  detenerSonidosSala,
+  establecerSilencio,
+  estaSilenciado,
   reproducir,
 } from "../../core/Sonido";
 import {
@@ -44,8 +53,10 @@ import {
   ETIQUETA_TURNO,
   FIN_DE_LA_CALMA,
   MINUTO_FINAL,
+  MINUTOS_HASTA_CARABINEROS,
   MINUTOS_POR_SEGUNDO,
   PRUEBA_RAPIDA,
+  PRUEBA_RAPIDA_DESDE,
   RITMO_ASALTO,
   horaDelTurno,
 } from "./TurnoBanco";
@@ -80,6 +91,8 @@ export interface PuestoBanco {
   observacion: ObservacionBanco;
   /** Lo que eligió en cada momento del asalto, en orden. Para la nota. */
   decisiones: () => readonly DecisionBanco[];
+  /** Lo que declaró ante Carabineros, pregunta a pregunta. Para el libro y la nota. */
+  declaracion: () => readonly RespuestaDeclaracion[];
   dispose: () => void;
 }
 
@@ -183,6 +196,13 @@ export async function crearPuestoBanco(
   /** Lo que se echa hacia delante al bajar: poco, que la silla está al lado. */
   const AVANCE_EN_EL_SUELO = 0.12;
   const LADEO_EN_EL_SUELO = 0.12;
+  /**
+   * Adónde se lleva la vista cuando la lleva el puesto y no el ratón: un punto
+   * y en qué sitio de la pantalla tiene que quedar, en fracciones del ancho y
+   * del alto. Se recalcula cada cuadro, así que sigue bien aunque la ventana
+   * cambie de tamaño. De golpe: en el primer cuadro, con la pantalla en negro.
+   */
+  let encuadre: { punto: () => Vector3; x: () => number; y: number; deGolpe: boolean } | null = null;
   /** Esperas cortas del puesto, en tiempo del turno: se detienen con la pausa. */
   const esperas: { t: number; hacer: () => void }[] = [];
   let tiempoPuesto = 0;
@@ -209,6 +229,36 @@ export async function crearPuestoBanco(
       }
       const paso = dt / (sueloQuiere === 1 ? 0.5 : 0.9);
       caida = sueloQuiere === 1 ? Math.min(1, caida + paso) : Math.max(0, caida - paso);
+      // Se fueron, la sala se recompuso y no queda nada que contestar: llega
+      // Carabineros. Ver LA DECLARACIÓN.
+      if (
+        etapa === "turno" &&
+        asalto.fase() === "fin" &&
+        !enPanel &&
+        !despuesPendiente &&
+        sueloQuiere === 0 &&
+        caida <= 0 &&
+        !levantandose
+      ) {
+        llegaCarabineros();
+      }
+    }
+    // Con Carabineros delante la vista no es del ratón: se lleva sola a quien
+    // habla, sin saltos.
+    if (encuadre && caida <= 0 && sueloQuiere === 0) {
+      const d = encuadre.punto().subtract(enSuSitio);
+      const tanV = Math.tan(camara.fov / 2);
+      const tanH = tanV * scene.getEngine().getAspectRatio(camara);
+      // Girar a la derecha corre lo mirado hacia la izquierda de la pantalla;
+      // bajar la vista lo sube.
+      const yaw = Math.atan2(d.x, d.z) + Math.atan((0.5 - encuadre.x()) * 2 * tanH);
+      const pitch = Math.atan2(-d.y, Math.hypot(d.x, d.z)) + Math.atan((0.5 - encuadre.y) * 2 * tanV);
+      const k = encuadre.deGolpe ? 1 : Math.min(1, dt * 3.2);
+      encuadre.deGolpe = false;
+      let giro = yaw - camara.rotation.y;
+      giro = Math.atan2(Math.sin(giro), Math.cos(giro));
+      camara.rotation.y += giro * k;
+      camara.rotation.x += (pitch - camara.rotation.x) * k;
     }
     if (caida > 0 || sueloQuiere === 1 || levantandose) {
       const e = caida * caida * (3 - 2 * caida);
@@ -281,6 +331,27 @@ export async function crearPuestoBanco(
   // las sombras al pie y que la ampliación de luces, que tienen que contarla.
   const puerta = banco.mallas.find((m) => m.material?.name === "set13");
   const gente = crearGenteBanco(scene, piso, puerta instanceof Mesh ? puerta : null);
+
+  // Los que vienen de fuera —los dos del asalto y, después, Carabineros—, con
+  // la gente y fuera de escena hasta que les toca: así la sombra al pie y la
+  // ampliación de luces los cuentan igual que a los demás. Montados después,
+  // como estaban, sus materiales se quedaban con las cuatro luces de fábrica
+  // y sin sombra en el piso.
+  //
+  // El asalto: los dos sujetos, lo que dicen y lo que hace la sala. Empieza a
+  // las 9:45. Ver AsaltoBanco.
+  const subtitulos = crearSubtitulos();
+  const asalto = crearAsaltoBanco(scene, {
+    piso,
+    gente,
+    // Los ojos del guardia de pie, aunque esté en el suelo: el del arma apunta
+    // a donde estaba, no a un palmo del piso.
+    guardia: () => enSuSitio,
+    subtitulos,
+    alMomento: (m) => atenderMomento(m),
+  });
+  // Carabineros, que llegan cuando todo terminó. Ver LA DECLARACIÓN.
+  const carabineros = crearCarabinerosBanco(scene, { piso, guardia: enSuSitio, gente, subtitulos });
 
   // El entorno de los reflejos, con el hall ya completo. Sin la gente, que se
   // mueve: en un reflejo fijo se quedaría congelada en su primer cuadro.
@@ -362,18 +433,7 @@ export async function crearPuestoBanco(
   // cuando se cierra.
   const hud = crearHudRecorrido({ hora: horaDelTurno(0), turno: ETIQUETA_TURNO, acento: ACENTO });
   const paneles = crearPanelesTurno(scene);
-  // El asalto: los dos sujetos, lo que dicen y lo que hace la sala. Se monta
-  // ya, con todo lo demás, y empieza a las 9:45. Ver AsaltoBanco.
-  const subtitulos = crearSubtitulos();
-  const asalto = crearAsaltoBanco(scene, {
-    piso,
-    gente,
-    // Los ojos del guardia de pie, aunque esté en el suelo: el del arma apunta
-    // a donde estaba, no a un palmo del piso.
-    guardia: () => enSuSitio,
-    subtitulos,
-    alMomento: (m) => atenderMomento(m),
-  });
+  const panelDeclaracion = crearPanelDeclaracion(scene);
   const reloj = crearRelojTurno(scene, {
     minutoFinal: MINUTO_FINAL,
     minutosPorSegundo: MINUTOS_POR_SEGUNDO,
@@ -401,13 +461,20 @@ export async function crearPuestoBanco(
   /** Si el momento de "ya se fueron" espera a que el guardia se levante. */
   let despuesPendiente = false;
   const decisiones: DecisionBanco[] = [];
+  /**
+   * En qué parte está: el turno —la mañana y el asalto—, la llegada de
+   * Carabineros, la declaración o el cierre. Pasado el turno no hay pausa ni
+   * vista libre: la escena la lleva el puesto.
+   */
+  let etapa: "turno" | "llegada" | "declaracion" | "cierre" = "turno";
+  const respuestas: RespuestaDeclaracion[] = [];
 
   /**
    * Devuelve la vista al ratón, si se puede: con el turno corriendo y el
    * guardia de pie. En el suelo no se mira alrededor.
    */
   const devolverMando = (): void => {
-    if (cerrado || !enMarcha || enPanel || sueloQuiere === 1 || caida > 0) return;
+    if (cerrado || !enMarcha || enPanel || etapa !== "turno" || sueloQuiere === 1 || caida > 0) return;
     camara.attachControl(true);
   };
 
@@ -499,6 +566,7 @@ export async function crearPuestoBanco(
     asalto.congelar(true);
     subtitulos.mostrar(false);
     agacharAmbienteSala(true);
+    congelarSonidosSala(true);
     camara.detachControl();
     hud.ocultar();
     reproducir("pregunta");
@@ -524,6 +592,7 @@ export async function crearPuestoBanco(
         if (cerrado) return;
         gente.congelar(false);
         asalto.congelar(false);
+        congelarSonidosSala(false);
         subtitulos.mostrar(true);
         hud.mostrar();
         reproducir("cerrar");
@@ -551,6 +620,242 @@ export async function crearPuestoBanco(
     );
   };
 
+  // ─── LA DECLARACIÓN ────────────────────────────────────────────────────
+  //
+  // Terminado el asalto —se fueron, se contestó el último momento y la sala se
+  // recompuso—, la pantalla va a negro y vuelve veinte minutos después, con
+  // Carabineros dentro: el sargento delante del guardia y un cabo resguardando
+  // las cajas (ver CarabinerosBanco). El sargento se presenta y le toma
+  // declaración: seis preguntas, cada una con su tarjeta a la derecha y él a
+  // la izquierda, anotando lo que se le contesta. Al final, lo declarado en
+  // papel, la firma, y el cierre del turno.
+  //
+  // Lo que se puede contestar sale de lo que se vio (ver DeclaracionBanco): el
+  // primer tiempo se paga aquí.
+  //
+  // Desde la llegada no hay pausa ni vista libre. Son escenas y tarjetas que
+  // se cierran eligiendo, como los momentos del asalto.
+
+  /** El negro de la llegada, con lo que pasó mientras tanto. Un div, como la barra de controles. */
+  const fundido = document.createElement("div");
+  Object.assign(fundido.style, {
+    position: "fixed",
+    inset: "0",
+    background: "#050607",
+    opacity: "0",
+    transition: "opacity 1200ms ease",
+    pointerEvents: "none",
+    zIndex: "60",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "12px",
+  });
+  const cuandoFundido = document.createElement("div");
+  cuandoFundido.textContent = "Veinte minutos después";
+  Object.assign(cuandoFundido.style, {
+    color: "#e9edf2",
+    font: "300 30px/1.2 system-ui, 'Segoe UI', sans-serif",
+    letterSpacing: "0.4px",
+  });
+  const queFundido = document.createElement("div");
+  queFundido.textContent = "LLEGA CARABINEROS";
+  Object.assign(queFundido.style, {
+    color: "rgba(233, 237, 242, 0.5)",
+    font: "600 12px/1 system-ui, 'Segoe UI', sans-serif",
+    letterSpacing: "2.4px",
+  });
+  fundido.append(cuandoFundido, queFundido);
+  document.body.appendChild(fundido);
+
+  /**
+   * Lleva la vista a un punto y lo deja en ese sitio de la pantalla, en
+   * fracciones del ancho y del alto: 0,5 y 0,5 es el centro.
+   */
+  /** El punto puede moverse —alguien que camina—: se sigue cuadro a cuadro. */
+  const encuadrar = (
+    punto: Vector3 | (() => Vector3),
+    x: number | (() => number),
+    y: number,
+    deGolpe = false
+  ): void => {
+    const fijo = punto instanceof Vector3 ? punto.clone() : null;
+    encuadre = {
+      punto: fijo ? () => fijo : (punto as () => Vector3),
+      x: typeof x === "number" ? () => x : x,
+      y,
+      deGolpe,
+    };
+  };
+
+  /**
+   * La puerta, a la altura de la cabeza de quien entra. En el tercio
+   * izquierdo de la pantalla: al centro, la mitad de la imagen era el muro
+   * pegado al puesto.
+   */
+  const puertaAbierta = new Vector3(PUERTA_X, piso + 1.45, CENTRO_PUERTA.z);
+
+  const llegaCarabineros = (): void => {
+    if (etapa !== "turno" || cerrado) return;
+    etapa = "llegada";
+    camara.detachControl();
+    camara.cameraRotation.set(0, 0);
+    apagarAyuda();
+    fundido.style.opacity = "1";
+    // Ya en negro: pasaron veinte minutos. La sala vuelve a hablar, bajo, y
+    // cada uno está donde lo dejó lo que pasó (ver LA SALA DESPUÉS en
+    // GenteBanco). Fuera, la patrulla con las balizas; dentro, el cabo junto
+    // a las cajas, y el sargento en la explanada, a punto de entrar. La vista,
+    // a la puerta.
+    luego(1.5, () => {
+      reloj.saltarA(reloj.minuto() + MINUTOS_HASTA_CARABINEROS);
+      devolverAmbienteSala(3);
+      gente.recomponer(enSuSitio);
+      exterior.patrulla.aparecer();
+      carabineros.preparar();
+      encuadrar(puertaAbierta, 0.36, 0.45, true);
+    });
+    luego(3.3, () => {
+      fundido.style.opacity = "0";
+    });
+    // Aclarando, entra: la puerta se le abre y, por ella, se ve la patrulla
+    // con las balizas. La vista lo sigue hasta que se planta delante.
+    luego(4.2, () => {
+      // La vista espera en la puerta hasta que él asoma en el vano, y desde
+      // ahí lo sigue. Siguiéndolo desde el principio, se le buscaba a través
+      // de la pared, con él todavía fuera.
+      const fuera = (): boolean => carabineros.cara().z < CENTRO_PUERTA.z + 0.15;
+      encuadrar(
+        () => (fuera() ? puertaAbierta : carabineros.cara()),
+        () => (fuera() ? 0.36 : 0.5),
+        0.42
+      );
+      carabineros.entrar(() => {
+        // Se presenta. Cómo se enteraron depende de si el guardia avisó.
+        const aviso = decisiones.find((d) => d.momento === "despues");
+        const saludo = aviso?.opcion.correcta
+          ? "Buenos días. Sargento Rojas, Tercera Comisaría. Recibimos su aviso por la central."
+          : "Buenos días. Sargento Rojas, Tercera Comisaría. Nos llamó el cajero de la caja 2.";
+        luego(0.6, () => carabineros.decir(saludo, 4.6));
+        luego(5.4, () => carabineros.decir("Necesito tomarle declaración. Cuénteme lo que vio.", 3.4));
+        luego(9.1, empezarDeclaracion);
+      });
+    });
+  };
+
+  const empezarDeclaracion = (): void => {
+    if (cerrado) return;
+    etapa = "declaracion";
+    hud.ocultar();
+    // Lo que se vio queda como estaba al irse ellos: la observación ya no
+    // cuenta nada después.
+    const visto = observacion.resumen();
+    let k = 0;
+    const siguiente = (): void => {
+      if (cerrado) return;
+      if (k >= TOTAL_PREGUNTAS) {
+        mostrarDocumento();
+        return;
+      }
+      const p = prepararPregunta(k, visto);
+      encuadrar(() => carabineros.cara(), () => panelDeclaracion.hueco(), 0.4);
+      carabineros.preguntar(Math.min(3.4, 1 + p.pregunta.length * 0.05));
+      if (k === 0) reproducir("pregunta");
+      panelDeclaracion.mostrarPregunta(
+        p,
+        (o) => {
+          respuestas.push({
+            id: p.id,
+            tema: p.tema,
+            pregunta: p.pregunta,
+            tipo: o.tipo,
+            texto: o.texto,
+            correcta: o.correcta,
+            bloqueada: p.bloqueada,
+            faltan: p.faltan,
+          });
+          reproducir(o.correcta ? "acierto" : "error");
+          carabineros.anotar(2.8);
+        },
+        () => {
+          k += 1;
+          siguiente();
+        }
+      );
+    };
+    siguiente();
+  };
+
+  const mostrarDocumento = (): void => {
+    const hoy = new Date();
+    const fecha = [hoy.getDate(), hoy.getMonth() + 1]
+      .map((n) => String(n).padStart(2, "0"))
+      .concat(String(hoy.getFullYear()))
+      .join("-");
+    panelDeclaracion.mostrarDocumento({ fecha, hora: horaDelTurno(reloj.minuto()), respuestas }, () => {
+      if (cerrado) return;
+      etapa = "cierre";
+      encuadrar(() => carabineros.cara(), 0.5, 0.42);
+      carabineros.guardarLibreta();
+      // Medio segundo, a que se vaya el papel: el subtítulo va por encima de
+      // todo, y encima del documento se leían los dos a la vez.
+      luego(0.5, () =>
+        carabineros.decir("Gracias. Con esto es suficiente. Si recuerda algo más, llame a la comisaría.", 4.4)
+      );
+      luego(5.5, mostrarCierre);
+    });
+  };
+
+  const mostrarCierre = (): void => {
+    if (cerrado) return;
+    panelDeclaracion.mostrarCierre(
+      {
+        decisionesBien: decisiones.filter((d) => d.opcion.correcta).length,
+        decisionesTotal: decisiones.length,
+        declaracionBien: respuestas.filter((r) => r.correcta).length,
+        declaracionTotal: respuestas.length,
+        opiniones: respuestas.filter((r) => r.tipo === "opina").length,
+        inventadas: respuestas.filter((r) => r.tipo === "inventa").length,
+        sinVer: respuestas.reduce((s, r) => s + r.faltan.length, 0),
+      },
+      () => salir("repetir"),
+      () => salir("menu")
+    );
+  };
+
+  /**
+   * Solo para PRUEBA_RAPIDA: corre la mañana DE VERDAD hasta ese minuto —la
+   * gente con su guion, la pantalla, el reloj—, a pasos de cuadro y sin
+   * dibujarla.
+   *
+   * Saltar solo el reloj, como se hacía, dejaba a la gente en las 9:00: el
+   * asalto caía antes del primer llamado de la pantalla, y de la tarjeta se
+   * pasaba al asalto sin nada en medio. Así se llega a la misma sala que en
+   * el turno entero, y lo que queda de mañana —el cliente que se va, el
+   * tin-tón, la señora que pasa a la caja— se ve y se oye antes de que entren.
+   *
+   * En silencio mientras corre: los llamados adelantados no suenan todos de
+   * golpe. Cuesta unos 0,35 ms por paso; hasta las 9:34, unos seis décimos.
+   */
+  const adelantarTurno = (minuto: number): void => {
+    const PASO = 0.05;
+    const motor = scene.getEngine();
+    const deVerdad = motor.getDeltaTime;
+    const yaMudo = estaSilenciado();
+    establecerSilencio(true);
+    motor.getDeltaTime = () => PASO * 1000;
+    try {
+      const pasos = Math.ceil(minuto / MINUTOS_POR_SEGUNDO / PASO) + 2;
+      for (let k = 0; k < pasos && reloj.minuto() < minuto; k++) {
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+      }
+    } finally {
+      motor.getDeltaTime = deVerdad;
+      establecerSilencio(yaMudo);
+    }
+  };
+
   const comenzar = (): void => {
     if (cerrado || comenzado) return;
     comenzado = true;
@@ -561,12 +866,13 @@ export async function crearPuestoBanco(
       if (cerrado) return;
       camara.attachControl(true);
       hud.mostrar();
-      // El hall empieza a sonar con el turno, entrando en dos segundos.
-      iniciarAmbienteSala("banco");
       gente.comenzar();
       reloj.correr(true);
-      // Ver PRUEBA_RAPIDA: directo a las 9:44, a un minuto del asalto.
-      if (PRUEBA_RAPIDA) reloj.saltarA(FIN_DE_LA_CALMA - 1);
+      // Ver PRUEBA_RAPIDA: la mañana corrida hasta poco antes del asalto.
+      // Antes que el ambiente: el silencio del adelanto lo cortaría.
+      if (PRUEBA_RAPIDA) adelantarTurno(PRUEBA_RAPIDA_DESDE);
+      // El hall empieza a sonar con el turno, entrando en dos segundos.
+      iniciarAmbienteSala("banco");
       enMarcha = true;
       ayuda.style.opacity = "1";
       temporizadorAyuda = setTimeout(apagarAyuda, CONTROLES_A_LA_VISTA_MS);
@@ -587,10 +893,15 @@ export async function crearPuestoBanco(
     camara.detachControl();
     apagarAyuda();
     ayuda.remove();
+    fundido.remove();
     if (plantado) scene.onBeforeRenderObservable.remove(plantado);
     detenerAmbienteSala();
+    detenerSonidosSala();
+    exterior.patrulla.dispose();
     observacion.dispose();
     asalto.dispose();
+    carabineros.dispose();
+    panelDeclaracion.dispose();
     subtitulos.dispose();
     gente.dispose();
     reloj.dispose();
@@ -611,20 +922,26 @@ export async function crearPuestoBanco(
   // puesto termine de montarse.
   let enPausa = false;
   const abrirPausa = (): void => {
-    if (enPausa || enPanel || cerrado || !comenzado || !enMarcha) return;
+    if (enPausa || enPanel || etapa !== "turno" || cerrado || !comenzado || !enMarcha) return;
     enPausa = true;
     enMarcha = false;
     reloj.correr(false);
     gente.congelar(true);
     asalto.congelar(true);
     subtitulos.mostrar(false);
-    // La sala no se calla en la pausa, pero se aparta.
+    // La sala no se calla en la pausa, pero se aparta. Lo que estaba sonando
+    // en ella —un golpe, una exclamación— se para donde iba.
     agacharAmbienteSala(true);
+    congelarSonidosSala(true);
     camara.detachControl();
     hud.ocultar();
     paneles.mostrarPausa(
       () => seguirTrasPausa(),
-      () => salir("menu")
+      () => salir("menu"),
+      // La del supermercado habla de llegar a las 20:00: aquí el turno cuenta
+      // cuando se firma la declaración.
+      "Si sales ahora, el turno no queda registrado. Para que cuente hay que llegar hasta la declaración " +
+        "ante Carabineros y firmarla."
     );
   };
   const seguirTrasPausa = (): void => {
@@ -634,6 +951,7 @@ export async function crearPuestoBanco(
     if (cerrado) return;
     gente.congelar(false);
     asalto.congelar(false);
+    congelarSonidosSala(false);
     subtitulos.mostrar(true);
     hud.mostrar();
     reloj.correr(true);
@@ -648,8 +966,9 @@ export async function crearPuestoBanco(
       return;
     }
     // Con un momento del asalto en pantalla, ESC no hace nada: esa tarjeta se
-    // cierra eligiendo, como las situaciones del supermercado.
-    if (enPanel) return;
+    // cierra eligiendo, como las situaciones del supermercado. Y desde que
+    // llega Carabineros, tampoco: todo lo que queda se cierra eligiendo.
+    if (enPanel || etapa !== "turno") return;
     if (enPausa) {
       if (paneles.cerrarPausa()) seguirTrasPausa();
       return;
@@ -664,6 +983,7 @@ export async function crearPuestoBanco(
     asalto,
     observacion,
     decisiones: () => decisiones,
+    declaracion: () => respuestas,
     dispose: () => salir("menu"),
   };
 }

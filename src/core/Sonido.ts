@@ -41,10 +41,10 @@ export type EfectoSonido =
   | "mirada"
   // El llamador de turnos del banco.
   | "turnoBanco"
-  // El asalto.
+  // El asalto. Los pasos de los que corren no son un efecto de estos: ver
+  // pisada(), más abajo.
   | "puertaGolpe"
-  | "exclamacion"
-  | "pasosCorriendo";
+  | "exclamacion";
 
 interface DefinicionEfecto {
   archivo: string;
@@ -92,14 +92,21 @@ const EFECTOS: Record<EfectoSonido, DefinicionEfecto> = {
   // ─── EL ASALTO ──────────────────────────────────────────────────────
   //
   // Freesound, CC0 (ver public/audio/CREDITOS.md): la puerta que se abre de
-  // un golpe contra el tope, la exclamación ahogada de un grupo chico y
-  // varias personas corriendo por un pasillo. Igualados en volumen como los
-  // demás; aquí se reparte cuánto pesa cada uno. El golpe y la exclamación
-  // tienen que sobresaltar: son lo que avisa a quien está mirando a otra parte.
+  // un golpe contra el tope y la exclamación ahogada de un grupo chico.
+  // Igualados en volumen como los demás; aquí se reparte cuánto pesa cada
+  // uno. Tienen que sobresaltar: son lo que avisa a quien está mirando a otra
+  // parte.
   puertaGolpe: { archivo: "puerta-golpe.wav", volumen: 0.85, copias: 1 },
   exclamacion: { archivo: "exclamacion.wav", volumen: 0.5, copias: 1 },
-  pasosCorriendo: { archivo: "pasos-corriendo.wav", volumen: 0.55, copias: 1 },
 };
+
+/**
+ * Los que suenan EN la sala —la pantalla de turnos, la puerta, la gente— y no
+ * en la interfaz. Se congelan con ella: si un panel para el turno a mitad de
+ * la exclamación, el resto de la exclamación suena al seguir, no encima del
+ * panel. Ver congelarSonidosSala.
+ */
+const DE_LA_SALA: readonly EfectoSonido[] = ["turnoBanco", "puertaGolpe", "exclamacion"];
 
 const CARPETA = "/audio/";
 
@@ -167,6 +174,42 @@ export function reproducir(nombre: EfectoSonido): void {
   // play() devuelve una promesa que se rechaza si el navegador lo impide.
   // No hay nada que hacer al respecto salvo no romper el juego.
   void audio.play().catch(() => undefined);
+}
+
+/** Los efectos de la sala que el último congelado dejó a medias. */
+let salaEnPausa: HTMLAudioElement[] = [];
+
+/**
+ * Para los efectos de la sala que estén sonando, sin rebobinarlos, o los deja
+ * seguir desde donde quedaron. Va con los paneles y la pausa del turno: lo que
+ * se congela en pantalla se congela también en el oído.
+ */
+export function congelarSonidosSala(quietos: boolean): void {
+  if (quietos) {
+    DE_LA_SALA.forEach((nombre) =>
+      canales.get(nombre)?.copias.forEach((audio) => {
+        if (audio.paused || audio.ended) return;
+        audio.pause();
+        salaEnPausa.push(audio);
+      })
+    );
+    return;
+  }
+  const seguir = salaEnPausa;
+  salaEnPausa = [];
+  if (silenciado) return;
+  seguir.forEach((audio) => void audio.play().catch(() => undefined));
+}
+
+/** Los corta del todo, al salir del nivel: lo que quedó a medias no vuelve a sonar. */
+export function detenerSonidosSala(): void {
+  salaEnPausa = [];
+  DE_LA_SALA.forEach((nombre) =>
+    canales.get(nombre)?.copias.forEach((audio) => {
+      audio.pause();
+      audio.currentTime = 0;
+    })
+  );
 }
 
 /** Arranca el ambiente del taller en bucle. Reentrante: no se apila. */
@@ -576,4 +619,161 @@ export function detenerAmbienteSala(): void {
   // Se para DESPUÉS del fundido: pararlo en seco es el mismo chasquido que se
   // evitó en el empalme.
   actual.fuente.stop(ahora + 0.85);
+}
+
+// ===========================================================================
+// Las pisadas de quien corre
+// ===========================================================================
+//
+// Antes, cuando los del asalto salían corriendo, sonaba de una vez una
+// grabación de cuatro segundos y medio de gente corriendo. No iba con nada:
+// sonaba justo cuando la escena se paraba para preguntar —y seguía encima
+// del panel—, después los dos corrían en silencio, y aunque nada se parara,
+// la grabación tiene su ritmo y las piernas el suyo.
+//
+// Ahora cada pisada suena en el cuadro en que el pie toca el suelo (ver
+// Figura.pisadas): más fuerte cerca, de su lado —izquierda o derecha— y
+// apagada si es fuera, detrás de los vidrios. Se paran con la figura.
+//
+// ─── DE DÓNDE SALEN ───────────────────────────────────────────────────────
+//
+// De esa misma grabación, cortada al cargar: se buscan los golpes que
+// sobresalen de la mediana, se quedan los más fuertes que no traen otro
+// pegado detrás, y de cada uno se guardan 170 ms, el ataque entero y la cola
+// fundida. Igualados en pico, para que ninguno salte sobre los demás. Se
+// alternan, cada uno con un punto de tono distinto: el mismo golpe repetido
+// se reconoce enseguida como una máquina.
+
+const ARCHIVO_PISADAS = "pasos-corriendo.wav";
+/** Una pisada a un par de metros suena a lo que sonaba la grabación entera. */
+const VOLUMEN_PISADA = 0.55;
+/** Los tonos, en orden: fijos, como todo en el nivel. */
+const TONOS_PISADA = [1, 0.95, 1.04, 0.98, 1.06, 0.93, 1.02];
+let cargaPisadas: Promise<void> | null = null;
+let cortesPisada: AudioBuffer[] | null = null;
+let siguientePisada = 0;
+
+export interface Pisada {
+  /** De 0 a 1: ya con la distancia y lo fuerte que pisa, lo calcula quien pisa. */
+  volumen: number;
+  /** De −1, del todo a la izquierda de quien escucha, a 1, a la derecha. */
+  lado: number;
+  /** Detrás de los vidrios de la fachada: sin los agudos. */
+  fuera: boolean;
+}
+
+/** Baja y corta las pisadas sin sonar. Como el ambiente: al montar el nivel. */
+export function precargarPisadas(): void {
+  if (cargaPisadas) return;
+  cargaPisadas = (async () => {
+    const ctx = obtenerContexto();
+    if (!ctx) return;
+    try {
+      const respuesta = await fetch(CARPETA + ARCHIVO_PISADAS);
+      if (!respuesta.ok) return;
+      const cortes = cortarPisadas(ctx, await ctx.decodeAudioData(await respuesta.arrayBuffer()));
+      if (cortes.length > 0) cortesPisada = cortes;
+    } catch {
+      // Sin pisadas se juega igual, como con cualquier efecto que falta.
+    }
+  })();
+}
+
+/** Los golpes sueltos de la grabación, listos para sonar uno a uno. */
+function cortarPisadas(ctx: AudioContext, crudo: AudioBuffer): AudioBuffer[] {
+  const sr = crudo.sampleRate;
+  const datos = crudo.getChannelData(0);
+  // La envolvente: el pico de cada tramo de 5 ms.
+  const tramo = Math.round(sr * 0.005);
+  const cuantos = Math.floor(datos.length / tramo);
+  const envolvente = new Float32Array(cuantos);
+  for (let t = 0; t < cuantos; t++) {
+    let m = 0;
+    for (let i = t * tramo; i < (t + 1) * tramo; i++) m = Math.max(m, Math.abs(datos[i]));
+    envolvente[t] = m;
+  }
+  const mediana = Float32Array.from(envolvente).sort()[Math.floor(cuantos / 2)];
+  // Golpes: máximos de ±25 ms por encima de tres veces la mediana, y con al
+  // menos 120 ms entre uno y el siguiente.
+  const golpes: { t: number; pico: number }[] = [];
+  for (let t = 5; t < cuantos - 5; t++) {
+    const v = envolvente[t];
+    if (v < mediana * 3) continue;
+    let mayor = true;
+    for (let k = -5; k <= 5 && mayor; k++) mayor = envolvente[t + k] <= v;
+    if (!mayor) continue;
+    if (golpes.length > 0 && t - golpes[golpes.length - 1].t < 24) continue;
+    golpes.push({ t, pico: v });
+  }
+  // Los que no tienen otro golpe dentro de sus 170 ms y que caen limpios: de
+  // los 60 ms en adelante nada pasa del 40 % del golpe. Sin eso se colaban
+  // cortes con otra pisada más floja dentro —que el igualado de volumen, al
+  // subirlos, dejaba oír como un doble golpe— o con el ruido de fondo alto.
+  // Y con fuerza: uno flojo, igualado a los demás, sube su ruido con él.
+  // De los que quedan, los ocho más fuertes. En esta grabación, cinco.
+  const limpio = (g: { t: number; pico: number }): boolean => {
+    if (g.pico < mediana * 5) return false;
+    let resto = 0;
+    for (let t = g.t + 12; t < Math.min(cuantos, g.t + 34); t++) resto = Math.max(resto, envolvente[t]);
+    return resto < g.pico * 0.4;
+  };
+  const elegidos = golpes
+    .filter((g, i) => (i + 1 >= golpes.length || golpes[i + 1].t - g.t > 34) && limpio(g))
+    .sort((a, b) => b.pico - a.pico)
+    .slice(0, 8);
+  if (elegidos.length === 0) return [];
+  const picoComun = elegidos.map((g) => g.pico).sort((a, b) => a - b)[Math.floor(elegidos.length / 2)];
+  const LARGO = Math.round(sr * 0.17);
+  const ENTRADA = Math.round(sr * 0.002);
+  const SALIDA = Math.round(sr * 0.07);
+  return elegidos.map((g) => {
+    // El arranque del golpe: hacia atrás mientras la envolvente siga por
+    // encima de un cuarto del pico, hasta 30 ms.
+    let inicio = g.t;
+    while (inicio > Math.max(1, g.t - 6) && envolvente[inicio - 1] > g.pico * 0.25) inicio -= 1;
+    const desde = Math.max(0, inicio * tramo - Math.round(sr * 0.003));
+    const largo = Math.min(LARGO, datos.length - desde);
+    const corte = ctx.createBuffer(1, largo, sr);
+    const salida = corte.getChannelData(0);
+    const escala = picoComun / g.pico;
+    for (let i = 0; i < largo; i++) {
+      let f = i < ENTRADA ? i / ENTRADA : 1;
+      const cola = i - (largo - SALIDA);
+      if (cola > 0) f = Math.min(f, 0.5 + 0.5 * Math.cos((Math.PI * cola) / SALIDA));
+      salida[i] = datos[desde + i] * escala * f;
+    }
+    return corte;
+  });
+}
+
+/** Suena una pisada, ya. Si todavía no están cortadas, no suena nada. */
+export function pisada(p: Pisada): void {
+  if (!desbloqueado || silenciado) return;
+  if (!cortesPisada || !contexto) {
+    precargarPisadas();
+    return;
+  }
+  const ctx = contexto;
+  if (ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+  const k = siguientePisada;
+  siguientePisada += 1;
+  const fuente = ctx.createBufferSource();
+  fuente.buffer = cortesPisada[k % cortesPisada.length];
+  fuente.playbackRate.value = TONOS_PISADA[k % TONOS_PISADA.length];
+  const ganancia = ctx.createGain();
+  ganancia.gain.value = VOLUMEN_PISADA * volumenGeneral * Math.min(1, Math.max(0, p.volumen));
+  const lado = ctx.createStereoPanner();
+  lado.pan.value = Math.min(0.85, Math.max(-0.85, p.lado));
+  if (p.fuera) {
+    const vidrio = ctx.createBiquadFilter();
+    vidrio.type = "lowpass";
+    vidrio.frequency.value = 1100;
+    fuente.connect(vidrio);
+    vidrio.connect(ganancia);
+  } else {
+    fuente.connect(ganancia);
+  }
+  ganancia.connect(lado);
+  lado.connect(ctx.destination);
+  fuente.start();
 }

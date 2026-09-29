@@ -175,8 +175,10 @@ export interface PanelesTurno {
    *
    * @param alSeguir  Vuelve al turno donde estaba.
    * @param alSalir   Se va al menú. Lo hecho hasta aquí no queda registrado.
+   * @param nota      Lo que se pierde saliendo, si no es lo del supermercado
+   *                  —que cuenta "hasta las 20:00"—.
    */
-  mostrarPausa(alSeguir: () => void, alSalir: () => void): void;
+  mostrarPausa(alSeguir: () => void, alSalir: () => void, nota?: string): void;
   /** Retira la pausa si está puesta. Para poder cerrarla con la misma tecla. */
   cerrarPausa(): boolean;
   dispose(): void;
@@ -703,13 +705,14 @@ export function crearPanelesTurno(scene: Scene): PanelesTurno {
       ajustarAlContenido(tarjeta, columna, PIE);
     },
 
-    mostrarPausa(alSeguir, alSalir) {
+    mostrarPausa(alSeguir, alSalir, notaPropia) {
       const titulo = "Turno en pausa";
       const aviso =
         "El reloj está detenido y la sala también. Puedes seguir donde estabas.";
       const nota =
+        notaPropia ??
         "Si sales ahora, el turno no queda registrado: no hay nota ni queda en el historial. " +
-        "Para que cuente hay que llegar a las 20:00.";
+          "Para que cuente hay que llegar a las 20:00.";
       const alto =
         MARCO_VERTICAL +
         28 +

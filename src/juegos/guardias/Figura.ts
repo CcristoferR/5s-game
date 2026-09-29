@@ -720,6 +720,14 @@ export interface Figura {
   mirarHacia(punto: Vector3): void;
   /** Si ya no le queda camino por andar. */
   quieta(): boolean;
+  /**
+   * Cuántas veces ha apoyado un pie. Sube en el cuadro exacto en que el pie de
+   * delante toca el suelo: quien quiera que suenen los pasos mira si cambió, y
+   * así el sonido va con la pierna y no con un reloj aparte.
+   */
+  pisadas(): number;
+  /** Cuánto de carrera llevaba la última pisada: 0 andando, 1 corriendo del todo. */
+  carreraDeLaPisada(): number;
   /** Deja de andar donde está, sin terminar el camino ni avisar de que llegó. */
   detener(): void;
   /**
@@ -848,6 +856,13 @@ export interface Figura {
   sostener(malla: Mesh | null, mano: 0 | 1): Mesh | null;
   /** Dónde está ahora la palma de esa mano, en el mundo. */
   palmaEnMundo(mano: 0 | 1): Vector3;
+  /**
+   * Un punto de la cabeza en el mundo, en su propio marco: 0,0,0 es el centro
+   * del cráneo, +Z la cara, +Y arriba. Sigue a la cabeza como está este
+   * cuadro —inclinada, girada—: para llevar las manos a la cara, o la de
+   * otro a su hombro.
+   */
+  puntoDeLaCabeza(delante: number, arriba: number, lado: number): Vector3;
   /**
    * Mira ese punto girando solo la cabeza, sin mover el cuerpo, hasta donde
    * da el cuello. Null vuelve a mirar al frente.
@@ -1050,6 +1065,15 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
    * antes cambiar de zancada a mitad de camino hacía saltar la pierna.
    */
   let fasePaso = 0;
+  /**
+   * Las pisadas: dos por vuelta de la fase. La pierna 0 va más adelantada en
+   * 3π/2 y la 1 en π/2 (ver las caderas); el pie apoya un poco después de
+   * estar estirado del todo, cuando el cuerpo empieza a bajar del vuelo.
+   */
+  const APOYO_PISADA = Math.PI / 2 + 0.3;
+  let mediaVuelta = Math.floor(-APOYO_PISADA / Math.PI);
+  let pisadas = 0;
+  let carreraDeLaPisada = 0;
   let rumbo = 0;
   let rumboDeseado = 0;
   /** Cuánto está caminando ahora, de 0 a 1. Suaviza arrancar y parar. */
@@ -1681,6 +1705,16 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     // --- Ciclo de caminata --------------------------------------------------
     marcha += ((avanzando ? 1 : 0) - marcha) * Math.min(1, dt * 6);
     const fase = fasePaso;
+    // Una pisada cada media vuelta. Arrancando o parando, con la marcha a
+    // medias, la pierna apenas se mueve y no hay golpe que contar.
+    const vuelta = Math.floor((fasePaso - APOYO_PISADA) / Math.PI);
+    if (vuelta !== mediaVuelta) {
+      mediaVuelta = vuelta;
+      if (marcha > 0.35) {
+        pisadas += 1;
+        carreraDeLaPisada = deCarrera;
+      }
+    }
     const amplitud = marcha;
     // ─── CORRER ────────────────────────────────────────────────────────
     //
@@ -2494,12 +2528,19 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
       esq.hombros[mano].computeWorldMatrix(true);
       return Vector3.TransformCoordinates(palma, esq.codos[mano].computeWorldMatrix(true));
     },
+    puntoDeLaCabeza(delante, arriba, lado) {
+      raiz.computeWorldMatrix(true);
+      cuerpo.computeWorldMatrix(true);
+      return Vector3.TransformCoordinatesFromFloatsToRef(lado, CENTRO_CABEZA + arriba, delante, cabeza.computeWorldMatrix(true), new Vector3());
+    },
     mirarA(punto) {
       miraA = punto ? punto.clone() : null;
     },
     quieta() {
       return indiceRuta >= ruta.length;
     },
+    pisadas: () => pisadas,
+    carreraDeLaPisada: () => carreraDeLaPisada,
     detener() {
       ruta = [];
       indiceRuta = 0;

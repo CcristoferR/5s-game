@@ -38,6 +38,7 @@
           // Lo que alcanzó a ver y lo que eligió: solo para las pruebas.
           __observado: () => puesto.observacion.resumen(),
           __decisiones: () => puesto.decisiones().map((d) => ({ momento: d.momento, minuto: d.minuto, correcta: d.opcion.correcta, falta: d.opcion.falta ?? null, texto: d.opcion.texto })),
+          __declaracion: () => puesto.declaracion().map((r) => ({ id: r.id, tipo: r.tipo, correcta: r.correcta, bloqueada: r.bloqueada, faltan: r.faltan.map((f) => f.que + "/" + f.motivo), texto: r.texto })),
         };
         window.__listo = true;
       };

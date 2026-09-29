@@ -89,5 +89,8 @@ por RMS a 0,11 como los demás efectos del turno). No viene de ningún pack.
 Recortados de la vista previa MP3, pasados a WAV mono 44,1 kHz e igualados
 en volumen como los demás efectos del turno. El silencio de la sala cuando
 entran lo genera el juego (ruido grave filtrado, sin archivo): ver
-`cortarAmbienteSala` en `src/core/Sonido.ts`. La carpeta completa con los
-originales está en el escritorio, `audio-banco/asalto`.
+`cortarAmbienteSala` en `src/core/Sonido.ts`. `pasos-corriendo.wav` no suena
+entero: el juego lo corta al cargar en pisadas sueltas y hace sonar una en
+cada pisada de los que corren (ver `pisada` en `src/core/Sonido.ts`). La
+carpeta completa con los originales está en el escritorio,
+`audio-banco/asalto`.

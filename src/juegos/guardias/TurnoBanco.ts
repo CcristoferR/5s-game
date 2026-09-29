@@ -44,22 +44,40 @@ export const FIN_DE_LA_CALMA = 45;
  */
 export const RITMO_ASALTO = 1 / 60;
 
-/** Último minuto del turno que existe por ahora: las 10:00. */
-export const MINUTO_FINAL = 60;
+/**
+ * Lo que tarda Carabineros en llegar, desde que el asalto termina: la
+ * pantalla va a negro y vuelve con ellos dentro, veinte minutos más tarde en
+ * el reloj. Es lo que dice el rótulo del fundido (ver PuestoBanco).
+ */
+export const MINUTOS_HASTA_CARABINEROS = 20;
+
+/**
+ * Último minuto del turno que existe por ahora: las 10:30. Da para el asalto
+ * (9:45), la llegada de Carabineros veinte minutos después y la declaración.
+ */
+export const MINUTO_FINAL = 90;
 
 /**
  * ─── PRUEBA RÁPIDA — PONER EN false AL TERMINAR DE PROBAR ───────────────
  *
  * Mientras se construye el asalto, esperar los dos minutos de mañana
  * tranquila en cada prueba es perder el tiempo. Con esto en true, al cerrar
- * la tarjeta del inicio el reloj salta a las 9:44 y el asalto empieza a los
- * pocos segundos, con la sala tal como está al abrir: tres en las cajas, tres
- * en la fila y cuatro sentados.
+ * la tarjeta del inicio la mañana se corre de golpe hasta PRUEBA_RAPIDA_DESDE
+ * —la gente y la pantalla también, no solo el reloj— y desde ahí se juega:
+ * lo último de la mañana normal y, medio minuto después, el asalto.
  *
  * En false, el turno es el de verdad: dos minutos de mañana y el asalto sin
  * aviso.
  */
 export const PRUEBA_RAPIDA = true;
+
+/**
+ * Hasta dónde corre la mañana la prueba rápida: las 9:34, veintisiete
+ * segundos antes del asalto. Con eso se ve a un cliente salir hacia la puerta,
+ * a otro irse de la caja 2, el tin-tón de las 9:37 con la señora de rojo
+ * levantándose para ir a la caja, y la sala ya quieta cuando entran.
+ */
+export const PRUEBA_RAPIDA_DESDE = 34;
 
 /** Minuto del turno a hora de reloj. */
 export function horaDelTurno(minuto: number): string {
