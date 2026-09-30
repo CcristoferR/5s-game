@@ -6,9 +6,12 @@ import {
   StandardMaterial,
   Color3,
   Vector3,
+  Matrix,
   SpotLight,
   HemisphericLight,
   ReflectionProbe,
+  DynamicTexture,
+  Texture,
   type AbstractMesh,
 } from "@babylonjs/core";
 
@@ -143,14 +146,216 @@ export function iluminarBanco(scene: Scene, cielo: number): LuzBanco {
  * Sube el tope de luces por material.
  *
  * Babylon compila cada material para cuatro luces por defecto y las que
- * sobran no se calculan, en silencio. Dentro son siete —el relleno y los seis
- * focos—: con cuatro, cada cosa del hall se alumbraría con los primeros que le
- * tocaran y la luz saldría a parches.
+ * sobran no se calculan, en silencio. Dentro son ocho —el relleno, los seis
+ * focos y la luz de la puerta— y nueve con la luz de las ventanas: con
+ * cuatro, cada cosa del hall se alumbraría con los primeros que le tocaran y
+ * la luz saldría a parches.
+ *
+ * @param luces  Cuántas: ocho, o nueve si cabe la de las ventanas (ver
+ *               cabeLuzDeDia).
  */
-export function ampliarLucesBanco(scene: Scene): void {
+export function ampliarLucesBanco(scene: Scene, luces = 8): void {
   scene.materials.forEach((mat) => {
-    if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = 8;
+    if (mat instanceof PBRMaterial) mat.maxSimultaneousLights = luces;
   });
+}
+
+// ===========================================================================
+// La luz del día por las ventanas
+// ===========================================================================
+//
+// El hall se alumbraba solo con sus luminarias, y así parecía un estudio
+// cerrado aunque por las ventanas se viera la calle a pleno sol. Por las de
+// la pared izquierda entra la mañana: al otro lado de la calle del costado
+// está el vecino con la fachada al sol, y encima el cielo. Esa luz deja en el
+// piso, junto al muro, la forma de cada ventanal —blanda, porque viene de
+// todo el cielo y de toda la fachada y no de un punto— y alumbra de costado
+// las sillas y a quien pasa por el pasillo de ese lado. Más fría que la de
+// los paneles, que es la de un LED de 4000 K: es lo que dice que eso es el
+// día.
+//
+// El sol no entra: está detrás del banco y a la derecha (ver ExteriorBanco),
+// y en las ventanas de la derecha, que son las que miran hacia él, el grueso
+// del muro corta sus rayos, que llegan casi rasantes.
+//
+// ─── UNA SOLA LUZ ────────────────────────────────────────────────────────
+//
+// Es un foco fuera del muro, alto y lejos, con la silueta de los ventanales
+// proyectada como una diapositiva: lo que pasa por los huecos alumbra, lo
+// demás no. Uno solo para todas las ventanas, porque cada luz más cuesta en
+// cada material del hall, y el hall ya usa ocho. Sin brillo propio: la luz
+// del día sobre el piso pulido la pone su reflejo (ver pulirSuelo), y un
+// brillo del foco saldría como una mancha redonda sin forma de ventana.
+//
+// ─── LOS HUECOS ──────────────────────────────────────────────────────────
+//
+// Medidos con rayos sobre el modelo a escala 3, desde el piso: dos
+// ventanales bajos, de 0,3 a 2,5 m, cada uno partido por un parante, y
+// encima de cada uno una ventana alta, de 3,5 a 4,7. La cara de dentro del
+// muro está en X −4,217. Las ventanas altas dejan pasar menos: por ellas
+// solo se ve cielo.
+
+/** Un hueco de la pared izquierda: a lo largo del muro (Z) y de alto sobre el piso. */
+interface Hueco {
+  z0: number;
+  z1: number;
+  y0: number;
+  y1: number;
+  /** Cuánto deja pasar, de 0 a 1. */
+  paso: number;
+}
+
+const MURO_IZQUIERDO_X = -4.217;
+const HUECOS_IZQUIERDA: readonly Hueco[] = [
+  { z0: -2.95, z1: -2.45, y0: 0.3, y1: 2.5, paso: 1 },
+  { z0: -2.25, z1: -1.75, y0: 0.3, y1: 2.5, paso: 1 },
+  { z0: 0.25, z1: 0.85, y0: 0.3, y1: 2.5, paso: 1 },
+  { z0: 1.05, z1: 1.65, y0: 0.3, y1: 2.5, paso: 1 },
+  { z0: -3.15, z1: -1.55, y0: 3.5, y1: 4.7, paso: 0.45 },
+  { z0: 0.05, z1: 1.85, y0: 3.5, y1: 4.7, paso: 0.45 },
+];
+
+/**
+ * De dónde viene la luz, vista desde los ventanales: cuarenta y ocho grados
+ * sobre el horizonte, de frente al muro. Es la mezcla de la fachada del
+ * vecino, casi horizontal, y el cielo, alto. Más bajo, cada paño dejaba una
+ * franja de casi cuatro metros hasta el medio del hall, como un rayo de sol;
+ * así queda un rectángulo junto al muro que llega a las primeras sillas.
+ */
+const ELEVACION_DIA = 0.84;
+/** A qué distancia del muro se pone el foco. Lejos, para que la luz llegue casi paralela. */
+const DISTANCIA_DIA = 9;
+/** El color del día que entra: blanco algo azulado, más frío que el de los paneles. */
+const COLOR_DIA = new Color3(0.84, 0.91, 1);
+/**
+ * Lo que alumbra, en candelas, como los focos (ver iluminarBanco).
+ *
+ * Mucho más que ellos porque está cuatro veces más lejos —la luz cae con el
+ * cuadrado de la distancia—, y porque un foco PBR se apaga en campana desde
+ * su eje: en los huecos de los lados llega poco más de la mitad.
+ */
+const INTENSIDAD_DIA = 2400;
+/**
+ * Lo que se abre el foco más allá de los huecos, en radianes. Con el cono
+ * justo, la campana del foco dejaba los ventanales de los lados a oscuras;
+ * más abierto, la luz llega pareja a todos. La diapositiva sigue diciendo
+ * por dónde entra.
+ */
+const HOLGURA_DIA = 0.5;
+/** El lado de la diapositiva y lo que se difuminan los bordes, en píxeles de ella. */
+const LADO_DIAPOSITIVA = 1024;
+const DIFUMINADO_DIA = 9;
+
+/**
+ * Si el equipo puede con una novena luz por material.
+ *
+ * Cada luz ocupa un bloque de uniformes en el sombreador, además de los dos
+ * fijos del material y de la escena. Medido en los sombreadores del hall: con
+ * nueve luces, el más cargado usa once bloques en la etapa de fragmentos y
+ * tres en la de vértices. WebGL 2 garantiza doce por etapa, así que cabe en
+ * cualquier equipo; pero si uno informara menos, el material no compilaría y
+ * se vería negro, y por eso antes de montarla se pregunta.
+ */
+export function cabeLuzDeDia(scene: Scene): boolean {
+  const motor = scene.getEngine() as unknown as { webGLVersion?: number; _gl?: WebGL2RenderingContext };
+  const gl = motor._gl;
+  if (!gl) return false;
+  if ((motor.webGLVersion ?? 1) < 2) return true;
+  return gl.getParameter(gl.MAX_VERTEX_UNIFORM_BLOCKS) >= 12 && gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_BLOCKS) >= 12;
+}
+
+/**
+ * Monta la luz del día de la pared izquierda. Ver LA LUZ DEL DÍA POR LAS
+ * VENTANAS.
+ *
+ * @param piso  Alto del piso del hall, medido.
+ */
+export function luzDeDiaPorLasVentanas(scene: Scene, piso: number): SpotLight {
+  const huecos = HUECOS_IZQUIERDA;
+  const zMin = Math.min(...huecos.map((h) => h.z0));
+  const zMax = Math.max(...huecos.map((h) => h.z1));
+  const zCentro = (zMin + zMax) / 2;
+  const origen = new Vector3(
+    MURO_IZQUIERDO_X - DISTANCIA_DIA * Math.cos(ELEVACION_DIA),
+    piso + 1.4 + DISTANCIA_DIA * Math.sin(ELEVACION_DIA),
+    zCentro
+  );
+  // Apunta al centro de la mancha de los ventanales bajos en el piso.
+  const destino = new Vector3(MURO_IZQUIERDO_X + 1.6, piso, zCentro);
+  const direccion = destino.subtract(origen).normalize();
+
+  // El ángulo, el justo para que entren todos los huecos, y un poco más.
+  const esquinas = (h: Hueco): Vector3[] => [
+    new Vector3(MURO_IZQUIERDO_X, piso + h.y0, h.z0),
+    new Vector3(MURO_IZQUIERDO_X, piso + h.y0, h.z1),
+    new Vector3(MURO_IZQUIERDO_X, piso + h.y1, h.z1),
+    new Vector3(MURO_IZQUIERDO_X, piso + h.y1, h.z0),
+  ];
+  let abre = 0;
+  huecos.forEach((h) =>
+    esquinas(h).forEach((p) => {
+      const a = Math.acos(Math.min(1, Vector3.Dot(p.subtract(origen).normalize(), direccion)));
+      abre = Math.max(abre, a);
+    })
+  );
+  const angulo = 2 * abre + HOLGURA_DIA;
+
+  const luz = new SpotLight("luzDiaVentanasBanco", origen, direccion, angulo, 1, scene);
+  luz.innerAngle = angulo;
+  luz.diffuse = COLOR_DIA;
+  luz.specular = new Color3(0, 0, 0);
+  luz.intensity = INTENSIDAD_DIA;
+  luz.range = 40;
+
+  // ─── LA DIAPOSITIVA ────────────────────────────────────────────────────
+  //
+  // Cada hueco, visto desde el foco, con la misma proyección que usa Babylon
+  // para ponerla sobre la escena (ver SpotLight._computeProjectionTexture…):
+  // mirando por la dirección del foco, con la vertical arriba y el ángulo del
+  // foco de campo. Blanco lo que pasa, negro lo demás, y los bordes
+  // difuminados.
+  const vista = Matrix.LookAtLH(origen, origen.add(direccion), Vector3.Up());
+  const s = 1 / Math.tan(angulo / 2);
+  const N = LADO_DIAPOSITIVA;
+  const enDiapositiva = (p: Vector3): [number, number] => {
+    const v = Vector3.TransformCoordinates(p, vista);
+    const u = 0.5 + (0.5 * s * v.x) / v.z;
+    const w = 0.5 + (0.5 * s * v.y) / v.z;
+    // La textura va de abajo arriba y el lienzo de arriba abajo.
+    return [u * N, (1 - w) * N];
+  };
+  const siluetas = document.createElement("canvas");
+  siluetas.width = N;
+  siluetas.height = N;
+  const cs = siluetas.getContext("2d");
+  const tex = new DynamicTexture("texDiaVentanasBanco", { width: N, height: N }, scene, false);
+  const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, N, N);
+  if (cs) {
+    cs.fillStyle = "#000";
+    cs.fillRect(0, 0, N, N);
+    huecos.forEach((h) => {
+      const g = Math.round(255 * h.paso);
+      cs.fillStyle = `rgb(${g},${g},${g})`;
+      cs.beginPath();
+      esquinas(h).forEach((p, k) => {
+        const [x, y] = enDiapositiva(p);
+        if (k === 0) cs.moveTo(x, y);
+        else cs.lineTo(x, y);
+      });
+      cs.closePath();
+      cs.fill();
+    });
+    ctx.filter = `blur(${DIFUMINADO_DIA}px)`;
+    ctx.drawImage(siluetas, 0, 0);
+    ctx.filter = "none";
+  }
+  tex.update(true);
+  tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+  tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  luz.projectionTexture = tex;
+  return luz;
 }
 
 /**

@@ -49,6 +49,14 @@ export const CENTRO_PUERTA = new Vector3(0.667, 0, -4.0);
 const ABIERTA = -1.45;
 /** A qué distancia del vano alguien hace que se abra. */
 const ALCANCE = 1.45;
+/**
+ * Lo que cede la hoja con la llave echada cuando alguien la empuja: el juego
+ * del pestillo en el cerradero, un centímetro y medio en el canto. Lo justo
+ * para que se vea que se empujó y que no abrió.
+ */
+const JUEGO_CON_LLAVE = -0.012;
+/** Lo que dura el golpeteo de la hoja contra el marco, en segundos. */
+const DURA_EMPUJON = 0.55;
 
 export interface PuertaBanco {
   /** De 0 cerrada a 1 abierta del todo. */
@@ -59,6 +67,20 @@ export interface PuertaBanco {
    * cierrapuertas la cierra como siempre.
    */
   forzar(segundos: number): void;
+  /**
+   * Echa la llave, o la quita. Con la llave echada la puerta ya no se abre
+   * para quien llega a ella: se queda cerrada aunque la empujen. Un empujón de
+   * los que la revientan (forzar) la abre igual.
+   */
+  trancar(conLlave: boolean): void;
+  /** Si tiene la llave echada. */
+  trancada(): boolean;
+  /**
+   * Alguien la empuja con la llave echada: la hoja cede lo que da el pestillo
+   * y golpea dos o tres veces contra el marco. Sin llave no hace nada: la
+   * puerta ya se abre sola.
+   */
+  empujar(): void;
   /** La deja quieta como esté, o la suelta. Para la pausa. */
   congelar(quieta: boolean): void;
   dispose(): void;
@@ -80,12 +102,17 @@ export function montarPuertaBanco(scene: Scene, malla: Mesh, quienes: () => Vect
   let quieta = false;
   /** Segundos que le quedan sujeta abierta. Ver forzar. */
   let sujeta = 0;
+  /** Con la llave echada: no se abre para quien llega. Ver trancar. */
+  let conLlave = false;
+  /** Segundos que le quedan al golpeteo de un empujón con llave. Ver empujar. */
+  let empujon = 0;
   const observador: Observer<Scene> | null = scene.onBeforeRenderObservable.add(() => {
     if (quieta) return;
     const dt = Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
     sujeta = Math.max(0, sujeta - dt);
     const alguien =
-      sujeta > 0 || quienes().some((p) => Math.hypot(p.x - CENTRO_PUERTA.x, p.z - CENTRO_PUERTA.z) < ALCANCE);
+      sujeta > 0 ||
+      (!conLlave && quienes().some((p) => Math.hypot(p.x - CENTRO_PUERTA.x, p.z - CENTRO_PUERTA.z) < ALCANCE));
     const objetivo = alguien ? ABIERTA : 0;
     // (ABIERTA es negativa: la bisagra está a la derecha, ver arriba.)
     // Abre en algo más de medio segundo; cierra en un segundo y medio, y los
@@ -94,13 +121,28 @@ export function montarPuertaBanco(scene: Scene, malla: Mesh, quienes: () => Vect
     const rapidez = sujeta > 0 ? 11 : alguien ? 5 : 2.2;
     angulo += (objetivo - angulo) * Math.min(1, dt * rapidez);
     if (!alguien && Math.abs(angulo) < 0.004) angulo = 0;
-    bisagra.rotation.y = angulo;
+    // El empujón con la llave echada: la hoja va y vuelve contra el marco,
+    // cada vez con menos fuerza, como quien sacude una puerta que no abre.
+    let juego = 0;
+    if (empujon > 0) {
+      empujon = Math.max(0, empujon - dt);
+      const hecho = DURA_EMPUJON - empujon;
+      juego = JUEGO_CON_LLAVE * Math.abs(Math.sin(hecho * 17)) * (empujon / DURA_EMPUJON);
+    }
+    bisagra.rotation.y = angulo + juego;
   });
 
   return {
     apertura: () => angulo / ABIERTA,
     forzar(segundos) {
       sujeta = Math.max(sujeta, segundos);
+    },
+    trancar(si) {
+      conLlave = si;
+    },
+    trancada: () => conLlave,
+    empujar() {
+      if (conLlave && angulo === 0) empujon = DURA_EMPUJON;
     },
     congelar(q) {
       quieta = q;

@@ -11,16 +11,22 @@ import {
 import { crearFigura, type Figura } from "./Figura";
 import { SUJETO_1, SUJETO_2 } from "./AsaltantesBanco";
 import {
+  ASIENTO_ESPERA,
   CAJAS,
+  LEJOS_DER,
   MESON,
+  PASILLO_DER,
   PASILLO_IZQ,
   PUERTA_X,
   Y_FUERA,
   Z_CLIENTE,
   Z_PUERTA_DENTRO,
+  Z_PUERTA_FUERA,
+  Z_VEREDA,
   type GenteBanco,
   type SalaEnAsalto,
 } from "./GenteBanco";
+import { CENTRO_PUERTA } from "./PuertaBanco";
 import type { Subtitulos } from "./SubtitulosTurno";
 import { reproducir, cortarAmbienteSala, pisada, precargarPisadas } from "../../core/Sonido";
 
@@ -113,6 +119,41 @@ const ANDAR_FUERA = 1.35;
 const ENTRAR = 1.9;
 const CORRER = 3.1;
 
+// ─── EL QUINTO MOMENTO: UNA CLIENTA SE QUIERE IR ─────────────────────────
+//
+// Ya se fueron. La sala sigue en el suelo y, antes que nadie, se levanta la
+// del polerón burdeo —la sentada a la derecha, la más cerca de la puerta—:
+// dice que se va, que no vio nada, y cruza por delante del guardia hacia la
+// salida. Es una testigo, y la última cosa que el guardia puede cuidar antes
+// de que llegue Carabineros.
+//
+// El panel sale cuando pasa por delante del puesto, a un metro, ya dicha la
+// frase y antes de que la puerta se le empiece a abrir. Lo que se elige se ve:
+// vuelve a su asiento, sale por la puerta y se va por la vereda, o la puerta
+// no se le abre y se queda ahí reclamando. Y se vuelve a ver con Carabineros
+// (ver LA SALA DESPUÉS en GenteBanco).
+//
+// Todo en segundos desde que el del arma sale por la puerta.
+
+/** Se descubre la cabeza y mira hacia la puerta. Antes que los demás: es la que más miedo tiene de seguir ahí. */
+const TESTIGO_SE_DESCUBRE = 4.5;
+/** Se levanta y echa a andar. */
+const TESTIGO_SE_LEVANTA = 7.5;
+/** Lo que tarda en decir que se va, contado desde que se levanta. Termina antes del panel. */
+const TESTIGO_HABLA = 1.2;
+const TESTIGO_DURA_FRASE = 2.9;
+/** A qué paso va: con prisa por irse, sin correr. */
+const PASO_TESTIGO = 1.2;
+/** Dónde sale el panel: cuando cruza por delante del puesto, pasado este X. */
+const TESTIGO_X_PANEL = 2.75;
+/**
+ * Dónde se para si la puerta no le abre: pegada a la hoja, lo justo para
+ * empujarla con la mano. Y dónde apoya la mano, en la hoja cerrada, del lado
+ * del pomo.
+ */
+const ANTE_LA_PUERTA = { x: 0.62, z: -3.6 };
+const MANO_EN_LA_PUERTA = { x: 0.45, z: -3.965, alto: 1.05 };
+
 /** Lo que dicen, en orden. Ver Paso 6: hay que poder oírlo —aquí, leerlo—. */
 export const FRASES = {
   entrada: "¡Esto es un asalto! ¡Todos al suelo!",
@@ -122,11 +163,29 @@ export const FRASES = {
 } as const;
 
 /**
+ * Lo que dice la clienta que se quiere ir (ver EL QUINTO MOMENTO): al
+ * levantarse, y después, según lo que haga el guardia.
+ */
+export const FRASES_TESTIGO = {
+  meVoy: "Yo me voy. No quiero problemas… y no vi nada.",
+  espera: "Ya… está bien. Espero a que lleguen.",
+  seVa: "Permiso.",
+  encerrada: "¿Cómo que no puedo salir? ¡Ábrame la puerta!",
+} as const;
+
+/**
  * Los momentos del asalto, para lo que venga después (los paneles de
  * decisión): cuando entran gritando, cuando uno se acerca al guardia, cuando
- * salen corriendo y cuando ya se fueron.
+ * salen corriendo, cuando ya se fueron y cuando una clienta se quiere ir.
  */
-export type MomentoAsalto = "entran" | "seAcerca" | "salen" | "despues";
+export type MomentoAsalto = "entran" | "seAcerca" | "salen" | "despues" | "seQuiereIr";
+
+/**
+ * Qué pasa con la clienta que se quiere ir, según lo que haga el guardia: le
+ * pide que espere y ella vuelve a su asiento, la deja irse, o le cierra la
+ * puerta con llave y ella se queda reclamando delante.
+ */
+export type DesenlaceTestigo = "espera" | "seVa" | "encerrada";
 
 /** En qué va el asalto. */
 export type FaseAsalto = "espera" | "llegan" | "dentro" | "huida" | "despues" | "fin";
@@ -141,6 +200,15 @@ export interface AsaltoBanco {
    * cubriendo la puerta hasta terminar.
    */
   encararGuardia(frase: string, segundos: number): void;
+  /**
+   * Lo que hace la clienta que se quería ir, según lo que se eligió en su
+   * momento. Se llama al cerrar ese panel. Ver EL QUINTO MOMENTO.
+   */
+  resolverTestigo(desenlace: DesenlaceTestigo): void;
+  /** Cómo terminó lo de la clienta, o null si no llegó a pasar. */
+  desenlaceTestigo(): DesenlaceTestigo | null;
+  /** La clienta que se quiso ir, si estaba en el hall: para que Carabineros la mire. */
+  testigo(): Figura | null;
   /** Las frases que se dijeron en voz alta hasta ahora. Se oyen siempre. */
   frasesDichas(): ReadonlySet<string>;
   /** Empieza: se acercan por fuera y a los tres segundos revientan la puerta. */
@@ -161,6 +229,8 @@ export interface OpcionesAsalto {
   subtitulos: Subtitulos;
   /** Avisa de cada momento del asalto. Ver MomentoAsalto. */
   alMomento?: (m: MomentoAsalto) => void;
+  /** En el instante en que revientan la puerta: para el golpe de luz del puesto. */
+  alReventarPuerta?: () => void;
 }
 
 export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
@@ -192,6 +262,20 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
     f.isVisible = false;
     fajos.push(f);
   }
+
+  // El bolso del segundo engorda con cada fajo: entra casi vacío, la lona
+  // floja, y sale lleno. Solo el cuerpo del bolso, a lo ancho y a lo hondo,
+  // sin prisa; las asas siguen como están.
+  const bolso = scene.getMeshByName("asalto_sujeto2_bolsoMano");
+  const BOLSO_VACIO = 0.8;
+  const BOLSO_LLENO = 1.08;
+  let fajosEnElBolso = 0;
+  let hinchado = BOLSO_VACIO;
+  const ponerBolso = (): void => {
+    const lleno = (hinchado - BOLSO_VACIO) / (BOLSO_LLENO - BOLSO_VACIO);
+    bolso?.scaling.set(hinchado, 0.96 + 0.05 * lleno, hinchado);
+  };
+  ponerBolso();
 
   // --- El reloj del asalto y lo que tiene pendiente ----------------------------
   let t = 0;
@@ -368,6 +452,9 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
     s.cajeros.forEach((f, i) => {
       luego(0.75 + i * 0.25, () => {
         f.manosArriba(true);
+        // Las manos arriba tiemblan: más las del de la caja 2, que tiene al
+        // del bolso delante.
+        f.temblar(i === 1 ? 3 : 1.6);
       });
     });
   };
@@ -382,11 +469,132 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
         f.mirarA(puertaVista);
       });
     });
-    s.clientes.forEach((f, k) => {
-      luego(8 + k * 0.8, () => {
-        f.cubrirse(false);
-        f.mirarA(puertaVista);
+    // La que se quiere ir lleva su propio tiempo: ver EL QUINTO MOMENTO.
+    s.clientes
+      .filter((f) => f !== s.testigo)
+      .forEach((f, k) => {
+        luego(8 + k * 0.8, () => {
+          f.cubrirse(false);
+          f.mirarA(puertaVista);
+        });
       });
+    seQuiereIr(s);
+  };
+
+  // --- El quinto momento: la clienta que se quiere ir ----------------------------
+  //
+  // Ver EL QUINTO MOMENTO arriba. `testigoEnCamino` mientras cruza hacia la
+  // puerta esperando su panel; `desenlace`, lo que se eligió; `testigoListo`,
+  // cuando ya se vio lo que hizo y el asalto puede darse por terminado.
+  let testigoEnCamino = false;
+  let desenlace: DesenlaceTestigo | null = null;
+  let testigoListo = false;
+  /** Si ya pasaron los segundos de después que tiene que durar la escena. */
+  let pasoElRato = false;
+  /** Para contar una sola vez que la que se fue ya salió. */
+  let testigoSalio = false;
+  /** Lo que dice ella: su boca y el subtítulo. No va a lo que dijeron ellos. */
+  const hablaTestigo = (f: Figura, frase: string, segundos: number, grita = false): void => {
+    f.hablar(segundos - 0.2, grita);
+    subtitulos.decir(frase, segundos);
+  };
+
+  const seQuiereIr = (s: SalaEnAsalto): void => {
+    const f = s.testigo;
+    const asiento = s.asientoDelTestigo;
+    if (!f || !asiento) {
+      // No está en el hall: no hay a quién cuidar, y el asalto termina solo.
+      testigoListo = true;
+      return;
+    }
+    const puertaVista = en({ x: PUERTA_X, z: -4.6 }, piso + 1.3);
+    luego(TESTIGO_SE_DESCUBRE, () => {
+      f.cubrirse(false);
+      f.mirarA(puertaVista);
+    });
+    luego(TESTIGO_SE_DESCUBRE + 1.6, () => f.mirarA(o.guardia()));
+    luego(TESTIGO_SE_LEVANTA, () => {
+      f.mirarA(null);
+      // Sentada con camino por delante, se levanta sola (ver Figura.caminar).
+      // Al pasillo de la derecha, por delante del guardia, por la puerta, y a
+      // la derecha por la vereda: por donde vino, al revés.
+      f.caminar(
+        [
+          en({ x: PASILLO_DER, z: asiento.z }),
+          en({ x: PASILLO_DER, z: -2.3 }),
+          en({ x: 2.9, z: -2.42 }),
+          en({ x: 2.1, z: -2.5 }),
+          en({ x: 1.25, z: -3.05 }),
+          en({ x: PUERTA_X, z: Z_PUERTA_DENTRO }),
+          fuera({ x: PUERTA_X, z: Z_PUERTA_FUERA }),
+          fuera({ x: PUERTA_X + 0.3, z: -8.6 }),
+          fuera({ x: 3.5, z: Z_VEREDA }),
+          fuera({ x: LEJOS_DER, z: Z_VEREDA }),
+        ],
+        PASO_TESTIGO,
+        () => f.visible(false)
+      );
+      testigoEnCamino = true;
+    });
+    luego(TESTIGO_SE_LEVANTA + TESTIGO_HABLA, () => hablaTestigo(f, FRASES_TESTIGO.meVoy, TESTIGO_DURA_FRASE));
+  };
+
+  /** Lo que hace ella según lo que se eligió. Ver resolverTestigo. */
+  const desenlaceDe = (d: DesenlaceTestigo): void => {
+    const f = sala?.testigo ?? null;
+    const asiento = sala?.asientoDelTestigo ?? null;
+    if (!f || !asiento) {
+      testigoListo = true;
+      return;
+    }
+    if (d === "seVa") {
+      // Sigue su camino, que ya llevaba hasta la vereda. De pasada, al guardia.
+      luego(0.3, () => hablaTestigo(f, FRASES_TESTIGO.seVa, 1.4));
+      return;
+    }
+    if (d === "espera") {
+      // Se para, se vuelve hacia el guardia, le contesta y vuelve a sentarse.
+      f.detener();
+      f.mirarHacia(o.guardia());
+      f.mirarA(o.guardia());
+      luego(0.5, () => hablaTestigo(f, FRASES_TESTIGO.espera, 2.8));
+      luego(3.7, () => {
+        f.mirarA(null);
+        f.caminar(
+          [en({ x: PASILLO_DER, z: -2.3 }), en({ x: PASILLO_DER, z: asiento.z }), asiento],
+          PASO_TESTIGO * 0.85,
+          () => {
+            f.mirarHacia(en({ x: asiento.x, z: 20 }));
+            // Se da la vuelta y después se sienta: nadie se sienta girando.
+            luego(0.65, () => f.sentarse(ASIENTO_ESPERA));
+            luego(1.9, () => {
+              f.mirarA(o.guardia());
+              testigoListo = true;
+            });
+          }
+        );
+      });
+      return;
+    }
+    // Con llave: sigue hasta la puerta, que no se le abre; la empuja dos
+    // veces, se vuelve y le reclama al guardia. Y ahí se queda.
+    sala?.puerta?.trancar(true);
+    f.caminar([en({ x: 1.25, z: -3.05 }), en(ANTE_LA_PUERTA)], PASO_TESTIGO, () => {
+      f.mirarHacia(en({ x: ANTE_LA_PUERTA.x, z: -6 }));
+      const mano = en({ x: MANO_EN_LA_PUERTA.x, z: MANO_EN_LA_PUERTA.z }, piso + MANO_EN_LA_PUERTA.alto);
+      luego(0.3, () => {
+        f.apoyarManos([null, mano]);
+        f.mirarA(mano.add(new Vector3(0, 0.35, -0.2)));
+      });
+      luego(0.75, () => sala?.puerta?.empujar());
+      luego(1.55, () => sala?.puerta?.empujar());
+      luego(2.4, () => {
+        f.apoyarManos(null);
+        f.mirarHacia(o.guardia());
+        f.mirarA(o.guardia());
+      });
+      luego(2.9, () => hablaTestigo(f, FRASES_TESTIGO.encerrada, 3.2, true));
+      luego(6.6, () => (testigoListo = true));
     });
   };
 
@@ -413,6 +621,7 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
     sala = gente.asalto();
     sala.puerta?.forzar(4);
     reproducir("puertaGolpe");
+    o.alReventarPuerta?.();
     s1.caminar([fuera({ x: 0.72, z: -4.72 }), en({ x: PUERTA_X, z: -3.5 }), en(CONTROL)], ENTRAR, () => {
       barriendo = true;
       cambioBarrido = t;
@@ -590,7 +799,14 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
       if (f.t >= 1) {
         f.malla.isVisible = false;
         cayendo.splice(k, 1);
+        // Un fajo más dentro: el bolso engorda.
+        fajosEnElBolso += 1;
       }
+    }
+    const quiere = BOLSO_VACIO + (BOLSO_LLENO - BOLSO_VACIO) * (fajosEnElBolso / FAJOS);
+    if (Math.abs(quiere - hinchado) > 0.0005) {
+      hinchado += (quiere - hinchado) * Math.min(1, dt * 5);
+      ponerBolso();
     }
 
     // El primero sale detrás del segundo, cuando este ya cruzó el umbral:
@@ -606,9 +822,30 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
         fase = "despues";
         momento("despues");
         if (sala) recuperarse(sala);
-        luego(16, () => (fase = "fin"));
+        else testigoListo = true;
+        luego(16, () => (pasoElRato = true));
       });
     }
+
+    // La clienta que se quiere ir: su panel, cuando cruza por delante del
+    // puesto —o, por si acaso, antes de que la puerta se le empiece a abrir—.
+    const testigo = sala?.testigo ?? null;
+    if (testigoEnCamino && testigo) {
+      const p = testigo.raiz.position;
+      // La puerta se abre sola a metro y medio del vano (ver PuertaBanco).
+      const cercaDeLaPuerta = Math.hypot(p.x - CENTRO_PUERTA.x, p.z - CENTRO_PUERTA.z) < 1.9;
+      if (p.x < TESTIGO_X_PANEL || cercaDeLaPuerta) {
+        testigoEnCamino = false;
+        momento("seQuiereIr");
+      }
+    }
+    // La que se fue: cuando ya salió del todo, un rato para verla irse.
+    if (desenlace === "seVa" && !testigoSalio && testigo && testigo.raiz.position.z < -5.3) {
+      testigoSalio = true;
+      luego(2.2, () => (testigoListo = true));
+    }
+    // Se fueron, pasó el rato y lo de la clienta ya se vio: terminó.
+    if (fase === "despues" && pasoElRato && testigoListo) fase = "fin";
   });
 
   return {
@@ -618,6 +855,14 @@ export function crearAsaltoBanco(scene: Scene, o: OpcionesAsalto): AsaltoBanco {
       vigilaGuardia = t + segundos;
       decir(s1, frase, Math.min(segundos, 2.8));
     },
+    resolverTestigo(d) {
+      if (cerrado || desenlace) return;
+      desenlace = d;
+      testigoEnCamino = false;
+      desenlaceDe(d);
+    },
+    desenlaceTestigo: () => desenlace,
+    testigo: () => sala?.testigo ?? null,
     frasesDichas: () => dichas,
     comenzar() {
       if (enMarcha || cerrado) return;

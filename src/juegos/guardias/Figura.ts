@@ -839,6 +839,11 @@ export interface Figura {
   /** Las dos manos en alto, a los lados de la cabeza. Sentada o de pie. */
   manosArriba(si: boolean): void;
   /**
+   * Cuánto tiemblan las manos en alto: 1 es el temblor de cualquiera con un
+   * arma delante; más, el de quien la tiene a medio metro.
+   */
+  temblar(cuanto: number): void;
+  /**
    * Habla —o grita— durante esos segundos: la boca se abre y se cierra por
    * sílabas y, si grita, la barbilla se adelanta. Es lo que dice QUIÉN habla
    * a quien lo está mirando.
@@ -1073,6 +1078,8 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
   const APOYO_PISADA = Math.PI / 2 + 0.3;
   let mediaVuelta = Math.floor(-APOYO_PISADA / Math.PI);
   let pisadas = 0;
+  /** Cuánto tiemblan las manos en alto. Ver temblar. */
+  let temblorManos = 1;
   let carreraDeLaPisada = 0;
   let rumbo = 0;
   let rumboDeseado = 0;
@@ -2274,7 +2281,8 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
         }
         let tecleo = false;
         if (destino === "arriba") {
-          const temblor = 0.006 * Math.sin(reloj * 7.3 + i * 2.1) + 0.004 * Math.sin(reloj * 11.9 + i);
+          const temblor =
+            (0.006 * Math.sin(reloj * 7.3 + i * 2.1) + 0.004 * Math.sin(reloj * 11.9 + i)) * temblorManos;
           ikEstanteLocal.set(lado * (anchoHombro + 0.13), MEDIDAS.hombroY + 0.44 + temblor, 0.12 + temblor);
           poloMano[i].set(lado, -0.35, 0.1);
         } else if (destino === "cabeza") {
@@ -2312,6 +2320,14 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
           );
           Vector3.TransformNormalToRef(ikObjetivo, ikMundoATronco, ikObjetivo);
           ikEstanteLocal.addInPlace(ikObjetivo);
+        }
+        // Y el temblor fino de quien tiembla más que los demás, también
+        // encima: el de arriba, suavizado, es un vaivén de uno o dos por
+        // segundo; el miedo tiembla a ocho, poco y a rachas.
+        if (destino === "arriba" && temblorManos > 1) {
+          const fino = 0.0035 * (temblorManos - 1) * Math.sin(reloj * 53 + i * 1.7) * (0.6 + 0.4 * Math.sin(reloj * 3.1 + i));
+          ikEstanteLocal.y += fino;
+          ikEstanteLocal.x += fino * 0.6 * lado;
         }
         resolverBrazo(ikHombroLocal, ikEstanteLocal, poloMano[i], poseResuelta);
         const w = pesoMano[i];
@@ -2501,6 +2517,9 @@ export function crearFigura(scene: Scene, nombre: string, opciones: OpcionesFigu
     },
     manosArriba(si) {
       this.apoyarManos(si ? ["arriba", "arriba"] : null);
+    },
+    temblar(cuanto) {
+      temblorManos = cuanto;
     },
     hablar(segundos, grita = false) {
       hablando = segundos;

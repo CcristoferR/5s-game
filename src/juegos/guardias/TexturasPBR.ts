@@ -151,7 +151,7 @@ function campoGrueso(
  *
  * Convención de Babylon: R = componente hacia +U, G = hacia +V.
  */
-function normalesDesdeAltura(
+export function normalesDesdeAltura(
   altura: Float32Array,
   ancho: number,
   alto: number,

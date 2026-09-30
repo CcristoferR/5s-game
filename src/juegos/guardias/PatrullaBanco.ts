@@ -17,10 +17,11 @@ import { crearAuto } from "./ModelosExterior";
 // La radiopatrulla de Carabineros
 // ===========================================================================
 //
-// La que llega después del asalto y queda en la vereda, frente al banco, con
-// las balizas encendidas. Es lo primero que dice "llegó Carabineros": antes de
-// que el sargento abra la boca, por la puerta abierta se ve la patrulla y la
-// vereda tiñéndose de rojo y de azul.
+// Las que llegan después del asalto, con las balizas encendidas: la del
+// sargento queda frente al banco y la del cabo en la calle del costado. Es lo
+// primero que dice "llegó Carabineros": antes de que el sargento abra la
+// boca, por la puerta abierta se ve la patrulla y la vereda tiñéndose de rojo
+// y de azul, y por la ventana del fondo destella la otra.
 //
 // El auto es el de la calle (crearAuto), con los colores de Carabineros:
 // carrocería verde, techo blanco, las puertas blancas con el nombre, y la
@@ -48,6 +49,43 @@ const GOLPES_AZUL: [number, number][] = [[0.5, 0.58], [0.65, 0.73]];
 /** Intensidad de cada luz encendida. Con caída física: a cinco metros tiñe, a quince apenas. */
 const INTENSIDAD = 26;
 
+/**
+ * La sombra de contacto de un auto: una mancha oscura y difusa debajo, más
+ * cerrada bajo las ruedas, en el suelo de su propio espacio (frente a +X).
+ * Lo asienta donde la sombra del sol no se distingue —a la sombra del
+ * edificio— o no se puede dibujar —el mapa de sombras de fuera se hace una
+ * vez, y un auto que pasa no sale en él—. No proyecta sombra ella misma: el
+ * nombre lleva "sombraContacto" para que el exterior la deje fuera.
+ */
+export function crearSombraDeAuto(scene: Scene, nombre: string): { malla: Mesh; dispose(): void } {
+  const tex = new DynamicTexture(`tex_${nombre}_sombraContacto`, { width: 256, height: 128 }, scene, true);
+  const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+  ctx.clearRect(0, 0, 256, 128);
+  ctx.filter = "blur(10px)";
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.beginPath();
+  ctx.roundRect(28, 24, 200, 80, 30);
+  ctx.fill();
+  ctx.filter = "blur(5px)";
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  for (const x of [58, 198]) {
+    ctx.fillRect(x - 16, 22, 32, 18);
+    ctx.fillRect(x - 16, 88, 32, 18);
+  }
+  tex.hasAlpha = true;
+  tex.update(true);
+  const mat = new StandardMaterial(`${nombre}_sombraContacto`, scene);
+  mat.diffuseColor = new Color3(0, 0, 0);
+  mat.specularColor = new Color3(0, 0, 0);
+  mat.disableLighting = true;
+  mat.opacityTexture = tex;
+  const malla = MeshBuilder.CreateGround(`${nombre}_sombraContacto`, { width: 4.9, height: 2.3 }, scene);
+  malla.position.y = 0.006;
+  malla.material = mat;
+  malla.isPickable = false;
+  return { malla, dispose: () => tex.dispose() };
+}
+
 export interface PatrullaBanco {
   /** Las piezas del auto, ya colocadas: quien las recibe las alumbra, las funde y les da sombra. */
   piezas: Mesh[];
@@ -55,30 +93,44 @@ export interface PatrullaBanco {
   luces: PointLight[];
   /** Arranca el destello. */
   encender(): void;
+  /** Qué baliza está encendida en este cuadro: para lo que tiñe por ella, como el hall. */
+  destello(): { rojo: boolean; azul: boolean };
   dispose(): void;
+}
+
+export interface OpcionesPatrulla {
+  /** El nombre de todas sus piezas. Por defecto, "patrullaBanco". */
+  nombre?: string;
+  patente?: string;
+  /**
+   * Dónde arranca su destello, en fracciones de vuelta. Dos patrullas juntas
+   * no destellan a la vez: cada barra lleva su propio reloj.
+   */
+  fase?: number;
 }
 
 /**
  * @param posicion  Dónde se apoyan las ruedas.
  * @param giro      Hacia dónde mira el frente: 0 es +X.
  */
-export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number): PatrullaBanco {
-  const raiz = new TransformNode("patrullaBanco", scene);
+export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number, op: OpcionesPatrulla = {}): PatrullaBanco {
+  const nombre = op.nombre ?? "patrullaBanco";
+  const raiz = new TransformNode(nombre, scene);
   raiz.position.copyFrom(posicion);
   raiz.rotation.y = giro;
 
-  const piezas = crearAuto(scene, "patrullaBanco", { color: VERDE, patente: "Z-4217", hatch: false });
+  const piezas = crearAuto(scene, nombre, { color: VERDE, patente: op.patente ?? "Z-4217", hatch: false });
   const materiales: PBRMaterial[] = [];
 
   // El techo y los pilares, en blanco: la misma pintura, otro color.
-  const carroceria = piezas.find((m) => m.name === "patrullaBanco_carroceria");
+  const carroceria = piezas.find((m) => m.name === `${nombre}_carroceria`);
   const pintura = carroceria?.material instanceof PBRMaterial ? carroceria.material : null;
   if (pintura) {
-    const blanca = pintura.clone("patrullaBanco_pinturaBlanca");
+    const blanca = pintura.clone(`${nombre}_pinturaBlanca`);
     blanca.albedoColor = BLANCO;
     materiales.push(blanca);
     piezas
-      .filter((m) => m.name === "patrullaBanco_techo" || m.name.startsWith("patrullaBanco_pilarB"))
+      .filter((m) => m.name === `${nombre}_techo` || m.name.startsWith(`${nombre}_pilarB`))
       .forEach((m) => (m.material = blanca));
   }
 
@@ -87,7 +139,7 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
   // Un panel blanco a cada lado, sobre la parte recta del costado —entre los
   // dos pasos de rueda y por debajo de la cintura, donde la chapa no curva—,
   // con una franja verde arriba y abajo y el nombre en medio.
-  const texPuerta = new DynamicTexture("texPuertaPatrulla", { width: 1024, height: 192 }, scene, true);
+  const texPuerta = new DynamicTexture(`texPuerta_${nombre}`, { width: 1024, height: 192 }, scene, true);
   {
     const ctx = texPuerta.getContext() as unknown as CanvasRenderingContext2D;
     ctx.fillStyle = "#eceeea";
@@ -101,7 +153,7 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
     ctx.fillText("CARABINEROS", 512, 100);
     texPuerta.update(true);
   }
-  const matPuerta = new PBRMaterial("patrullaBanco_puertas", scene);
+  const matPuerta = new PBRMaterial(`${nombre}_puertas`, scene);
   matPuerta.albedoTexture = texPuerta;
   matPuerta.metallic = 0.3;
   matPuerta.roughness = 0.34;
@@ -110,7 +162,7 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
   matPuerta.clearCoat.roughness = 0.05;
   materiales.push(matPuerta);
   [-1, 1].forEach((lado) => {
-    const panel = MeshBuilder.CreatePlane(`patrullaBanco_puerta_${lado}`, { width: 1.6, height: 0.3 }, scene);
+    const panel = MeshBuilder.CreatePlane(`${nombre}_puerta_${lado}`, { width: 1.6, height: 0.3 }, scene);
     // A un milímetro y medio de la chapa: pegado, sin parpadeo.
     panel.position.set(0, 0.61, lado * 0.8825);
     // El plano mira a −Z; el de +Z se da vuelta. Así el nombre se lee bien
@@ -123,24 +175,24 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
 
   // --- La barra de balizas ------------------------------------------------------
   const TECHO = 1.418;
-  const negro = new PBRMaterial("patrullaBanco_barra", scene);
+  const negro = new PBRMaterial(`${nombre}_barra`, scene);
   negro.albedoColor = new Color3(0.03, 0.03, 0.035);
   negro.metallic = 0.2;
   negro.roughness = 0.4;
   materiales.push(negro);
-  const base = MeshBuilder.CreateBox("patrullaBanco_barraBase", { width: 0.24, height: 0.05, depth: 1.14 }, scene);
+  const base = MeshBuilder.CreateBox(`${nombre}_barraBase`, { width: 0.24, height: 0.05, depth: 1.14 }, scene);
   base.position.set(-0.25, TECHO + 0.025, 0);
   base.material = negro;
   piezas.push(base);
 
-  const lente = (nombre: string, color: Color3, z: number): PBRMaterial => {
-    const m = new PBRMaterial(`patrullaBanco_lente${nombre}`, scene);
+  const lente = (cual: string, color: Color3, z: number): PBRMaterial => {
+    const m = new PBRMaterial(`${nombre}_lente${cual}`, scene);
     m.albedoColor = color.scale(0.35);
     m.metallic = 0;
     m.roughness = 0.12;
     m.emissiveColor = color.scale(0.08);
     materiales.push(m);
-    const caja = MeshBuilder.CreateBox(`patrullaBanco_lente${nombre}`, { width: 0.2, height: 0.075, depth: 0.52 }, scene);
+    const caja = MeshBuilder.CreateBox(`${nombre}_lente${cual}`, { width: 0.2, height: 0.075, depth: 0.52 }, scene);
     caja.position.set(-0.25, TECHO + 0.05 + 0.0375, z);
     caja.material = m;
     piezas.push(caja);
@@ -151,47 +203,18 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
   const lenteRojo = lente("Rojo", ROJO, -0.29);
   const lenteAzul = lente("Azul", AZUL, 0.29);
 
-  // --- La sombra de contacto -------------------------------------------------
-  //
-  // La explanada está a la sombra del banco, y la del auto cae sobre sombra:
-  // no se distingue, y la patrulla parecía flotar un dedo sobre el piso. Una
-  // mancha oscura y difusa debajo, más cerrada bajo las ruedas, la asienta.
-  // No proyecta sombra ella misma (ver el exterior).
-  const texSombra = new DynamicTexture("texSombraPatrulla", { width: 256, height: 128 }, scene, true);
-  {
-    const ctx = texSombra.getContext() as unknown as CanvasRenderingContext2D;
-    ctx.clearRect(0, 0, 256, 128);
-    ctx.filter = "blur(10px)";
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.beginPath();
-    ctx.roundRect(28, 24, 200, 80, 30);
-    ctx.fill();
-    ctx.filter = "blur(5px)";
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    for (const x of [58, 198]) {
-      ctx.fillRect(x - 16, 22, 32, 18);
-      ctx.fillRect(x - 16, 88, 32, 18);
-    }
-    texSombra.hasAlpha = true;
-    texSombra.update(true);
-  }
-  const matSombra = new StandardMaterial("patrullaBanco_sombraContacto", scene);
-  matSombra.diffuseColor = new Color3(0, 0, 0);
-  matSombra.specularColor = new Color3(0, 0, 0);
-  matSombra.disableLighting = true;
-  matSombra.opacityTexture = texSombra;
-  const sombra = MeshBuilder.CreateGround("patrullaBanco_sombraContacto", { width: 4.9, height: 2.3 }, scene);
-  sombra.position.y = 0.006;
-  sombra.material = matSombra;
-  piezas.push(sombra);
+  // La sombra de contacto: la explanada está a la sombra del banco, y la del
+  // auto cae sobre sombra; sin esto parecía flotar un dedo sobre el piso.
+  const sombra = crearSombraDeAuto(scene, nombre);
+  piezas.push(sombra.malla);
 
   piezas.forEach((m) => {
     m.parent = raiz;
     m.isPickable = false;
   });
 
-  const luz = (nombre: string, color: Color3, z: number): PointLight => {
-    const l = new PointLight(`baliza${nombre}Patrulla`, new Vector3(-0.25, TECHO + 0.22, z), scene);
+  const luz = (cual: string, color: Color3, z: number): PointLight => {
+    const l = new PointLight(`baliza${cual}_${nombre}`, new Vector3(-0.25, TECHO + 0.22, z), scene);
     l.parent = raiz;
     l.diffuse = color;
     l.specular = color;
@@ -207,7 +230,9 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
 
   // --- El destello ---------------------------------------------------------------
   let encendida = false;
-  let t = 0;
+  let t = (op.fase ?? 0) * VUELTA;
+  let rojo = false;
+  let azul = false;
   const dentro = (p: number, golpes: [number, number][]): boolean => golpes.some(([a, b]) => p >= a && p < b);
   const APAGADO_ROJO = ROJO.scale(0.08);
   const APAGADO_AZUL = AZUL.scale(0.08);
@@ -218,8 +243,8 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
     if (!encendida) return;
     t += Math.min(0.05, scene.getEngine().getDeltaTime() / 1000);
     const p = (t % VUELTA) / VUELTA;
-    const rojo = dentro(p, GOLPES_ROJO);
-    const azul = dentro(p, GOLPES_AZUL);
+    rojo = dentro(p, GOLPES_ROJO);
+    azul = dentro(p, GOLPES_AZUL);
     luzRoja.intensity = rojo ? INTENSIDAD : 0;
     luzAzul.intensity = azul ? INTENSIDAD * 1.25 : 0;
     lenteRojo.emissiveColor = rojo ? PRENDIDO_ROJO : APAGADO_ROJO;
@@ -232,13 +257,14 @@ export function crearPatrullaBanco(scene: Scene, posicion: Vector3, giro: number
     encender() {
       encendida = true;
     },
+    destello: () => ({ rojo, azul }),
     dispose() {
       if (observador) scene.onBeforeRenderObservable.remove(observador);
       encendida = false;
       luzRoja.dispose();
       luzAzul.dispose();
       texPuerta.dispose();
-      texSombra.dispose();
+      sombra.dispose();
       // Las piezas y sus materiales se van con el resto del exterior.
     },
   };

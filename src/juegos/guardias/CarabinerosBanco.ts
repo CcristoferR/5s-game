@@ -111,6 +111,11 @@ export interface CarabinerosBanco {
   anotar(segundos: number): void;
   /** Cierra la libreta y la baja: terminó. */
   guardarLibreta(): void;
+  /**
+   * El sargento lleva la vista a ese punto esos segundos —la cámara de la que
+   * habla— y vuelve a mirar al guardia.
+   */
+  mirarUnRato(punto: Vector3, segundos: number): void;
   /** Dónde mirar para tenerle la cara delante. */
   cara(): Vector3;
   dispose(): void;
@@ -212,6 +217,8 @@ export function crearCarabinerosBanco(scene: Scene, o: OpcionesCarabineros): Car
   let t = 0;
   let presentes = false;
   let cerrado = false;
+  /** Adónde mira un rato, si se le pidió, y hasta cuándo. Ver mirarUnRato. */
+  let miraAparte: { punto: Vector3; hasta: number } | null = null;
   const frente = new Vector3();
   const derecha = new Vector3();
   const arriba = Vector3.Up();
@@ -232,9 +239,10 @@ export function crearCarabinerosBanco(scene: Scene, o: OpcionesCarabineros): Car
     frente.normalize();
     derecha.set(frente.z, 0, -frente.x);
 
+    if (miraAparte && t >= miraAparte.hasta) miraAparte = null;
     if (modo === "guardada") {
       sargento.apoyarManos(null);
-      sargento.mirarA(ojos);
+      sargento.mirarA(miraAparte ? miraAparte.punto : ojos);
       return;
     }
     // Entrando: braceo de andar, y la vista al frente hasta cruzar la puerta;
@@ -252,7 +260,7 @@ export function crearCarabinerosBanco(scene: Scene, o: OpcionesCarabineros): Car
       .addInPlace(frente.scale(0.27))
       .addInPlace(derecha.scale(-0.06));
     const izquierda = libretaEn.add(arriba.scale(-0.035));
-    sargento.mirarA(modo === "anota" ? libretaEn : ojos);
+    sargento.mirarA(miraAparte ? miraAparte.punto : modo === "anota" ? libretaEn : ojos);
 
     // La libreta, tomada por su borde con la mano izquierda: a la altura del
     // centro de la mano —que queda un poco por debajo del punto de la palma,
@@ -343,6 +351,10 @@ export function crearCarabinerosBanco(scene: Scene, o: OpcionesCarabineros): Car
     guardarLibreta() {
       modo = "guardada";
       piezas.forEach((m) => m.setEnabled(false));
+    },
+    mirarUnRato(punto, segundos) {
+      if (cerrado) return;
+      miraAparte = { punto: punto.clone(), hasta: t + segundos };
     },
     cara: () => sargento.raiz.position.add(new Vector3(0, 1.62, 0)),
     dispose() {

@@ -12,6 +12,7 @@ import {
 import { crearFigura, type Figura, type PaletaFigura } from "./Figura";
 import { montarPuertaBanco, type PuertaBanco } from "./PuertaBanco";
 import { montarPantallaTurnos, type PantallaTurnos } from "./PantallaTurnosBanco";
+import type { DesenlaceTestigo } from "./AsaltoBanco";
 
 // ===========================================================================
 // La gente del banco: una mañana cualquiera
@@ -51,7 +52,7 @@ export const Z_CLIENTE = 3.95;
 export const Z_CAJERO = 5.25;
 /** Alto del asiento de las sillas de oficina y de las de espera, sobre el piso. */
 const ASIENTO_OFICINA = 0.531;
-const ASIENTO_ESPERA = 0.448;
+export const ASIENTO_ESPERA = 0.448;
 /** Alto de la cubierta del mesón sobre el piso. */
 export const MESON = 0.737;
 
@@ -66,7 +67,7 @@ const ASIENTOS_DER = [2.16, 2.58, 3.0, 3.42, 3.84] as const;
 
 /** Los dos pasillos junto a los muros, entre los asientos y las ventanas. */
 export const PASILLO_IZQ = -3.4;
-const PASILLO_DER = 4.75;
+export const PASILLO_DER = 4.75;
 /** La calle entre las cajas y la fila, de un muro al otro. */
 export const Z_FRENTE_CAJAS = 2.7;
 
@@ -76,7 +77,7 @@ export const Z_PUERTA_DENTRO = -3.45;
 export const Z_PUERTA_FUERA = -4.8;
 export const Z_VEREDA = -9.7;
 /** Por dónde se llega y por dónde se va: la gente entra por la derecha y sale por la izquierda. */
-const LEJOS_DER = 12.5;
+export const LEJOS_DER = 12.5;
 const LEJOS_IZQ = -12;
 /** Alto de la explanada de fuera. */
 export const Y_FUERA = 0.458;
@@ -354,6 +355,15 @@ export interface SalaEnAsalto {
   enCaja: (Figura | null)[];
   /** Todos los clientes que están dentro del hall en ese momento. */
   clientes: Figura[];
+  /**
+   * La clienta que, pasado todo, se quiere ir sin esperar a nadie: la del
+   * polerón burdeo, sentada a la derecha en la primera fila, la más cerca del
+   * puesto y de la puerta. Null si no está en el hall. Ver el quinto momento
+   * en AsaltoBanco.
+   */
+  testigo: Figura | null;
+  /** Dónde se para ella, de espaldas a su asiento, para volver a sentarse. */
+  asientoDelTestigo: Vector3 | null;
   puerta: PuertaBanco | null;
   pantalla: PantallaTurnos;
 }
@@ -381,8 +391,11 @@ export interface GenteBanco {
    *
    * @param haciaElPuesto  Adónde mira quien no tiene otra cosa que mirar:
    *                       el acceso, donde está Carabineros con el guardia.
+   * @param testigo        Qué pasó con la clienta que se quiso ir, si llegó a
+   *                       quererse ir: sentada esperando, ya no está, o de pie
+   *                       junto a la puerta que le cerraron.
    */
-  recomponer(haciaElPuesto: Vector3): void;
+  recomponer(haciaElPuesto: Vector3, testigo?: DesenlaceTestigo | null): void;
   /** Clava a todos, la puerta y la pantalla como están, o los suelta. */
   congelar(quietos: boolean): void;
   dispose(): void;
@@ -671,11 +684,15 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
   //     cada uno, por turnos;
   //   · uno al teléfono, de cara a la ventana, avisando a alguien;
   //   · la cajera de la caja 1 mirando a su compañero, y el de la caja 3
-  //     escribiendo en su pantalla: el informe de lo que pasó.
+  //     escribiendo en su pantalla: el informe de lo que pasó;
+  //   · la del polerón burdeo, según lo que pasó cuando se quiso ir (ver el
+  //     quinto momento en AsaltoBanco): sentada en su asiento si le pidieron
+  //     que esperara, ya no está si la dejaron irse, y de pie cerca de la
+  //     puerta, reclamándole al guardia, si se la cerraron con llave.
   //
-  // Todo a la izquierda del hall, que es lo que queda a la vista mientras el
-  // sargento toma la declaración (la tarjeta tapa la derecha). Quien no tiene
-  // papel ya se fue: dejó sus datos y Carabineros lo dejó ir.
+  // Casi todo a la izquierda del hall, que es lo que queda a la vista mientras
+  // el sargento toma la declaración (la tarjeta tapa la derecha). Quien no
+  // tiene papel ya se fue: dejó sus datos y Carabineros lo dejó ir.
   /** Si ya es después del asalto: la sala recompuesta, cada uno con su papel. */
   let trasElAsalto = false;
   let tDespues = 0;
@@ -713,7 +730,7 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
     };
   };
 
-  const recomponer = (haciaElPuesto: Vector3): void => {
+  const recomponer = (haciaElPuesto: Vector3, testigo: DesenlaceTestigo | null = null): void => {
     trasElAsalto = true;
     tDespues = 0;
     esperas.length = 0;
@@ -724,7 +741,8 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
     const uno = quien("camisaAzul");
     const otro = quien("chaquetaVerdeBanco");
     const alFono = quien("poleronGris");
-    const sentadaDer = quien("poleronBurdeo");
+    // La que se quiso ir: si la dejaron, ya no está.
+    const sentadaDer = testigo === "seVa" ? null : quien("poleronBurdeo");
     const conPapel = new Set([senora, consuela, vecina, uno, otro, alFono, sentadaDer].filter(Boolean));
     clientes.forEach((f) => {
       if (conPapel.has(f)) return;
@@ -795,11 +813,28 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
       papeles.push((t) => habla(t));
     }
 
-    // La de la derecha, en su asiento, mirando al acceso.
+    // La de la derecha, en su asiento, mirando al acceso. O, si le cerraron la
+    // puerta con llave, de pie a la izquierda de la fila, donde se quedó
+    // esperando que se la abrieran: mirando al guardia y, a ratos,
+    // reclamándole algo. Ahí queda a la vista, detrás del sargento, durante
+    // toda la declaración; y a más de metro y medio de la puerta, que si no se
+    // le abriría sola.
     if (sentadaDer) {
-      sentado(sentadaDer, ASIENTOS_DER[4], 0);
-      sentadaDer.mirarA(haciaElPuesto);
+      sentadaDer.apoyarManos(null);
+      if (testigo === "encerrada") {
+        dePie(sentadaDer, -0.45, -2.25, haciaElPuesto.x, haciaElPuesto.z);
+        const reclama = porTurnos(sentadaDer, 7, 2.5, 2.4);
+        papeles.push((t) => {
+          sentadaDer.mirarA(haciaElPuesto);
+          reclama(t);
+        });
+      } else {
+        sentado(sentadaDer, ASIENTOS_DER[4], 0);
+        sentadaDer.mirarA(haciaElPuesto);
+      }
     }
+    // Y la puerta, sin llave: se abrió para que entrara Carabineros.
+    puerta?.trancar(false);
 
     // Los otros dos cajeros, en su mesón.
     const [caja1, , caja3] = cajeros;
@@ -910,10 +945,16 @@ export function crearGenteBanco(scene: Scene, piso: number, mallaPuerta: Mesh | 
       esperas.length = 0;
       // Dentro del hall: de la puerta hacia dentro, y en escena.
       const dentro = clientes.filter((f) => f.raiz.isEnabled() && f.raiz.position.z > Z_PUERTA_DENTRO - 0.3);
+      // La que se va a querer ir: la que se sentó a la derecha a los 56 s, en
+      // el asiento del pasillo de la primera fila. Solo si sigue ahí.
+      const testigo = figuraDe.get(CLIENTES.poleronBurdeo.nombre) ?? null;
+      const estaElTestigo = testigo !== null && dentro.includes(testigo) && testigo.sentada();
       return {
         cajeros: [...cajeros],
         enCaja: [...atendiendo],
         clientes: dentro,
+        testigo: estaElTestigo ? testigo : null,
+        asientoDelTestigo: estaElTestigo ? paraSentarse(testigo, ASIENTOS_DER[4], 0) : null,
         puerta,
         pantalla,
       };

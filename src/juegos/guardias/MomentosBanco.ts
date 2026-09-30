@@ -1,8 +1,8 @@
 import type { OpcionSituacion } from "./PanelesSupermercado";
-import { FRASES, type MomentoAsalto } from "./AsaltoBanco";
+import { FRASES, FRASES_TESTIGO, type DesenlaceTestigo, type MomentoAsalto } from "./AsaltoBanco";
 
 // ===========================================================================
-// Los cuatro momentos del asalto: qué ves y qué puedes hacer
+// Los cinco momentos del asalto: qué ves y qué puedes hacer
 // ===========================================================================
 //
 // Los datos, aparte de la escena, como SituacionesSupermercado: cambiar un
@@ -38,9 +38,10 @@ export type EfectoTrampa = "alSueloUnRato" | "alSueloHastaQueSeVayan";
  * de la nota final:
  *
  *   · arriesgar: quiso actuar donde no correspondía —la radio, la alarma con
- *     él delante, perseguirlos—. Se puso en peligro, y a la sala.
- *   · descuidar: lo contrario, ya pasado el asalto: no avisó, o dejó que se
- *     tocara el lugar del hecho.
+ *     él delante, perseguirlos, dejar encerrado a alguien—. Se puso en
+ *     peligro, y a la sala, o se tomó atribuciones que no tiene.
+ *   · descuidar: lo contrario, ya pasado el asalto: no avisó, dejó que se
+ *     tocara el lugar del hecho, o dejó irse a una testigo sin sus datos.
  */
 export type FaltaBanco = "arriesgar" | "descuidar";
 
@@ -49,6 +50,12 @@ export interface OpcionMomento extends OpcionSituacion {
   efecto?: EfectoTrampa;
   /** Lo que te grita el del arma cuando ve lo que intentas. */
   reaccion?: string;
+  /**
+   * Lo que hace la clienta que se quiere ir, en el quinto momento: vuelve a
+   * su asiento, se va o se queda ante la puerta cerrada. Ver
+   * AsaltoBanco.resolverTestigo.
+   */
+  testigo?: DesenlaceTestigo;
   /**
    * El texto y la explicación si el momento te pilla en el suelo, cuando los
    * de pie no tienen sentido: "fijarse hacia dónde se van" no se puede con la
@@ -283,6 +290,57 @@ export const MOMENTOS: Record<MomentoAsalto, MomentoBanco> = {
           "nadie que avise ni que resguarde. Lo que viste desde dentro es lo que sirve.",
         falta: "arriesgar",
         enBreve: "Salió a la calle detrás de ellos.",
+      },
+    ],
+  },
+
+  // ─── 5 · UNA CLIENTA SE QUIERE IR ───────────────────────────────────────
+  //
+  // La sala se levanta del suelo y alguien que lo vio todo quiere irse antes
+  // de que llegue nadie. Es una testigo, y lo último que el guardia puede
+  // cuidar antes de Carabineros. Las dos trampas son las dos maneras de
+  // equivocarse con ella: no hacer nada, y hacer más de lo que se puede
+  // —retenerla—. Lo que se elige se ve: vuelve a su asiento, se va por la
+  // vereda o se queda reclamando ante la puerta cerrada.
+  seQuiereIr: {
+    actividad: "UNA CLIENTA SE QUIERE IR",
+    aviso:
+      "La clienta del polerón burdeo se levanta y camina hacia la puerta, por delante de ti: " +
+      `«${FRASES_TESTIGO.meVoy}» Carabineros todavía no llega.`,
+    opciones: [
+      {
+        clase: "observar",
+        texto: "Dejarla ir: ya pasó el asalto y nadie está obligado a quedarse a declarar.",
+        correcta: false,
+        explicacion:
+          "Es cierto que nadie está obligado a quedarse, pero ella vio el asalto desde otro lado que tú: es " +
+          "una testigo, y sin sus datos Carabineros no la va a poder ubicar para que declare. Lo que " +
+          "corresponde es pedirle que espere y, si no puede, anotar su nombre y un teléfono.",
+        falta: "descuidar",
+        testigo: "seVa",
+        enBreve: "Dejó irse a una testigo sin pedirle sus datos.",
+      },
+      {
+        clase: "intervenir",
+        texto: "Cerrar la puerta con llave para que nadie salga hasta que llegue Carabineros.",
+        correcta: false,
+        explicacion:
+          "El guardia no puede retener a nadie contra su voluntad, y menos a una víctima del asalto: " +
+          "dejarla encerrada es un abuso, y te expone a ti y a la empresa a una denuncia. Se le pide que " +
+          "espere y, si igual quiere irse, se anotan sus datos antes de que salga.",
+        falta: "arriesgar",
+        testigo: "encerrada",
+        enBreve: "Dejó encerrada a una testigo.",
+      },
+      {
+        clase: "avisar",
+        texto: "Pedirle con calma que espere a Carabineros y, si no puede, anotar sus datos.",
+        correcta: true,
+        explicacion:
+          "Es lo que corresponde. Es una testigo: vio lo mismo que tú desde otro ángulo y puede recordar " +
+          "algo que a ti se te escapó. No se la puede obligar a quedarse, pero sí pedírselo con calma; y si " +
+          "igual tiene que irse, que sea dejando su nombre y un teléfono.",
+        testigo: "espera",
       },
     ],
   },

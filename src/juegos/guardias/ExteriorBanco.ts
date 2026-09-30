@@ -11,11 +11,14 @@ import {
   ShadowGenerator,
   ReflectionProbe,
   TransformNode,
+  VertexData,
   type AbstractMesh,
   type Light,
 } from "@babylonjs/core";
 import { crearAuto, crearArbolFrondoso } from "./ModelosExterior";
 import { crearPatrullaBanco } from "./PatrullaBanco";
+import { crearCalleBanco } from "./CalleBanco";
+import { crearTallerFachadas } from "./FachadaBanco";
 import {
   pbr,
   fundir,
@@ -23,8 +26,6 @@ import {
   escalarUV,
   texturaAsfalto,
   texturaBaldosa,
-  texturaFachada,
-  texturaToldo,
   texturaCielo,
   type Edificio,
 } from "./ExteriorSupermercado";
@@ -78,10 +79,27 @@ export interface ExteriorBanco {
    * puesto): una que no estuviera aquí no alumbraría nada de fuera.
    */
   luces: Light[];
-  /** La radiopatrulla de Carabineros, que llega después del asalto. Ver PatrullaBanco. */
+  /** Los autos que pasan y la gente de la vereda. Ver CalleBanco. */
+  calle: {
+    /** Se detiene con la pausa y los paneles, como la sala. */
+    congelar(quieta: boolean): void;
+    /** La gente se va antes del asalto y vuelve con Carabineros. */
+    despejar(vacia: boolean): void;
+    dispose(): void;
+  };
+  /**
+   * Las radiopatrullas de Carabineros, que llegan después del asalto: la del
+   * sargento frente a la puerta y la del cabo en la calle del costado. Ver
+   * PatrullaBanco.
+   */
   patrulla: {
-    /** Aparece estacionada, con su sombra y las balizas destellando. */
+    /** Aparecen estacionadas, con su sombra y las balizas destellando. */
     aparecer(): void;
+    /**
+     * Qué baliza tiene encendida la del costado: la que se ve por la ventana
+     * de la izquierda, y la que tiñe lo de dentro (ver el puesto).
+     */
+    destelloApoyo(): { rojo: boolean; azul: boolean };
     dispose(): void;
   };
 }
@@ -94,6 +112,35 @@ export interface ExteriorBanco {
  * en la calle quedaba a veinte metros, del tamaño de un dedo.
  */
 const PATRULLA = { x: -4.3, z: -6.3, giro: 0.12 };
+
+/**
+ * La segunda patrulla, la del cabo: estacionada en la calle del costado,
+ * contra la solera del banco y mirando hacia el fondo, como quien dobló desde
+ * la calle de delante. Justo detrás de la ventana baja del fondo de la pared
+ * izquierda, que en la declaración queda detrás del sargento: las balizas se
+ * ven destellar por ella todo el rato (ver la luz que se cuela en el puesto).
+ */
+const PATRULLA_APOYO = { x: -11.15, z: 6.0, giro: -Math.PI / 2 };
+
+/**
+ * La calle del costado izquierdo, la que se ve por las ventanas de ese lado:
+ * de un sentido, hacia el fondo, con vereda a los dos lados. Antes era un
+ * pasaje de baldosas vacío con el vecino a seis metros del banco; ahora el
+ * vecino está donde deja sitio para una calle de verdad.
+ *
+ *   · la vereda del banco, de la explanada a la solera;
+ *   · la calzada, a la altura de la calle de delante;
+ *   · la vereda del vecino, hasta su fachada.
+ *
+ * Donde se junta con la calle de delante, la vereda de delante sigue de
+ * largo a su altura —vereda continua— y los autos la cruzan subiendo y
+ * bajando por dos rebajes de hormigón.
+ */
+const COSTADO_CALZADA: [number, number] = [-14.6, -10.2];
+const VECINO_IZQ_X = -16.4;
+const COSTADO_FIN = 30;
+/** Lo que mide cada rebaje, a lo largo de la calle. */
+const REBAJE = 0.6;
 
 /**
  * @param proyectan  Lo del modelo que da sombra fuera: el edificio del banco
@@ -141,19 +188,71 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   // los edificios vecinos. Medio centímetro por debajo de la explanada: al ras,
   // las dos caras pelean por el mismo píxel y el borde parpadea.
   const Y_VEREDA = Y_EXPLANADA - 0.005;
+  const [CX0, CX1] = COSTADO_CALZADA;
   losa("veredaBanco", -60, 60, VEREDA_FIN_Z, -BORDE_EXPLANADA + 0.02, Y_VEREDA, baldosa, 2.4);
-  losa("pasajeIzquierdoBanco", -14, -BORDE_EXPLANADA + 0.02, -BORDE_EXPLANADA, 16, Y_VEREDA, baldosa, 2.4);
+  // La calle del costado: sus dos veredas y la calzada, que empieza al pie
+  // del rebaje.
+  losa("veredaCostadoBanco", CX1, -BORDE_EXPLANADA + 0.02, -BORDE_EXPLANADA, COSTADO_FIN, Y_VEREDA, baldosa, 2.4);
+  losa("veredaCostadoVecino", VECINO_IZQ_X - 0.4, CX0, -BORDE_EXPLANADA, COSTADO_FIN, Y_VEREDA, baldosa, 2.4);
+  losa("calzadaCostadoBanco", CX0, CX1, -BORDE_EXPLANADA + REBAJE, COSTADO_FIN, Y_CALLE, asfalto, 5);
   losa("pasajeDerechoBanco", BORDE_EXPLANADA - 0.02, 15.5, -BORDE_EXPLANADA, 16, Y_VEREDA, baldosa, 2.4);
   losa("calzadaBanco", -60, 60, CALLE_FIN_Z, VEREDA_FIN_Z, Y_CALLE, asfalto, 5);
   losa("veredaEnfrenteBanco", -60, 60, VEREDA_ENFRENTE_FIN_Z, CALLE_FIN_Z, Y_VEREDA, baldosa, 2.4);
 
-  // Las soleras de canto, la arista de piedra entre vereda y calle.
+  // Los dos rebajes: de la calle de delante a la vereda que se cruza, y de
+  // esa vereda a la calzada del costado. Hormigón, como la solera: se ven
+  // más claros que el asfalto, como los de verdad.
+  const rebaje = (nombre: string, zBajo: number, zAlto: number): void => {
+    const vd = new VertexData();
+    vd.positions = [CX0, Y_CALLE + 0.003, zBajo, CX1, Y_CALLE + 0.003, zBajo, CX1, Y_VEREDA, zAlto, CX0, Y_VEREDA, zAlto];
+    vd.uvs = [CX0 / 1.2, zBajo / 1.2, CX1 / 1.2, zBajo / 1.2, CX1 / 1.2, zAlto / 1.2, CX0 / 1.2, zAlto / 1.2];
+    vd.indices = [0, 1, 2, 0, 2, 3];
+    const normales: number[] = [];
+    VertexData.ComputeNormals(vd.positions, vd.indices, normales);
+    // Que mire hacia arriba, venga como venga el orden de los puntos.
+    if (normales[1] < 0) {
+      vd.indices = [0, 2, 1, 0, 3, 2];
+      VertexData.ComputeNormals(vd.positions, vd.indices, normales);
+    }
+    vd.normals = normales;
+    const m = new Mesh(nombre, scene);
+    vd.applyToMesh(m);
+    m.material = solera;
+    m.receiveShadows = true;
+    reciben.push(m);
+    guardar(m);
+  };
+  rebaje("rebajeEntradaCostadoBanco", VEREDA_FIN_Z - REBAJE, VEREDA_FIN_Z);
+  rebaje("rebajeCostadoBanco", -BORDE_EXPLANADA + REBAJE, -BORDE_EXPLANADA);
+
+  /**
+   * El alto del suelo bajo una rueda: la calzada, los rebajes y la vereda
+   * que se cruza. Es lo que pisan los autos que doblan.
+   */
+  const suelo = (x: number, z: number): number => {
+    const enLaBoca = x > CX0 - 0.3 && x < CX1 + 0.3;
+    if (z < VEREDA_FIN_Z) {
+      if (enLaBoca && z > VEREDA_FIN_Z - REBAJE) return Y_CALLE + ((Y_VEREDA - Y_CALLE) * (z - (VEREDA_FIN_Z - REBAJE))) / REBAJE;
+      return Y_CALLE;
+    }
+    if (z < -BORDE_EXPLANADA || !enLaBoca) return Y_VEREDA;
+    if (z < -BORDE_EXPLANADA + REBAJE) return Y_VEREDA - ((Y_VEREDA - Y_CALLE) * (z + BORDE_EXPLANADA)) / REBAJE;
+    return Y_CALLE;
+  };
+
+  // Las soleras de canto, la arista de piedra entre vereda y calle: la de
+  // delante, cortada donde entra la calle del costado, y las dos de este.
   const cantos: Mesh[] = [];
-  [VEREDA_FIN_Z, CALLE_FIN_Z].forEach((z) => {
-    const m = MeshBuilder.CreateBox("soleraBanco", { width: 120, height: SOLERA + 0.03, depth: 0.14 }, scene);
-    m.position.set(0, Y_CALLE + (SOLERA + 0.03) / 2 - 0.02, z);
+  const canto = (x0: number, x1: number, z0: number, z1: number): void => {
+    const m = MeshBuilder.CreateBox("soleraBanco", { width: x1 - x0, height: SOLERA + 0.03, depth: z1 - z0 }, scene);
+    m.position.set((x0 + x1) / 2, Y_CALLE + (SOLERA + 0.03) / 2 - 0.02, (z0 + z1) / 2);
     cantos.push(m);
-  });
+  };
+  canto(-60, CX0, VEREDA_FIN_Z - 0.07, VEREDA_FIN_Z + 0.07);
+  canto(CX1, 60, VEREDA_FIN_Z - 0.07, VEREDA_FIN_Z + 0.07);
+  canto(-60, 60, CALLE_FIN_Z - 0.07, CALLE_FIN_Z + 0.07);
+  canto(CX0 - 0.07, CX0 + 0.07, -BORDE_EXPLANADA, COSTADO_FIN);
+  canto(CX1 - 0.07, CX1 + 0.07, -BORDE_EXPLANADA, COSTADO_FIN);
   const mCantos = guardar(fundir("solerasBanco", cantos, solera));
   mCantos.receiveShadows = true;
   reciben.push(mCantos);
@@ -165,7 +264,9 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
     m.position.set((x0 + x1) / 2, Y_CALLE + 0.006, (z0 + z1) / 2);
     rayas.push(m);
   };
-  raya(-60, 60, VEREDA_FIN_Z - 0.37, VEREDA_FIN_Z - 0.25);
+  // La de este lado, cortada en la boca de la calle del costado.
+  raya(-60, CX0 - 0.4, VEREDA_FIN_Z - 0.37, VEREDA_FIN_Z - 0.25);
+  raya(CX1 + 0.4, 60, VEREDA_FIN_Z - 0.37, VEREDA_FIN_Z - 0.25);
   raya(-60, 60, CALLE_FIN_Z + 0.25, CALLE_FIN_Z + 0.37);
   const ejeZ = (VEREDA_FIN_Z + CALLE_FIN_Z) / 2;
   for (let x = -60; x < 60; x += 7) raya(x, x + 3, ejeZ - 0.06, ejeZ + 0.06);
@@ -177,61 +278,15 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   //
   // Enfrente, una hilera de locales con oficinas encima: lo que se ve cada vez
   // que la puerta se abre. A los costados, los vecinos, con sus fachadas hacia
-  // el banco: es lo que dan las ventanas laterales.
-  const edificio = (
-    nombre: string,
-    e: Edificio,
-    centro: Vector3,
-    giro: number,
-    fondo: number,
-    semilla: number
-  ): void => {
-    const ancho = e.x1 - e.x0;
-    const raiz = new TransformNode(nombre, scene);
-    raiz.position.copyFrom(centro);
-    raiz.rotation.y = giro;
-
-    const cuerpo = MeshBuilder.CreateBox(`${nombre}_cuerpo`, { width: ancho, height: e.alto, depth: fondo }, scene);
-    cuerpo.parent = raiz;
-    cuerpo.position.set(0, e.alto / 2, fondo / 2 + 0.02);
-    const matCuerpo = new PBRMaterial(`mat_${nombre}_cuerpo`, scene);
-    matCuerpo.albedoColor = Color3.FromHexString(e.muro).scale(0.92);
-    matCuerpo.roughness = 0.9;
-    matCuerpo.metallic = 0;
-    cuerpo.material = matCuerpo;
-
-    const fachada = MeshBuilder.CreatePlane(`${nombre}_fachada`, { width: ancho, height: e.alto }, scene);
-    fachada.parent = raiz;
-    fachada.position.set(0, e.alto / 2, 0);
-    const mat = new PBRMaterial(`mat_${nombre}_fachada`, scene);
-    const pintada = texturaFachada(scene, `tex_${nombre}`, e, semilla);
-    mat.albedoTexture = pintada.albedo;
-    // Las ventanas encendidas son de la noche del supermercado; aquí es de
-    // mañana y no se usan. Se desechan ya: sin material que las lleve, nadie
-    // las recogería al salir.
-    pintada.luz.dispose();
-    mat.roughness = 0.82;
-    mat.metallic = 0;
-    fachada.material = mat;
-
-    const piezas: Mesh[] = [cuerpo, fachada];
-    if (e.toldo) {
-      const t = MeshBuilder.CreatePlane(`${nombre}_toldo`, { width: Math.min(ancho - 1.2, 7.5), height: 1.35 }, scene);
-      t.parent = raiz;
-      t.position.set(0, 2.95, -0.55);
-      t.rotation.x = -0.62;
-      const mt = new PBRMaterial(`mat_${nombre}_toldo`, scene);
-      mt.albedoTexture = texturaToldo(scene, `texToldo_${nombre}`, e.toldo);
-      mt.roughness = 0.8;
-      mt.metallic = 0;
-      mt.backFaceCulling = false;
-      t.material = mt;
-      piezas.push(t);
-    }
-    raiz.computeWorldMatrix(true);
-    piezas.forEach((m) => {
-      m.computeWorldMatrix(true);
+  // el banco: es lo que dan las ventanas laterales. Con volumen: huecos,
+  // marcos, alféizares, cornisas y un revoque con relieve y con años (ver
+  // FachadaBanco). Pintados en un plano se veían de cartón.
+  const taller = crearTallerFachadas(scene);
+  const edificio = (nombre: string, e: Edificio, centro: Vector3, giro: number, fondo: number, semilla: number): void => {
+    taller.edificio(nombre, e, centro, giro, fondo, semilla).forEach((m) => {
+      m.receiveShadows = true;
       guardar(m);
+      reciben.push(m);
       dan.push(m);
     });
   };
@@ -250,9 +305,11 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
     edificio(`enfrenteBanco_${i}`, e, new Vector3((e.x0 + e.x1) / 2, Y_VEREDA, Z_ENFRENTE), Math.PI, 12, 300 + i * 17)
   );
   // Los vecinos, a los lados del banco, de cara a sus ventanas.
-  const VECINO_IZQ: Edificio = { x0: 0, x1: 22, alto: 14.5, pisos: 4, muro: "#d8d2c4", marco: "#ffffff", local: "", colorLocal: "#5b6b76", toldo: null };
+  // El de la izquierda, al sol y a diez metros de las ventanas: un beige algo
+  // tostado, no el casi blanco de antes, que al sol se quemaba.
+  const VECINO_IZQ: Edificio = { x0: 0, x1: 22, alto: 14.5, pisos: 4, muro: "#cbbfa8", marco: "#ffffff", local: "", colorLocal: "#5b6b76", toldo: null };
   const VECINO_DER: Edificio = { x0: 0, x1: 22, alto: 11.8, pisos: 3, muro: "#a7b4ad", marco: "#f4f1ea", local: "", colorLocal: "#5b6b76", toldo: null, balcones: true };
-  edificio("vecinoIzquierdoBanco", VECINO_IZQ, new Vector3(-14, Y_VEREDA, 2.5), -Math.PI / 2, 10, 411);
+  edificio("vecinoIzquierdoBanco", VECINO_IZQ, new Vector3(VECINO_IZQ_X, Y_VEREDA, 2.5), -Math.PI / 2, 10, 411);
   edificio("vecinoDerechoBanco", VECINO_DER, new Vector3(15.5, Y_VEREDA, 2.5), Math.PI / 2, 10, 437);
 
   // --- Árboles de la vereda y un auto estacionado ------------------------------
@@ -297,11 +354,18 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   estacionar("autoBanco_0", new Color3(0.62, 0.64, 0.66), "LR·KP·31", 8.2, VEREDA_FIN_Z - 1.25, Math.PI, false);
   estacionar("autoBanco_1", new Color3(0.08, 0.18, 0.32), "FZ·HT·84", -13.5, CALLE_FIN_Z + 1.25, 0, true);
 
-  // La patrulla: montada ya, como un auto más de fuera —con su sol, su
-  // sombra y su reflejo del cielo—, pero apagada hasta que llega.
+  // Las patrullas: montadas ya, como un auto más de fuera —con su sol, su
+  // sombra y su reflejo del cielo—, pero apagadas hasta que llegan. La del
+  // sargento, en la explanada frente a la puerta; la del cabo, en la calle
+  // del costado, y con su destello a destiempo de la otra.
   const patrulla = crearPatrullaBanco(scene, new Vector3(PATRULLA.x, Y_EXPLANADA + 0.012, PATRULLA.z), PATRULLA.giro);
+  const apoyo = crearPatrullaBanco(scene, new Vector3(PATRULLA_APOYO.x, Y_CALLE + 0.004, PATRULLA_APOYO.z), PATRULLA_APOYO.giro, {
+    nombre: "patrullaApoyoBanco",
+    patente: "Z-4388",
+    fase: 0.43,
+  });
   const piezasPatrulla: Mesh[] = [];
-  for (const m of porMaterial(patrulla.piezas)) {
+  for (const m of [...porMaterial(patrulla.piezas), ...porMaterial(apoyo.piezas)]) {
     guardar(m);
     // La mancha de debajo no da sombra: es la sombra.
     if (!m.name.includes("sombraContacto")) dan.push(m);
@@ -309,6 +373,30 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
     if (m.material instanceof PBRMaterial && !reflejanCielo.includes(m.material)) reflejanCielo.push(m.material);
     m.setEnabled(false);
   }
+
+  // La calle viva: autos que pasan —algunos doblan al costado— y gente
+  // caminando. Son de fuera —el sol los alumbra, el hall no—, pero se mueven:
+  // no entran en lo que se dibuja una vez ni se congelan (ver abajo).
+  const calle = crearCalleBanco(scene, {
+    yVereda: Y_VEREDA,
+    zCarril: (VEREDA_FIN_Z + CALLE_FIN_Z) / 2,
+    carriles: [-8.5, -8.85, -9.3, -9.7],
+    costado: {
+      xCarril: (CX0 + CX1) / 2,
+      zFin: COSTADO_FIN,
+      // Cada vereda, con sus dos carriles de a pie. Las puntas donde se da la
+      // vuelta, fuera de lo que se ve desde el puesto: la de delante la tapa
+      // la fachada; la del fondo queda más allá de las ventanas.
+      veredaBanco: [-9.0, -9.6],
+      veredaVecino: [-15.2, -15.8],
+      zBanco: [-6, 16],
+      zVecino: [-7.6, 16],
+    },
+    cruce: { x0: CX0, x1: CX1, z0: VEREDA_FIN_Z, z1: -BORDE_EXPLANADA },
+    suelo,
+  });
+  const moviles = new Set<AbstractMesh>(calle.mallas);
+  calle.mallas.forEach((m) => mallas.push(m));
 
   // --- El cielo -------------------------------------------------------------------
   //
@@ -345,7 +433,7 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   cieloLuz.includedOnlyMeshes = [...mallas];
   // Las balizas, igual que el sol: solo lo de fuera. Sin sombras, una luz que
   // alumbrara el edificio le pintaría también las paredes de dentro.
-  patrulla.luces.forEach((l) => (l.includedOnlyMeshes = [...mallas]));
+  [...patrulla.luces, ...apoyo.luces].forEach((l) => (l.includedOnlyMeshes = [...mallas]));
 
   // Sombras: una vez. Fuera no se mueve nada.
   const sombras = new ShadowGenerator(2048, sol);
@@ -366,7 +454,9 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   // que es el HALL —muros azules—, y la explanada salía celeste, como mojada.
   const sonda = new ReflectionProbe("sondaExteriorBanco", 256, scene);
   sonda.position = new Vector3(0, 1.6, (VEREDA_FIN_Z + CALLE_FIN_Z) / 2);
-  mallas.forEach((m) => sonda.renderList!.push(m));
+  mallas.forEach((m) => {
+    if (!moviles.has(m)) sonda.renderList!.push(m);
+  });
   sonda.refreshRate = 0;
   // Un cuadro después: enchufada antes, lo que la sonda dibuja intenta leerla
   // mientras se escribe (ver la del condominio).
@@ -379,20 +469,37 @@ export function construirExteriorBanco(scene: Scene, proyectan: AbstractMesh[], 
   });
 
   // Nada de esto se mueve.
-  mallas.forEach((m) => m.freezeWorldMatrix());
+  mallas.forEach((m) => {
+    if (!moviles.has(m)) m.freezeWorldMatrix();
+  });
 
   return {
     mallas,
-    luces: [sol, cieloLuz, ...patrulla.luces],
+    luces: [sol, cieloLuz, ...patrulla.luces, ...apoyo.luces],
+    calle: {
+      congelar: (q) => calle.congelar(q),
+      despejar: (v) => calle.despejar(v),
+      dispose: () => calle.dispose(),
+    },
     patrulla: {
       aparecer() {
         piezasPatrulla.forEach((m) => m.setEnabled(true));
-        // Las sombras de fuera se dibujaron una vez, sin ella: otra vez, con
-        // ella dentro, o quedaría flotando sobre la explanada.
+        // Las sombras de fuera se dibujaron una vez, sin ellas: otra vez, con
+        // ellas dentro, o quedarían flotando.
         mapa?.resetRefreshCounter();
         patrulla.encender();
+        apoyo.encender();
+        // Quien pasa por la vereda las mira: las balizas, a la altura del techo.
+        calle.mirarAlPasar([
+          new Vector3(PATRULLA.x, Y_EXPLANADA + 1.35, PATRULLA.z),
+          new Vector3(PATRULLA_APOYO.x, Y_CALLE + 1.35, PATRULLA_APOYO.z),
+        ]);
       },
-      dispose: () => patrulla.dispose(),
+      destelloApoyo: () => apoyo.destello(),
+      dispose: () => {
+        patrulla.dispose();
+        apoyo.dispose();
+      },
     },
   };
 }

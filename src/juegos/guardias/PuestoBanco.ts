@@ -10,12 +10,14 @@ import {
   VertexBuffer,
   DefaultRenderingPipeline,
   ImageProcessingConfiguration,
+  PointLight,
   type AbstractMesh,
   type Observer,
 } from "@babylonjs/core";
 import { cargarBanco, medirPiso, ALTURA_OJO, type BancoCargado } from "./EscenaBanco";
 import { limpiarEscena, usarCamara } from "./LimpiezaEscena";
-import { iluminarBanco, ampliarLucesBanco, fotografiarHall } from "./LuzBanco";
+import { iluminarBanco, ampliarLucesBanco, fotografiarHall, luzDeDiaPorLasVentanas, cabeLuzDeDia } from "./LuzBanco";
+import { montarCamarasBanco } from "./CamarasBanco";
 import { construirExteriorBanco } from "./ExteriorBanco";
 import { separarSueloSala, pulirSuelo, sombrasAlPie } from "./LuzSalaSupermercado";
 import { crearHudRecorrido } from "./HudRecorrido";
@@ -23,7 +25,7 @@ import { crearRelojTurno } from "./RelojTurno";
 import { crearPanelesTurno } from "./PanelesSupermercado";
 import { crearGenteBanco, PUERTA_X } from "./GenteBanco";
 import { CENTRO_PUERTA } from "./PuertaBanco";
-import { crearAsaltoBanco, type AsaltoBanco, type MomentoAsalto } from "./AsaltoBanco";
+import { crearAsaltoBanco, type AsaltoBanco, type DesenlaceTestigo, type MomentoAsalto } from "./AsaltoBanco";
 import {
   MOMENTOS,
   SEGUNDOS_EN_EL_SUELO,
@@ -34,6 +36,7 @@ import {
 import { crearObservacionBanco, type ObservacionBanco } from "./ObservacionBanco";
 import { crearSubtitulos } from "./SubtitulosTurno";
 import { crearCarabinerosBanco } from "./CarabinerosBanco";
+import { crearManosGuardia, NOMBRE_CUERPO_GUARDIA } from "./ManosGuardia";
 import { crearPanelDeclaracion } from "./PanelDeclaracion";
 import { prepararPregunta, TOTAL_PREGUNTAS, type RespuestaDeclaracion } from "./DeclaracionBanco";
 import {
@@ -123,12 +126,72 @@ const MIRA_AL_EMPEZAR = { x: 0.2, alto: 1.25, z: 4.6 };
 /**
  * Cuánto se puede subir y bajar la vista, en radianes.
  *
- * Lo que da el cuello sin moverse del sitio: se ve el piso a los pies y las
- * luminarias del techo, pero no se da la vuelta por arriba. Sin tope, una
- * FreeCamera deja seguir girando hasta mirar al revés.
+ * Arriba, lo que da el cuello: las luminarias del techo. Abajo, casi a plomo,
+ * que es lo que hace falta para verse el propio cuerpo (ver ManosGuardia): la
+ * vista de la pantalla es mucho más estrecha que la de los ojos, que al
+ * mirarse los zapatos ven también el pecho y el cinturón sin bajar la cabeza
+ * del todo. Pero nunca más allá de la vertical: sin tope, una FreeCamera deja
+ * seguir girando hasta mirar al revés.
  */
 const VISTA_ARRIBA = -0.75;
-const VISTA_ABAJO = 0.7;
+const VISTA_ABAJO = 1.55;
+
+/**
+ * ─── LA CABEZA SE INCLINA ───────────────────────────────────────────────
+ *
+ * Mirar hacia abajo no es girar los ojos en su sitio: se dobla el cuello, y
+ * los ojos bajan y se adelantan. Sin eso, mirándose a sí mismo, el pecho
+ * tapaba todo lo de más abajo —el cinturón, las piernas, los zapatos—, porque
+ * los ojos quedaban justo encima de él, y el cuerpo se veía como desde una
+ * cámara clavada sobre un maniquí.
+ *
+ * El cuello se dobla sobre la base de la nuca, veinte centímetros por debajo
+ * de los ojos y diez por detrás, y hace algo más de un tercio del giro; el
+ * resto lo hacen la cabeza y los ojos. Mirando del todo hacia abajo, los ojos
+ * se adelantan nueve centímetros y bajan ocho: lo justo para que se vean a
+ * la vez la placa del pecho y el cinturón. Más, y el pecho quedaba detrás de
+ * los ojos, fuera de la vista; menos, y tapaba el cinturón. Mirando al frente
+ * o hacia arriba, nada.
+ *
+ * @returns Cuánto se adelantan y cuánto bajan los ojos, en metros.
+ */
+function inclinarCabeza(cabeceo: number): { adelante: number; abajo: number } {
+  const cuello = Math.max(0, cabeceo) * 0.36;
+  const c = Math.cos(cuello);
+  const s = Math.sin(cuello);
+  return { adelante: 0.1 * c + 0.2 * s - 0.1, abajo: 0.2 - (0.2 * c - 0.1 * s) };
+}
+
+/** La exposición de la imagen, la de siempre: el golpe de luz de la puerta la sube un momento. */
+const EXPOSICION = 1.1;
+/** Lo que alumbra la luz de la puerta en el primer instante del golpe. */
+const INTENSIDAD_DESTELLO = 10;
+/** Lo que alumbra dentro cada golpe de baliza que entra por la ventana del costado. */
+const BALIZA_DENTRO = 4.2;
+
+/**
+ * Lo que dice el sargento al llegar de la clienta que se quiso ir (ver el
+ * quinto momento del asalto), según lo que hizo el guardia. Cada frase con su
+ * tiempo de lectura, al paso de las demás: unas diecisiete letras por segundo.
+ */
+const SOBRE_EL_TESTIGO: Record<DesenlaceTestigo, { frase: string; dura: number }> = {
+  espera: { frase: "Bien que la gente esperó. Mi cabo les va a tomar los datos a todos.", dura: 4.2 },
+  seVa: {
+    frase: "Me dicen que una clienta se fue antes de que llegáramos. Sin sus datos, la vamos a tener que ubicar por las cámaras.",
+    dura: 6.4,
+  },
+  encerrada: {
+    frase: "A nadie se le puede dejar encerrado: esa puerta queda abierta. Mi cabo le va a tomar los datos a la clienta.",
+    dura: 6,
+  },
+};
+
+/**
+ * Lo que dice el sargento de las cámaras al cerrar, mirando la del acceso (ver
+ * CamarasBanco): las grabaciones son prueba, y el guardia es quien avisa que
+ * se guarden.
+ */
+const SOBRE_LAS_CAMARAS = "Vamos a necesitar las grabaciones de las cámaras. Avise a su jefatura que nadie las borre.";
 
 /**
  * @param onSalir  Al dejar el puesto. "menu" vuelve al menú; "repetir" pide
@@ -242,7 +305,45 @@ export async function crearPuestoBanco(
       ) {
         llegaCarabineros();
       }
+      // El golpe de luz de la puerta se apaga en algo más de un segundo —lo
+      // fuerte, en el primer medio—, en tiempo del turno: si un panel lo pilla
+      // a medias, sigue donde iba.
+      if (destello > 0) {
+        destello = Math.max(0, destello - dt / 1.2);
+        const d = destello * destello;
+        luzPuerta.intensity = INTENSIDAD_DESTELLO * d;
+        tuberia.imageProcessing.exposure = EXPOSICION + 0.14 * d;
+      }
     }
+    // Lo que entra de las balizas por la ventana del fondo, al compás de la
+    // barra de la patrulla del costado.
+    if (balizasDentro) {
+      const { rojo, azul } = exterior.patrulla.destelloApoyo();
+      if (rojo || azul) {
+        const tinte = rojo ? TIÑE_ROJO : TIÑE_AZUL;
+        luzPuerta.diffuse.copyFrom(tinte);
+        luzPuerta.specular.copyFrom(tinte);
+        luzPuerta.intensity = rojo ? BALIZA_DENTRO : BALIZA_DENTRO * 1.25;
+      } else {
+        luzPuerta.intensity = 0;
+      }
+    }
+    // Las manos del guardia (ver ManosGuardia): a la vista desde que entran y
+    // se obedece, más arriba cuando el del arma lo pide a un metro, en el piso
+    // si lo tiran al suelo, y abajo cuando se van. Fuera del turno —la
+    // declaración—, abajo.
+    const fase = asalto.fase();
+    manos.poner(
+      etapa !== "turno"
+        ? "abajo"
+        : sueloQuiere === 1 || caida > 0.35
+          ? "suelo"
+          : !manosALaVista || fase === "despues" || fase === "fin"
+            ? "abajo"
+            : tiempoPuesto < manosEnAltoHasta
+              ? "alto"
+              : "vista"
+    );
     // Con Carabineros delante la vista no es del ratón: se lleva sola a quien
     // habla, sin saltos.
     if (encuadre && caida <= 0 && sueloQuiere === 0) {
@@ -266,10 +367,15 @@ export async function crearPuestoBanco(
       // apenas, pero la vista no se queda muerta. Corre con el turno, así que
       // en la pausa se para.
       const respiro = Math.sin(tiempoPuesto * 1.9) * e;
+      // Desde donde estaban los ojos de pie, con la cabeza inclinada si se
+      // miraba hacia abajo (ver LA CABEZA SE INCLINA): sin salto al empezar.
+      const cabeza = inclinarCabeza(pitchDePie);
+      const dePie = 1 - e;
+      const avance = AVANCE_EN_EL_SUELO * e + cabeza.adelante * dePie;
       camara.position.set(
-        enSuSitio.x + Math.sin(yawSuelo) * AVANCE_EN_EL_SUELO * e,
-        enSuSitio.y - (ALTURA_OJO - ALTO_EN_EL_SUELO) * e + respiro * 0.005,
-        enSuSitio.z + Math.cos(yawSuelo) * AVANCE_EN_EL_SUELO * e
+        enSuSitio.x + Math.sin(yawSuelo) * avance,
+        enSuSitio.y - (ALTURA_OJO - ALTO_EN_EL_SUELO) * e - cabeza.abajo * dePie + respiro * 0.005,
+        enSuSitio.z + Math.cos(yawSuelo) * avance
       );
       camara.rotation.y = yawSuelo;
       camara.rotation.x = pitchDePie + (PITCH_EN_EL_SUELO - pitchDePie) * e - respiro * 0.006;
@@ -285,8 +391,20 @@ export async function crearPuestoBanco(
       }
       return;
     }
-    camara.position.copyFrom(enSuSitio);
+    // De pie: en su sitio, con el cabeceo dentro de lo que da el cuello, y
+    // derecho. Sin ladeo ni viñeta, pase lo que haya pasado antes: la cabeza
+    // ladeada es solo del suelo, y un cuadro perdido al levantarse no puede
+    // dejar la sala torcida el resto del turno. Mirando hacia abajo, con la
+    // cabeza inclinada (ver LA CABEZA SE INCLINA).
     camara.rotation.x = Math.min(VISTA_ABAJO, Math.max(VISTA_ARRIBA, camara.rotation.x));
+    const cabeza = inclinarCabeza(camara.rotation.x);
+    camara.position.set(
+      enSuSitio.x + Math.sin(camara.rotation.y) * cabeza.adelante,
+      enSuSitio.y - cabeza.abajo,
+      enSuSitio.z + Math.cos(camara.rotation.y) * cabeza.adelante
+    );
+    camara.rotation.z = 0;
+    tuberia.imageProcessing.vignetteWeight = 0;
   });
 
   // --- Lo de fuera -----------------------------------------------------------
@@ -300,6 +418,50 @@ export async function crearPuestoBanco(
 
   // --- La luz del hall ---------------------------------------------------------
   iluminarBanco(scene, cielo);
+  // ─── EL GOLPE DE LUZ DE LA PUERTA ──────────────────────────────────────
+  //
+  // Cuando la revientan, entra la mañana de golpe: una luz cálida que se
+  // apaga en algo más de un segundo, y la imagen un punto más clara. Sutil a
+  // propósito: se nota el brillo, no un foco.
+  //
+  // La luz está FUERA del vano, a media altura, que es de donde viene la
+  // mañana: brillan los marcos, el piso de la entrada y la espalda del que
+  // entra, y no la cara de dentro de la fachada, junto al puesto. Dentro
+  // del vano, esa pared se lavaba entera de blanco.
+  //
+  // Montada ya y apagada, para que los materiales se compilen contándola
+  // (ver ampliarLucesBanco): encenderla después costaría un tirón. Y antes de
+  // la exclusión de abajo, que la deja sin alumbrar lo de fuera.
+  const luzPuerta = new PointLight("luzPuertaBanco", new Vector3(PUERTA_X, piso + 1.4, CENTRO_PUERTA.z - 0.35), scene);
+  luzPuerta.diffuse = new Color3(1, 0.93, 0.8);
+  luzPuerta.specular = new Color3(0.6, 0.56, 0.48);
+  luzPuerta.intensity = 0;
+  let destello = 0;
+  // ─── LAS BALIZAS SE CUELAN DENTRO ──────────────────────────────────────
+  //
+  // Con Carabineros ya fuera, la patrulla del costado destella justo detrás
+  // de la ventana baja del fondo de la pared izquierda, la que en la
+  // declaración queda detrás del sargento. Su luz entra por ella y tiñe, a
+  // golpes de rojo y de azul, el piso pulido bajo la ventana —que además la
+  // refleja—, las sillas de al lado y a quien está cerca.
+  //
+  // Es la misma luz del golpe de la puerta, que para entonces ya no hace
+  // nada: se lleva adentro, un metro y medio desde la ventana y algo hacia
+  // delante, que es donde cae la luz que entra en diagonal desde la calle.
+  // Así el muro que rodea la ventana la recibe de refilón y no como una
+  // lámpara pegada. Una luz propia para esto sería una más en cada material
+  // del hall, que ya lleva nueve con la del día (ver LuzBanco), y cada una
+  // encarece todo el hall para algo que solo se ve en la declaración.
+  const VENTANA_DEL_FONDO = new Vector3(-2.7, piso + 1.2, 0.5);
+  const TIÑE_ROJO = new Color3(1, 0.1, 0.06);
+  const TIÑE_AZUL = new Color3(0.12, 0.3, 1);
+  let balizasDentro = false;
+  // La mañana que entra por las ventanas de la izquierda: la forma de los
+  // ventanales en el piso y la luz de costado en las sillas de ese lado (ver
+  // LuzBanco). Es la novena luz de cada material, así que solo si el equipo
+  // puede con ella; si no, el hall se queda con las suyas, como estaba.
+  const conLuzDeDia = cabeLuzDeDia(scene);
+  if (conLuzDeDia) luzDeDiaPorLasVentanas(scene, piso);
   // Lo de dentro no alumbra lo de fuera: la calle tiene su sol.
   scene.lights
     .filter((l) => !exterior.luces.includes(l))
@@ -316,7 +478,14 @@ export async function crearPuestoBanco(
   const suelo = estructura instanceof Mesh ? separarSueloSala(estructura, piso) : null;
   if (suelo) {
     suelo.name = "sueloBanco";
-    pulirSuelo(scene, suelo, piso, (m) => !deFuera.has(m) && !m.name.endsWith("_sombraAlPie"));
+    // Sin el cuerpo del guardia: se dibuja sin cabeza —los ojos están dentro—
+    // y su reflejo, justo bajo los pies, saldría descabezado.
+    pulirSuelo(
+      scene,
+      suelo,
+      piso,
+      (m) => !deFuera.has(m) && !m.name.endsWith("_sombraAlPie") && !m.name.startsWith(NOMBRE_CUERPO_GUARDIA)
+    );
   }
   // Y el cielo raso, en blanco: llegaba con el mismo mármol gris oscuro que el
   // resto de la estructura, y un techo oscuro a cinco metros, con los paneles
@@ -349,9 +518,17 @@ export async function crearPuestoBanco(
     guardia: () => enSuSitio,
     subtitulos,
     alMomento: (m) => atenderMomento(m),
+    alReventarPuerta: () => {
+      destello = 1;
+    },
   });
   // Carabineros, que llegan cuando todo terminó. Ver LA DECLARACIÓN.
   const carabineros = crearCarabinerosBanco(scene, { piso, guardia: enSuSitio, gente, subtitulos });
+
+  // Las cámaras de seguridad del hall, con su luz roja (ver CamarasBanco).
+  // Antes de la foto de los reflejos y de la ampliación de luces, que tienen
+  // que contarlas.
+  const camaras = montarCamarasBanco(scene, piso, cielo);
 
   // El entorno de los reflejos, con el hall ya completo. Sin la gente, que se
   // mueve: en un reflejo fijo se quedaría congelada en su primer cuadro.
@@ -361,12 +538,18 @@ export async function crearPuestoBanco(
     scene.meshes.filter((m) => m !== suelo && !m.name.startsWith("banco_"))
   );
 
+  // El cuerpo del guardia, de pie en su puesto (ver ManosGuardia): después de
+  // la foto de los reflejos, que no lo tiene que ver; antes de las sombras al
+  // pie, que le ponen la suya, y de la ampliación de luces, que tiene que
+  // contar sus materiales.
+  const manos = crearManosGuardia(scene, camara, piso, { ojos: enSuSitio, caida: () => caida });
+
   // Una sombra al pie de cada persona, cuando las haya. Ver sombrasAlPie.
   sombrasAlPie(scene, scene.transformNodes.filter((n) => n.name.startsWith("figura_")));
 
-  // Todo compilado para la cantidad de luces que hay. Lo último, cuando ya
-  // existen todos los materiales.
-  ampliarLucesBanco(scene);
+  // Todo compilado para la cantidad de luces que hay —con la del día, una
+  // más—. Lo último, cuando ya existen todos los materiales.
+  ampliarLucesBanco(scene, conLuzDeDia ? 9 : 8);
 
   // --- Post-proceso -------------------------------------------------------------
   //
@@ -383,7 +566,7 @@ export async function crearPuestoBanco(
   tuberia.bloomScale = 0.5;
   tuberia.imageProcessingEnabled = true;
   tuberia.imageProcessing.contrast = 1.06;
-  tuberia.imageProcessing.exposure = 1.1;
+  tuberia.imageProcessing.exposure = EXPOSICION;
   tuberia.imageProcessing.toneMappingEnabled = true;
   tuberia.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
   // La viñeta, encendida desde ya y a cero: es la que oscurece los bordes
@@ -448,6 +631,9 @@ export async function crearPuestoBanco(
         // Desde aquí el reloj va a tiempo real: ver RITMO_ASALTO.
         reloj.ritmo(RITMO_ASALTO);
         asalto.comenzar();
+        // Y la calle se vacía: cada uno termina su tramo y se va antes de que
+        // ellos salgan corriendo por el costado (ver CalleBanco).
+        exterior.calle.despejar(true);
       }
     },
   });
@@ -461,6 +647,10 @@ export async function crearPuestoBanco(
   /** Si el momento de "ya se fueron" espera a que el guardia se levante. */
   let despuesPendiente = false;
   const decisiones: DecisionBanco[] = [];
+  /** Si ya se obedeció a la orden de las manos: desde que entran hasta que se van. */
+  let manosALaVista = false;
+  /** Hasta cuándo, en tiempo del turno, se tienen más arriba: lo que pide el del arma a un metro. */
+  let manosEnAltoHasta = -1;
   /**
    * En qué parte está: el turno —la mañana y el asalto—, la llegada de
    * Carabineros, la declaración o el cierre. Pasado el turno no hay pausa ni
@@ -489,8 +679,13 @@ export async function crearPuestoBanco(
     sueloQuiere = 1;
     sueloRestan = restan;
     levantandose = false;
-    pitchDePie = Math.min(VISTA_ABAJO, Math.max(VISTA_ARRIBA, camara.rotation.x));
-    yawSuelo = camara.rotation.y;
+    // Hacia dónde mira de pie, para volver ahí al levantarse. Si lo tiran
+    // otra vez a medio levantarse, la vista de ese momento es la del suelo a
+    // medias: se conserva la de antes, la de verdad de pie.
+    if (caida <= 0) {
+      pitchDePie = Math.min(VISTA_ABAJO, Math.max(VISTA_ARRIBA, camara.rotation.x));
+      yawSuelo = camara.rotation.y;
+    }
     camara.detachControl();
     camara.cameraRotation.set(0, 0);
     hud.anunciarZona("En el suelo", "Te obligaron a tirarte al suelo: desde aquí no ves lo que pasa");
@@ -538,8 +733,17 @@ export async function crearPuestoBanco(
   //
   // Salen siempre, se esté mirando o no: el grito, la puerta, a alguien
   // apuntándote a un metro, los oye cualquiera.
+  //
+  // Con un panel delante el asalto está congelado y no avisa de nada; pero si
+  // un momento llegara igual, no se pierde: sale al cerrarse el que hay.
+  // Perderlo dejaría al asalto esperando una respuesta que nunca llega.
+  let momentoPendiente: MomentoAsalto | null = null;
   const atenderMomento = (m: MomentoAsalto): void => {
     if (cerrado) return;
+    if (enPanel) {
+      momentoPendiente = m;
+      return;
+    }
     // "Ya se fueron" con el guardia en el suelo: primero se levanta —para eso
     // lo tenían ahí—, y la pregunta sale cuando ya está de pie.
     if (m === "despues" && (sueloQuiere === 1 || caida > 0)) {
@@ -563,6 +767,7 @@ export async function crearPuestoBanco(
     enMarcha = false;
     reloj.correr(false);
     gente.congelar(true);
+    exterior.calle.congelar(true);
     asalto.congelar(true);
     subtitulos.mostrar(false);
     agacharAmbienteSala(true);
@@ -570,6 +775,9 @@ export async function crearPuestoBanco(
     camara.detachControl();
     hud.ocultar();
     reproducir("pregunta");
+    // "¡Las manos donde las vea!": se suben, y así quedan un rato después de
+    // contestar, mientras lo tiene delante.
+    if (m === "seAcerca") manosEnAltoHasta = tiempoPuesto + 6;
 
     paneles.mostrarSituacion(
       {
@@ -591,6 +799,7 @@ export async function crearPuestoBanco(
         agacharAmbienteSala(false);
         if (cerrado) return;
         gente.congelar(false);
+        exterior.calle.congelar(false);
         asalto.congelar(false);
         congelarSonidosSala(false);
         subtitulos.mostrar(true);
@@ -600,22 +809,34 @@ export async function crearPuestoBanco(
         enMarcha = true;
         devolverMando();
 
+        // Desde la entrada, las manos a la vista. También si se eligió mal: el
+        // suelo las pone en el piso, y al levantarse ya se sabe qué se pide.
+        if (m === "entran") manosALaVista = true;
+
         const hecha = elegida;
-        if (!hecha) return;
-        // La trampa, en la escena: el del arma lo ve, se vuelve, le grita y
-        // lo manda al suelo. Un instante después del grito, que es lo que
-        // tarda cualquiera en obedecer con un arma delante.
-        if (hecha.efecto) {
-          const yaEnElSuelo = sueloQuiere === 1;
-          asalto.encararGuardia(yaEnElSuelo ? "¡Quieto ahí en el suelo!" : hecha.reaccion ?? "¡Al suelo!", 3);
-          const efecto = hecha.efecto;
-          luego(0.7, () => tirarAlSuelo(efecto));
+        // La clienta que se quería ir hace lo que se eligió: vuelve a su
+        // asiento, sigue hasta la vereda o se encuentra la puerta con llave.
+        if (m === "seQuiereIr") asalto.resolverTestigo(hecha?.testigo ?? "espera");
+        if (hecha) {
+          // La trampa, en la escena: el del arma lo ve, se vuelve, le grita y
+          // lo manda al suelo. Un instante después del grito, que es lo que
+          // tarda cualquiera en obedecer con un arma delante.
+          if (hecha.efecto) {
+            const yaEnElSuelo = sueloQuiere === 1;
+            asalto.encararGuardia(yaEnElSuelo ? "¡Quieto ahí en el suelo!" : hecha.reaccion ?? "¡Al suelo!", 3);
+            const efecto = hecha.efecto;
+            luego(0.7, () => tirarAlSuelo(efecto));
+          }
+          // Lo que cuenta Central por radio, si lo que se hizo tiene respuesta.
+          if (hecha.despues) {
+            hud.avisarRadio(hecha.despues, 9000);
+            reproducir("radio");
+          }
         }
-        // Lo que cuenta Central por radio, si lo que se hizo tiene respuesta.
-        if (hecha.despues) {
-          hud.avisarRadio(hecha.despues, 9000);
-          reproducir("radio");
-        }
+        // Y el que llegó mientras este estaba en pantalla, si llegó alguno.
+        const pendiente = momentoPendiente;
+        momentoPendiente = null;
+        if (pendiente) atenderMomento(pendiente);
       }
     );
   };
@@ -711,8 +932,16 @@ export async function crearPuestoBanco(
     luego(1.5, () => {
       reloj.saltarA(reloj.minuto() + MINUTOS_HASTA_CARABINEROS);
       devolverAmbienteSala(3);
-      gente.recomponer(enSuSitio);
+      // Con la clienta que se quiso ir donde la dejó lo que se eligió.
+      gente.recomponer(enSuSitio, asalto.desenlaceTestigo());
       exterior.patrulla.aparecer();
+      // Y la de la ventana del costado tiñe lo de dentro (ver LAS BALIZAS SE
+      // CUELAN DENTRO).
+      destello = 0;
+      luzPuerta.position.copyFrom(VENTANA_DEL_FONDO);
+      balizasDentro = true;
+      // Y en la calle vuelve a pasar gente, que mira las patrullas y sigue.
+      exterior.calle.despejar(false);
       carabineros.preparar();
       encuadrar(puertaAbierta, 0.36, 0.45, true);
     });
@@ -737,9 +966,23 @@ export async function crearPuestoBanco(
         const saludo = aviso?.opcion.correcta
           ? "Buenos días. Sargento Rojas, Tercera Comisaría. Recibimos su aviso por la central."
           : "Buenos días. Sargento Rojas, Tercera Comisaría. Nos llamó el cajero de la caja 2.";
-        luego(0.6, () => carabineros.decir(saludo, 4.6));
-        luego(5.4, () => carabineros.decir("Necesito tomarle declaración. Cuénteme lo que vio.", 3.4));
-        luego(9.1, empezarDeclaracion);
+        const dichos: { frase: string; dura: number; mira?: boolean }[] = [{ frase: saludo, dura: 4.6 }];
+        // Y lo que hay que decir de la clienta que se quiso ir, según lo que
+        // hizo el guardia (ver el quinto momento): la mira mientras lo dice,
+        // si está.
+        const testigo = asalto.desenlaceTestigo();
+        if (testigo) dichos.push({ ...SOBRE_EL_TESTIGO[testigo], mira: testigo !== "seVa" });
+        dichos.push({ frase: "Necesito tomarle declaración. Cuénteme lo que vio.", dura: 3.4 });
+        let cuando = 0.6;
+        dichos.forEach(({ frase, dura, mira }) => {
+          luego(cuando, () => {
+            carabineros.decir(frase, dura);
+            const ella = asalto.testigo();
+            if (mira && ella) carabineros.mirarUnRato(ella.puntoDeLaCabeza(0.06, 0, 0), Math.min(2.6, dura - 1));
+          });
+          cuando += dura + 0.2;
+        });
+        luego(cuando + 0.1, empezarDeclaracion);
       });
     });
   };
@@ -799,11 +1042,16 @@ export async function crearPuestoBanco(
       encuadrar(() => carabineros.cara(), 0.5, 0.42);
       carabineros.guardarLibreta();
       // Medio segundo, a que se vaya el papel: el subtítulo va por encima de
-      // todo, y encima del documento se leían los dos a la vez.
-      luego(0.5, () =>
+      // todo, y encima del documento se leían los dos a la vez. Primero las
+      // grabaciones, con la vista en la cámara del acceso; después se despide.
+      luego(0.5, () => {
+        carabineros.decir(SOBRE_LAS_CAMARAS, 5.2);
+        carabineros.mirarUnRato(camaras.acceso, 2.4);
+      });
+      luego(5.9, () =>
         carabineros.decir("Gracias. Con esto es suficiente. Si recuerda algo más, llame a la comisaría.", 4.4)
       );
-      luego(5.5, mostrarCierre);
+      luego(10.9, mostrarCierre);
     });
   };
 
@@ -898,6 +1146,9 @@ export async function crearPuestoBanco(
     detenerAmbienteSala();
     detenerSonidosSala();
     exterior.patrulla.dispose();
+    exterior.calle.dispose();
+    camaras.dispose();
+    manos.dispose();
     observacion.dispose();
     asalto.dispose();
     carabineros.dispose();
@@ -927,6 +1178,7 @@ export async function crearPuestoBanco(
     enMarcha = false;
     reloj.correr(false);
     gente.congelar(true);
+    exterior.calle.congelar(true);
     asalto.congelar(true);
     subtitulos.mostrar(false);
     // La sala no se calla en la pausa, pero se aparta. Lo que estaba sonando
@@ -950,6 +1202,7 @@ export async function crearPuestoBanco(
     agacharAmbienteSala(false);
     if (cerrado) return;
     gente.congelar(false);
+    exterior.calle.congelar(false);
     asalto.congelar(false);
     congelarSonidosSala(false);
     subtitulos.mostrar(true);
