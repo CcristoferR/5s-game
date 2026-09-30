@@ -404,6 +404,15 @@ export async function crearPuestoBanco(
       enSuSitio.z + Math.cos(camara.rotation.y) * cabeza.adelante
     );
     camara.rotation.z = 0;
+    // ─── Y EL "ARRIBA", VERTICAL ──────────────────────────────────────────
+    //
+    // Con poner el ladeo en cero no basta. Babylon rehace el vector "arriba"
+    // de la cámara solo cuando cambia el ladeo, y lo rehace con el cabeceo de
+    // ese instante: al levantarse del suelo mirando algo hacia abajo, quedaba
+    // inclinado hacia donde se miraba, y al girar la vista después la sala
+    // entera se veía ladeada —medido, casi veinte grados a un cuarto de
+    // vuelta—. De pie, el arriba es siempre el de la calle.
+    camara.upVector.set(0, 1, 0);
     tuberia.imageProcessing.vignetteWeight = 0;
   });
 
