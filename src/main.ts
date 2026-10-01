@@ -11,7 +11,7 @@ import { aplicarTemaUI } from "./ui/EstiloUI";
 import { iniciarPreferencias } from "./portal/Preferencias";
 import { mostrarVerificacion } from "./portal/PantallaVerificacion";
 import { registrarFaseCompletada, progresoDe } from "./portal/Datos";
-import { juegoDe, registrarJuego5S, registrarJuegoGuardias, CURSO_5S } from "./portal/CursosJugables";
+import { juegoDe, registrarJuego5S, registrarJuegoGuardias, CURSO_5S, CURSO_GUARDIAS } from "./portal/CursosJugables";
 import { guardarResultadoDeFase } from "./portal/Ranking";
 import { leerSesion, cerrarSesion, rolVerificado } from "./portal/Sesion";
 import type { Perfil } from "./portal/Datos";
@@ -257,9 +257,14 @@ function reintentarNivel(numeroNivel: number): void {
  * El RPC conserva el mejor intento, así que repetir la llamada es inofensivo:
  * si la primera sí había llegado, la segunda no cambia nada.
  */
-async function guardarConReintentos(fase: number, puntaje: number, segundos: number): Promise<void> {
+async function guardarConReintentos(
+  cursoId: string,
+  fase: number,
+  puntaje: number,
+  segundos: number
+): Promise<void> {
   for (let intento = 1; intento <= 3; intento++) {
-    if (await guardarResultadoDeFase(cursoActivo, fase, puntaje, segundos)) return;
+    if (await guardarResultadoDeFase(cursoId, fase, puntaje, segundos)) return;
     await new Promise((listo) => setTimeout(listo, intento * 1500));
   }
 
@@ -267,6 +272,49 @@ async function guardarConReintentos(fase: number, puntaje: number, segundos: num
     `[ranking] La fase ${fase} no se pudo guardar tras 3 intentos. ` +
       `Vuelve a jugarla para que quede registrada en el ranking.`
   );
+}
+
+/**
+ * Deja una fase aprobada registrada en la plataforma, a nombre de quien tiene
+ * la sesión: su resultado, para el ranking, y su avance, para el catálogo, el
+ * panel y el certificado.
+ *
+ * La usan los dos cursos: el 5S al completar cada nivel, y el de guardias al
+ * aprobar cada escenario (ver JuegoGuardias).
+ *
+ * Quién y qué se leen al llamar, no después de los await: si entretanto la
+ * persona sale al catálogo y abre otro curso, lo que se guarda sigue siendo
+ * lo que terminó.
+ */
+async function registrarFaseAprobada(
+  cursoId: string,
+  fase: number,
+  puntaje: number,
+  segundos: number
+): Promise<void> {
+  const perfil = perfilActivo;
+  if (!perfil) return;
+
+  // EL ORDEN IMPORTA.
+  //
+  // Desde que el avance lo calcula la base, su puntaje se obtiene SUMANDO las
+  // filas de resultados_fase. Si el avance se registrara primero, esa suma no
+  // incluiría la fase que se acaba de terminar —su fila todavía no existe— y
+  // el total quedaría corto hasta la siguiente.
+  //
+  // Por eso primero el resultado de la fase y solo después el avance.
+  //
+  // Con reintentos los dos: esta escritura ya se perdió una vez en
+  // producción. Se guardó el avance —y el certificado dio el curso por
+  // completo— pero la fila del ranking no llegó, y la persona quedó con "4 de
+  // 5 fases" habiendo hecho las cinco.
+  await guardarConReintentos(cursoId, fase, puntaje, segundos);
+
+  for (let intento = 1; intento <= 3; intento++) {
+    if (await registrarFaseCompletada(perfil.id, cursoId, fase, puntaje)) return;
+    await new Promise((listo) => setTimeout(listo, intento * 1500));
+  }
+  console.error(`[progreso] La fase ${fase} de ${cursoId} no se pudo registrar tras 3 intentos.`);
 }
 
 /**
@@ -329,48 +377,16 @@ function construirNivel(numeroNivel: number): void {
     // El avance queda asociado a la persona, no al navegador. Es lo que
     // permite retomar donde quedó aunque entre desde otro computador, y lo que
     // hace posible que el administrador vea quién completó qué.
-    if (perfilActivo) {
-      // EL ORDEN IMPORTA, y por un motivo nuevo.
-      //
-      // Desde que el avance lo calcula la base, su puntaje se obtiene SUMANDO
-      // las filas de resultados_fase. Si el avance se registrara primero, esa
-      // suma no incluiría la fase que se acaba de terminar —su fila todavía no
-      // existe— y el total quedaría corto hasta el siguiente nivel.
-      //
-      // Por eso primero se guarda el resultado de la fase y solo después se
-      // registra el avance. El await encadena las dos cosas.
-      void (async () => {
-        // Resultado de ESTA fase, para el ranking.
-        //
-        // Va separado del avance porque responden preguntas distintas: el
-        // avance dice hasta dónde llegó la persona, el resultado dice qué tan
-        // bien lo hizo. El marcador del juego se reinicia en cada nivel, así
-        // que gameManager.puntaje es exactamente el de esta fase.
-        //
-        // Con reintentos: esta escritura ya se perdió una vez en producción.
-        // Se guardó el avance —y el certificado dio el curso por completo—
-        // pero la fila del ranking no llegó, y la persona quedó con "4 de 5
-        // fases" habiendo hecho las cinco.
-        await guardarConReintentos(
-          numeroNivel,
-          gameManager.puntaje,
-          gameManager.segundosDelNivel()
-        );
-
-        // El avance queda asociado a la persona, no al navegador: es lo que
-        // permite retomar desde otro computador y lo que hace que el
-        // administrador vea quién completó qué.
-        //
-        // Una sola llamada, y la cuenta la hace la base. Antes eran tres
-        // viajes con un hueco entre medio por el que se perdían fases.
-        await registrarFaseCompletada(
-          perfilActivo.id,
-          cursoActivo,
-          numeroNivel,
-          gameManager.puntaje
-        );
-      })();
-    }
+    //
+    // El marcador del juego se reinicia en cada nivel, así que
+    // gameManager.puntaje es exactamente el de esta fase. Se lee aquí, al
+    // completar, y viaja como dato: ver registrarFaseAprobada.
+    void registrarFaseAprobada(
+      cursoActivo,
+      numeroNivel,
+      gameManager.puntaje,
+      gameManager.segundosDelNivel()
+    );
   };
 
   if (numeroNivel === 0) {
@@ -515,13 +531,18 @@ registrarJuego5S(() => mostrarMenu());
  */
 registrarJuegoGuardias(async () => {
   const { abrirMenuGuardias } = await import("./juegos/JuegoGuardias");
-  abrirMenuGuardias(
-    sceneManager.scene,
-    () => {
+  const perfil = perfilActivo;
+  abrirMenuGuardias(sceneManager.scene, {
+    // Con el id: el avance se guarda a nombre de la cuenta, no del nombre.
+    jugador: perfil ? { id: perfil.id, nombre: perfil.nombreCompleto } : null,
+    volverAlPortal: () => {
       if (perfilActivo) abrirCatalogo(perfilActivo);
     },
-    perfilActivo?.nombreCompleto
-  );
+    // Cada escenario aprobado es una fase del curso de guardias, como un
+    // nivel del 5S: ranking, avance y certificado salen de ahí.
+    registrarAprobado: (escenario, nota, segundos) =>
+      void registrarFaseAprobada(CURSO_GUARDIAS, escenario, nota, segundos),
+  });
 });
 
 /**

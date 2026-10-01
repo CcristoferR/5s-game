@@ -59,7 +59,7 @@ export async function cargarBanco(
   scene: Scene,
   opciones: OpcionesBanco = {}
 ): Promise<BancoCargado> {
-  const ruta = opciones.ruta ?? "/models/banco.glb";
+  const ruta = opciones.ruta ?? `${import.meta.env.BASE_URL}models/banco.glb`;
   // POR 3, Y NO POR 0,01 NI POR 2.
   //
   // El GLB ya viene en metros: convertir_banco.py pasa los centímetros de Maya

@@ -117,7 +117,7 @@ function plantilla(conVolver: boolean): string {
       <form class="verif__form" id="formVerificar">
         <label class="portal__etiqueta" for="codigoVerificar">Código de verificación</label>
         <div class="verif__fila">
-          <input class="verif__campo" id="codigoVerificar" placeholder="5S-XXXX-XXXX"
+          <input class="verif__campo" id="codigoVerificar" placeholder="XX-XXXX-XXXX"
                  autocomplete="off" spellcheck="false" maxlength="12" />
           <button class="boton boton--principal" id="botonVerificar" type="submit">Verificar</button>
         </div>

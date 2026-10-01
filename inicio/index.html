@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // Compatibilidad con los certificados emitidos antes de separar /ingreso/.
+    if (/^#verificar(?:\/|$)/i.test(location.hash)) location.replace('/ingreso/' + location.hash);
+  </script>
+  <title>ClassPlay · Capacitación práctica en 3D para empresas</title>
+  <meta name="description" content="Tu equipo practica situaciones reales en 3D, desde el navegador. Cursos 5S y Guardias de Seguridad, seguimiento por persona y certificados verificables. Un producto de Bitplay.">
+  <meta name="theme-color" content="#0D0E10">
+  <link rel="canonical" href="https://classplay.cl/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_CL">
+  <meta property="og:url" content="https://classplay.cl/">
+  <meta property="og:site_name" content="ClassPlay">
+  <meta property="og:title" content="ClassPlay · Entrena en 3D. Actúa con criterio.">
+  <meta property="og:description" content="Capacitación práctica para empresas. Tu equipo resuelve situaciones reales sin riesgo y tú sigues su avance.">
+  <meta property="og:image" content="https://classplay.cl/img/og-classplay.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="ClassPlay. Capacitación práctica en 3D para empresas. Un producto de Bitplay.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ClassPlay · Capacitación práctica en 3D">
+  <meta name="twitter:description" content="Tu equipo practica situaciones reales sin riesgo. Tú ves quién aprendió.">
+  <meta name="twitter:image" content="https://classplay.cl/img/og-classplay.jpg">
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="fonts/geist-latin.woff2" crossorigin>
+  <link rel="stylesheet" href="css/styles.css">
+  <script defer src="js/config.js"></script>
+  <script defer src="vendor/gsap.min.js"></script>
+  <script defer src="vendor/ScrollTrigger.min.js"></script>
+  <script defer src="vendor/lenis.min.js"></script>
+  <script defer src="js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+  <header class="site-header" id="cabecera">
+    <div class="container header-inner">
+      <a class="brand" href="#inicio" title="Ir al inicio"><span>classplay<span class="brand-period">.</span></span></a>
+      <nav class="desktop-nav" aria-label="Navegación principal">
+        <a href="#cursos">Cursos</a><a href="#panel">Panel</a><a href="#como-funciona">Cómo funciona</a><a href="#certificados">Certificados</a>
+      </nav>
+      <div class="header-actions"><a class="button button-small button-outline" href="/ingreso/">Ingresar</a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="menu-movil" aria-label="Abrir menú"><span></span><span></span></button></div>
+    </div>
+  </header>
+  <dialog id="menu-movil" class="mobile-menu" aria-label="Menú de navegación">
+    <div class="mobile-menu-top"><span class="wordmark">classplay.</span><button type="button" class="menu-close" aria-label="Cerrar menú">Cerrar <span aria-hidden="true">×</span></button></div>
+    <nav aria-label="Navegación móvil"><a href="#cursos"><small>01</small>Cursos</a><a href="#panel"><small>02</small>Panel</a><a href="#como-funciona"><small>03</small>Cómo funciona</a><a href="#certificados"><small>04</small>Certificados</a></nav>
+    <a href="/ingreso/" class="button button-primary">Ingresar a la plataforma</a><p>Capacitación práctica. Un producto de Bitplay.</p>
+  </dialog>
+
+  <main id="contenido">
+    <section class="hero dark grain" id="inicio" aria-labelledby="titulo">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="container hero-content">
+        <!-- Primera pantalla: ocupa el alto completo para que nada de lo siguiente asome. -->
+        <div class="hero-intro">
+          <div class="hero-main">
+            <div class="hero-topline"><p class="eyebrow hero-eyebrow"><span class="small-cross" aria-hidden="true">+</span> APRENDER HACIENDO, EN 3D</p><span class="hero-edition">CLASSPLAY / POR BITPLAY</span></div>
+            <h1 id="titulo"><span class="title-line"><span class="word">Entrena</span> <span class="word">en</span> <span class="word">3D.</span></span><span class="title-line accent"><span class="word">Actúa</span> <span class="word">con</span> <span class="word">criterio.</span></span></h1>
+            <div class="hero-bottomline"><div><p class="hero-description">Tu equipo practica situaciones reales sin riesgo.<br class="desktop-break"> Tú ves quién aprendió.</p><div class="button-row hero-buttons"><a class="button button-primary magnetic" href="/ingreso/">Ingresar</a></div></div><p class="hero-side-note">CAPACITACIÓN PARA EMPRESAS<br> <span>Desde el navegador.<br> Sin instalar nada.</span></p></div>
+          </div>
+          <div class="hero-foot"><span>Práctica que se parece al trabajo.</span><a class="text-link" href="#sistema">Conoce el sistema <span class="scroll-symbol" aria-hidden="true">↓</span></a></div>
+        </div>
+        <!-- El escenario del video tiene su propia pantalla, debajo de la portada. -->
+        <div class="hero-stage">
+          <div class="hero-product">
+            <div class="browser-frame hero-browser">
+              <div class="browser-bar"><span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>classplay.cl / guardias / banco</span><span class="browser-end">ESCENARIO 03</span></div>
+              <div class="hero-screen">
+                <video id="portada-video" width="1600" height="900" muted loop playsinline preload="none" poster="img/portada-poster.webp" aria-label="Hall de la sucursal bancaria del curso Guardias de Seguridad."><source data-src="img/portada-loop.webm" type="video/webm"><source data-src="img/portada-loop.mp4" type="video/mp4"></video>
+                <span class="preview-tag" data-pending-media>VISTA PREVIA · VIDEO PENDIENTE</span>
+                <button class="video-control" type="button" aria-pressed="false" hidden>Pausar video</button>
+                <div class="scene-caption"><span>01 / OBSERVA</span><span>02 / DECIDE</span><span>03 / APRENDE</span></div>
+              </div>
+            </div>
+            <div class="float-card decision-card" aria-label="Ejemplo ilustrativo de una decisión del curso"><span class="card-eyebrow">GUARDIAS · BANCO</span><p>Una situación cambia.<br> Tu criterio cuenta.</p><div class="decision-option"><b>A</b><span>Intervenir de inmediato</span></div><div class="decision-option selected"><b>B</b><span>Observar y resguardar</span><span class="selection-mark" aria-hidden="true"></span></div><div class="decision-option"><b>C</b><span>Salir del puesto</span></div><span class="example-note">Ejemplo de una decisión</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="system section light tone-transition" id="sistema" aria-labelledby="sistema-titulo">
+      <div class="container">
+        <div class="section-heading reveal"><p class="eyebrow"><span class="section-index">01 /</span> EL SISTEMA</p><div class="heading-row"><h2 id="sistema-titulo">La práctica y el avance.<br> <span class="muted">En el mismo lugar.</span></h2><p>Una experiencia clara para quien aprende.<br> Una vista completa para quien capacita.</p></div></div>
+        <div class="bento-grid">
+          <article class="bento-card bento-wide" data-tilt><div class="bento-copy"><span class="card-number">01</span><h3>El trabajo, llevado al 3D.</h3><p>Escenarios realistas para observar, decidir y aplicar lo aprendido.</p></div><div class="bento-media"><img src="img/sistema-cursos.webp" srcset="img/sistema-cursos.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Taller del curso Operación 5S en 3D, con cajas por clasificar y zonas marcadas en el piso."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div></article>
+          <article class="bento-card bento-narrow" data-tilt><div class="bento-copy"><span class="card-number">02</span><h3>Un código. Su curso.</h3><p>Registro con RUT o ficha y acceso a los cursos que activa la empresa.</p></div><div class="bento-media"><img src="img/sistema-plataforma.webp" srcset="img/sistema-plataforma.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Pantalla Tus cursos: Operación 5S completado y el curso de Guardias de Seguridad listo para comenzar."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div></article>
+          <article class="bento-card bento-narrow" data-tilt><div class="bento-copy"><span class="card-number">03</span><h3>Cada persona, a la vista.</h3><p>Cursos, estados y avance individual desde el panel de la empresa.</p></div><div class="bento-media"><img src="img/sistema-panel.webp" srcset="img/sistema-panel.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Tabla del panel con cada persona, su curso, el estado de la inscripción y el avance."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div></article>
+          <article class="bento-card bento-wide" data-tilt><div class="bento-copy"><span class="card-number">04</span><h3>Un logro que se puede verificar.</h3><p>Al completar el curso, un certificado con código de verificación.</p></div><div class="bento-media"><img src="img/sistema-certificado.webp" srcset="img/sistema-certificado.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Certificado de finalización de Operación 5S con puntaje, fecha y código de verificación."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div></article>
+        </div>
+        <p class="audience-line reveal"><span>PENSADO PARA</span> Operaciones <i aria-hidden="true">/</i> Capacitación <i aria-hidden="true">/</i> Recursos Humanos</p>
+      </div>
+    </section>
+
+    <section class="courses section light" id="cursos" aria-labelledby="cursos-titulo">
+      <div class="container">
+        <div class="section-heading reveal"><p class="eyebrow"><span class="section-index">02 /</span> CURSOS DISPONIBLES</p><h2 id="cursos-titulo">Situaciones reales.<br> <span class="muted">Decisiones propias.</span></h2></div>
+        <div class="course-five reveal"><div class="course-mark" aria-hidden="true">5<span>S</span><div class="course-mark-grid"></div></div><div class="course-intro"><span class="pill">OPERACIONES</span><h3>Un taller. Cinco formas<br> de hacerlo mejor.</h3><p>Después de un tutorial inicial, tu equipo aplica una S por fase. Del puesto desordenado a una auditoría sorpresa, cada acción tiene un propósito.</p><p class="course-meta">5 fases prácticas <span>/</span> Tutorial inicial <span>/</span> Entorno 3D</p></div></div>
+        <ol class="five-timeline" aria-label="Las cinco fases del curso 5S">
+          <li class="phase"><span class="phase-dot" aria-hidden="true"></span><span class="phase-number">01</span><h4>Seiri</h4><span class="phase-translation">Clasificar</span><p>Decidir qué se queda, qué se observa con tarjeta roja y qué se va.</p></li>
+          <li class="phase"><span class="phase-dot" aria-hidden="true"></span><span class="phase-number">02</span><h4>Seiton</h4><span class="phase-translation">Ordenar</span><p>Darle a cada cosa un lugar y hacer visible cuando algo falta.</p></li>
+          <li class="phase"><span class="phase-dot" aria-hidden="true"></span><span class="phase-number">03</span><h4>Seiso</h4><span class="phase-translation">Limpiar</span><p>Limpiar aceite y polvo. Encontrar también qué los produce.</p></li>
+          <li class="phase"><span class="phase-dot" aria-hidden="true"></span><span class="phase-number">04</span><h4>Seiketsu</h4><span class="phase-translation">Estandarizar</span><p>Dejar señales e instrucciones que otro operario pueda seguir.</p></li>
+          <li class="phase"><span class="phase-dot" aria-hidden="true"></span><span class="phase-number">05</span><h4>Shitsuke</h4><span class="phase-translation">Disciplina</span><p>Resolver una auditoría contra reloj con el checklist propio.</p></li>
+        </ol>
+        <!-- Las cinco capturas de fases son opcionales. Se activan en js/config.js. -->
+        <div class="phase-gallery" hidden>
+          <figure><img src="img/5s-seiri.webp" srcset="img/5s-seiri.webp 960w" sizes="(max-width: 600px) 90vw, 800px" width="960" height="600" loading="lazy" alt="Marcador para la fase Seiri: clasificación de objetos."><figcaption>01 / Seiri</figcaption></figure>
+          <figure><img src="img/5s-seiton.webp" srcset="img/5s-seiton.webp 960w" sizes="(max-width: 600px) 90vw, 800px" width="960" height="600" loading="lazy" alt="Marcador para la fase Seiton: organización del puesto."><figcaption>02 / Seiton</figcaption></figure>
+          <figure><img src="img/5s-seiso.webp" srcset="img/5s-seiso.webp 960w" sizes="(max-width: 600px) 90vw, 800px" width="960" height="600" loading="lazy" alt="Marcador para la fase Seiso: limpieza e inspección."><figcaption>03 / Seiso</figcaption></figure>
+          <figure><img src="img/5s-seiketsu.webp" srcset="img/5s-seiketsu.webp 960w" sizes="(max-width: 600px) 90vw, 800px" width="960" height="600" loading="lazy" alt="Marcador para la fase Seiketsu: señales e instrucciones."><figcaption>04 / Seiketsu</figcaption></figure>
+          <figure><img src="img/5s-shitsuke.webp" srcset="img/5s-shitsuke.webp 960w" sizes="(max-width: 600px) 90vw, 800px" width="960" height="600" loading="lazy" alt="Marcador para la fase Shitsuke: auditoría del puesto."><figcaption>05 / Shitsuke</figcaption></figure>
+        </div>
+        <div class="guards-story">
+          <div class="guards-intro"><span class="pill">GUARDIAS DE SEGURIDAD</span><h3>Observar bien.<br> Decidir a tiempo.</h3><p>Tres escenarios. Turnos completos. Tu equipo practica cómo actuar y se evalúa cada decisión.</p><div class="guard-index" aria-hidden="true"><span class="guard-current">01</span><span class="guard-progress"><i></i></span><span>03</span></div><p class="guard-current-name" aria-hidden="true">Condominio</p><p class="course-disclaimer">Práctica complementaria basada en el manual de apoyo OS10. No otorga certificación OS10.</p></div>
+          <div class="guard-scenes">
+            <article class="guard-scene" data-scene="01" data-name="Condominio"><div class="scene-media"><img src="img/guardias-condominio.webp" srcset="img/guardias-condominio.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Conserjería del condominio de noche, con el monitor de cámaras, la radio y el libro de novedades."><span class="scene-counter">01 / 03</span><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="scene-text"><span class="scene-kicker">TURNO DE NOCHE</span><h4>Condominio</h4><p>Registrar hechos, sin opiniones ni borrones. A las 03:20, el supervisor revisa el libro de novedades.</p><span class="scene-skill">Observación y registro</span></div></article>
+            <article class="guard-scene" data-scene="02" data-name="Supermercado"><div class="scene-media"><img src="img/guardias-supermercado.webp" srcset="img/guardias-supermercado.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Ronda en el supermercado, con la hora del turno y los puntos por revisar sobre los pasillos."><span class="scene-counter">02 / 03</span><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="scene-text"><span class="scene-kicker">RONDAS DE VERIFICACIÓN</span><h4>Supermercado</h4><p>Revisar accesos, góndolas, cajas y bodega con los avisos de central. Distinguir una señal de una suposición.</p><span class="scene-skill">Criterio y comunicación</span></div></article>
+            <article class="guard-scene" data-scene="03" data-name="Banco"><div class="scene-media"><img src="img/guardias-banco.webp" srcset="img/guardias-banco.webp 1200w" sizes="(max-width: 600px) 90vw, 800px" width="1200" height="750" loading="lazy" decoding="async" alt="Hall de la sucursal bancaria, con clientes en fila frente a las cajas."><span class="scene-counter">03 / 03</span><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="scene-text"><span class="scene-kicker">PUESTO FIJO EN EL ACCESO</span><h4>Banco</h4><p>Una mañana normal termina en un asalto. Decidir cuándo no reaccionar, observar y declarar ante Carabineros solo lo que se vio.</p><span class="scene-skill">Autocontrol y declaración de hechos</span></div></article>
+            <p class="scoring-note">Cada escenario tiene una nota. Se aprueba desde <strong>60</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin section dark grain tone-transition" id="panel" aria-labelledby="panel-titulo">
+      <div class="container"><div class="section-heading reveal"><p class="eyebrow"><span class="section-index">03 /</span> PANEL DE LA EMPRESA</p><div class="heading-row"><h2 id="panel-titulo">La práctica se ve.<br> <span class="accent">El avance, también.</span></h2><p>Administra accesos, acompaña a tu equipo<br> y consulta los resultados en un solo panel.</p></div></div>
+        <div class="admin-tabs" role="tablist" aria-label="Funciones del panel"><span class="tab-indicator" aria-hidden="true"></span><button type="button" id="tab-personas" role="tab" aria-selected="true" aria-controls="vista-personas" tabindex="0">Personas</button><button type="button" id="tab-codigos" role="tab" aria-selected="false" aria-controls="vista-codigos" tabindex="-1">Códigos</button><button type="button" id="tab-reportes" role="tab" aria-selected="false" aria-controls="vista-reportes" tabindex="-1">Reportes</button><button type="button" id="tab-seguridad" role="tab" aria-selected="false" aria-controls="vista-seguridad" tabindex="-1">Seguridad</button></div>
+        <div class="admin-panels">
+          <div id="vista-personas" class="admin-view" role="tabpanel" aria-labelledby="tab-personas" tabindex="0"><div class="browser-frame admin-browser"><div class="browser-bar"><span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>classplay.cl / administración / personas</span></div><img src="img/panel-personas.webp" srcset="img/panel-personas.webp 1600w" sizes="(max-width: 600px) 90vw, 800px" width="1600" height="800" loading="lazy" decoding="async" alt="Pestaña Personas del panel: curso, inscripción, avance y acciones de cada persona."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="admin-features"><span class="card-eyebrow">PERSONAS</span><h3>El avance tiene nombre.</h3><ul><li>Consulta quién está registrado, sus cursos y su avance.</li><li>Suspende o reactiva cuentas y restablece contraseñas.</li><li>Da de baja inscripciones cuando corresponda.</li></ul></div></div>
+          <div id="vista-codigos" class="admin-view" role="tabpanel" aria-labelledby="tab-codigos" tabindex="0" hidden><div class="browser-frame admin-browser"><div class="browser-bar"><span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>classplay.cl / administración / códigos</span></div><img src="img/panel-codigos.webp" srcset="img/panel-codigos.webp 1600w" sizes="(max-width: 600px) 90vw, 800px" width="1600" height="800" loading="lazy" decoding="async" alt="Pestaña Códigos del panel: códigos emitidos con su curso, usos, vigencia y estado."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="admin-features"><span class="card-eyebrow">CÓDIGOS</span><h3>Acceso con orden.</h3><ul><li>Emite códigos de activación por curso.</li><li>Define los cupos y la vigencia de cada código.</li><li>Identifica cada grupo con una etiqueta.</li></ul></div></div>
+          <div id="vista-reportes" class="admin-view" role="tabpanel" aria-labelledby="tab-reportes" tabindex="0" hidden><div class="browser-frame admin-browser"><div class="browser-bar"><span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>classplay.cl / administración / reportes</span></div><img src="img/panel-reportes.webp" srcset="img/panel-reportes.webp 1600w" sizes="(max-width: 600px) 90vw, 800px" width="1600" height="800" loading="lazy" decoding="async" alt="Pestaña Reportes del panel: ranking del curso, cobertura por área y reportes en Excel."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="admin-features"><span class="card-eyebrow">REPORTES EN EXCEL</span><h3>Resultados para trabajar.</h3><ul><li>Exporta personas, avance y ranking.</li><li>Revisa la cobertura de capacitación por área.</li><li>Consulta el consumo de los códigos de acceso.</li></ul></div></div>
+          <div id="vista-seguridad" class="admin-view" role="tabpanel" aria-labelledby="tab-seguridad" tabindex="0" hidden><div class="browser-frame admin-browser"><div class="browser-bar"><span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>classplay.cl / administración / seguridad</span></div><img src="img/panel-seguridad.webp" srcset="img/panel-seguridad.webp 1600w" sizes="(max-width: 600px) 90vw, 800px" width="1600" height="800" loading="lazy" decoding="async" alt="Pestaña Seguridad del panel: resumen del curso y bitácora de acciones de los administradores."><span class="media-label" data-pending-media>CAPTURA PENDIENTE</span></div><div class="admin-features"><span class="card-eyebrow">SEGURIDAD</span><h3>Un registro de lo que ocurre.</h3><ul><li>Revisa las acciones de cada administrador.</li><li>Consulta la bitácora de administración.</li><li>Comprueba certificados mediante su código.</li></ul></div></div>
+        </div>
+        <div class="admin-footer"><span>También puedes publicar o retirar cursos.</span></div>
+      </div>
+    </section>
+
+    <section class="how section light tone-transition" id="como-funciona" aria-labelledby="como-titulo"><div class="container"><div class="section-heading reveal"><p class="eyebrow"><span class="section-index">04 /</span> CÓMO FUNCIONA</p><h2 id="como-titulo">De la invitación<br> <span class="muted">a la práctica.</span></h2></div><ol class="how-steps"><li><div class="step-top"><span>01</span><span class="step-line" aria-hidden="true"><i></i></span></div><h3>Tu empresa recibe<br> los códigos.</h3><p>Los accesos se organizan por curso, con cupos y vigencia. Tu equipo recibe el enlace y su código.</p></li><li><div class="step-top"><span>02</span><span class="step-line" aria-hidden="true"><i></i></span></div><h3>Cada persona entra<br> y practica.</h3><p>Se registra con RUT o ficha, activa su curso y resuelve los escenarios desde el navegador.</p></li><li><div class="step-top"><span>03</span><span class="step-line" aria-hidden="true"><i></i></span></div><h3>Tú sigues<br> el resultado.</h3><p>Consulta avances, resultados y certificados. Identifica quién empezó, quién continúa y quién completó.</p></li></ol>
+      <section class="verify-box reveal" id="certificados" aria-labelledby="certificados-titulo"><div><span class="verify-mark" aria-hidden="true">✓</span><div><p class="verify-eyebrow">VERIFICACIÓN DE CERTIFICADOS</p><h3 id="certificados-titulo">Un certificado. Una comprobación.</h3><p>Ingresa su código para verificarlo en la plataforma.</p></div></div><form id="verificar-form" action="/ingreso/" method="get"><label class="sr-only" for="codigo-certificado">Código del certificado</label><input type="text" id="codigo-certificado" name="codigo" placeholder="Código del certificado" required maxlength="100" autocomplete="off" autocapitalize="characters" spellcheck="false"><button type="submit" class="button button-primary">Verificar</button></form></section><p class="certificate-note">El certificado acredita la finalización del curso en ClassPlay. No constituye un título oficial.</p>
+    </div></section>
+  </main>
+  <footer class="site-footer dark"><div class="container"><div class="footer-main"><div><a class="brand" href="#inicio" title="Volver al inicio"><span>classplay<span class="brand-period">.</span></span></a><p>Un producto de Bitplay.</p></div><nav aria-label="Enlaces del pie"><a href="#cursos">Cursos</a><a href="#panel">Panel</a><a href="#como-funciona">Cómo funciona</a><a href="/ingreso/">Ingresar</a></nav></div><div class="footer-bottom"><p>© <span data-year>2026</span> ClassPlay · Bitplay</p><span>Aprender haciendo.</span></div></div></footer>
+</body>
+</html>

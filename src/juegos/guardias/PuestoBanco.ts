@@ -39,6 +39,8 @@ import { crearCarabinerosBanco } from "./CarabinerosBanco";
 import { crearManosGuardia, NOMBRE_CUERPO_GUARDIA } from "./ManosGuardia";
 import { crearPanelDeclaracion } from "./PanelDeclaracion";
 import { prepararPregunta, TOTAL_PREGUNTAS, type RespuestaDeclaracion } from "./DeclaracionBanco";
+import { calificarTurnoBanco, type CalificacionBanco } from "./CalificacionBanco";
+import { registrarTurno, NOTA_APROBACION } from "./HistorialTurnos";
 import {
   precargarAmbienteSala,
   iniciarAmbienteSala,
@@ -196,14 +198,13 @@ const SOBRE_LAS_CAMARAS = "Vamos a necesitar las grabaciones de las cámaras. Av
 /**
  * @param onSalir  Al dejar el puesto. "menu" vuelve al menú; "repetir" pide
  *                 montarlo otra vez.
- * @param usuario  Quien juega. Es con quien se guardará el turno.
+ * @param usuario  Quien juega. Es con quien se guarda el turno en el historial.
  */
 export async function crearPuestoBanco(
   scene: Scene,
   onSalir: (motivo?: MotivoSalida) => void,
   usuario = "invitado"
 ): Promise<PuestoBanco> {
-  void usuario;
   // Lo primero: vaciar lo que dejó el escenario anterior. Ver LimpiezaEscena.
   limpiarEscena(scene);
   scene.clearColor = new Color4(0.7, 0.78, 0.88, 1);
@@ -667,6 +668,10 @@ export async function crearPuestoBanco(
    */
   let etapa: "turno" | "llegada" | "declaracion" | "cierre" = "turno";
   const respuestas: RespuestaDeclaracion[] = [];
+  /** Cuándo empezó el turno de verdad: al cerrar la tarjeta del inicio. */
+  let iniciadoEn = new Date();
+  /** La nota y si se guardó, desde que se firma la declaración. */
+  let resultado: { calificacion: CalificacionBanco; guardado: boolean } | null = null;
 
   /**
    * Devuelve la vista al ratón, si se puede: con el turno corriendo y el
@@ -1048,6 +1053,11 @@ export async function crearPuestoBanco(
     panelDeclaracion.mostrarDocumento({ fecha, hora: horaDelTurno(reloj.minuto()), respuestas }, () => {
       if (cerrado) return;
       etapa = "cierre";
+      // El turno cuenta al firmar, como dice la pausa: se califica y se
+      // registra aquí, antes de la despedida. La tarjeta del cierre llega
+      // once segundos después, y lo que no puede perderse en ese rato es el
+      // resultado, no el cartel que lo muestra.
+      registrarResultado();
       encuadrar(() => carabineros.cara(), 0.5, 0.42);
       carabineros.guardarLibreta();
       // Medio segundo, a que se vaya el papel: el subtítulo va por encima de
@@ -1064,10 +1074,38 @@ export async function crearPuestoBanco(
     });
   };
 
+  /**
+   * Califica el turno y lo guarda en el historial. Una sola vez: firmar dos
+   * veces no puede registrar dos turnos.
+   *
+   * Al guardarse, el historial avisa al curso (ver JuegoGuardias), que sube el
+   * escenario a la plataforma si quedó aprobado.
+   */
+  const registrarResultado = (): void => {
+    if (resultado) return;
+    const calificacion = calificarTurnoBanco(decisiones, respuestas);
+    const { guardado } = registrarTurno({
+      usuario,
+      curso: "guardias",
+      escenario: 3,
+      iniciadoEn,
+      nota: calificacion.nota,
+      faltas: calificacion.faltas,
+      decisiones: calificacion.decisiones,
+    });
+    resultado = { calificacion, guardado };
+  };
+
   const mostrarCierre = (): void => {
     if (cerrado) return;
+    registrarResultado();
+    const { calificacion, guardado } = resultado!;
     panelDeclaracion.mostrarCierre(
       {
+        nota: calificacion.nota,
+        aprobado: calificacion.aprobado,
+        minimo: NOTA_APROBACION,
+        guardado,
         decisionesBien: decisiones.filter((d) => d.opcion.correcta).length,
         decisionesTotal: decisiones.length,
         declaracionBien: respuestas.filter((r) => r.correcta).length,
@@ -1121,6 +1159,7 @@ export async function crearPuestoBanco(
     camara.detachControl();
     paneles.mostrarBriefing(BRIEFING_TURNO, () => {
       if (cerrado) return;
+      iniciadoEn = new Date();
       camara.attachControl(true);
       hud.mostrar();
       gente.comenzar();

@@ -1327,12 +1327,15 @@
 }
 
 /* Ancho mínimo de 300 px: por debajo de eso el texto de la tarjeta se parte
-   en demasiadas líneas y la descripción deja de leerse de un vistazo. */
+   en demasiadas líneas y la descripción deja de leerse de un vistazo.
+   Las tarjetas de una misma fila, del mismo alto: con el pie empujado abajo
+   (ver .curso__pie), los botones quedan a la misma altura aunque un título
+   ocupe tres líneas y otro dos. */
 .rejilla {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 /* --- Tarjeta de curso --- */

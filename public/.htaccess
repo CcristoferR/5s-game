@@ -1,0 +1,43 @@
+# ===========================================================================
+# Configuración del servidor para la plataforma (Apache o LiteSpeed de cPanel)
+# ===========================================================================
+#
+# Vite copia este archivo tal cual a dist/ en cada build, así que viaja con
+# cada versión que se sube, y queda en /ingreso/, la carpeta de la plataforma.
+# La raíz del dominio tiene el suyo: inicio/.htaccess. No hace falta reescribir
+# rutas: la plataforma navega con # en la dirección (ver main.ts), y el
+# servidor siempre entrega index.html.
+
+# Siempre por https: el certificado está activo en cPanel.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Tipos que el servidor no trae de fábrica: los modelos 3D.
+AddType model/gltf-binary .glb
+AddType model/gltf+json .gltf
+
+# Comprimir el texto: el código y los estilos bajan varias veces más rápido.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json image/svg+xml
+</IfModule>
+
+# Caché del navegador.
+#   · assets/: cada build les cambia el nombre, así que se pueden guardar un
+#     año sin miedo a que alguien se quede con una versión vieja;
+#   · los modelos y el audio no cambian de nombre: un día, para que un cambio
+#     llegue a todos a más tardar al día siguiente;
+#   · la página principal, nunca: cada build nuevo se ve al recargar.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(glb|gltf|mp3|wav)$">
+    Header set Cache-Control "public, max-age=86400"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

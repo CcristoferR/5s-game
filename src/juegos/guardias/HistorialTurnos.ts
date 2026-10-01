@@ -66,8 +66,11 @@ export interface DecisionRegistrada {
   eligio: string;
   correspondia: string;
   correcta: boolean;
-  /** De qué lado se equivocó, si se equivocó. */
-  error?: "dejarPasar" | "sinMotivo";
+  /**
+   * De qué lado se equivocó, si se equivocó. Los dos primeros son los del
+   * supermercado; los otros dos, los del banco (ver MomentosBanco).
+   */
+  error?: "dejarPasar" | "sinMotivo" | "arriesgar" | "descuidar";
 }
 
 export interface TurnoRegistrado {
@@ -155,11 +158,35 @@ export interface DatosTurno {
 }
 
 /**
+ * Quien escucha los turnos que se registran: el curso (ver JuegoGuardias),
+ * que con cada escenario aprobado avisa a la plataforma.
+ *
+ * ─── POR QUÉ UN OYENTE Y NO UNA LLAMADA EN CADA ESCENARIO ─────────────────
+ *
+ * Los tres escenarios ya terminan aquí, en registrarTurno: es el único punto
+ * por el que pasa todo resultado. Escuchar aquí deja a los escenarios sin
+ * saber nada de la plataforma —ni de Supabase, ni de cuentas, ni de fases—, y
+ * un escenario nuevo queda conectado con solo registrar su turno.
+ */
+export type OyenteTurno = (turno: TurnoRegistrado) => void;
+
+let oyente: OyenteTurno | null = null;
+
+/** Pone (o quita, con null) a quien escucha los turnos registrados. */
+export function escucharTurnos(nuevo: OyenteTurno | null): void {
+  oyente = nuevo;
+}
+
+/**
  * Guarda un turno terminado.
  *
  * Devuelve el registro tal como quedó, aunque no se haya podido escribir: el
  * informe final lo necesita para mostrar la nota y el resumen, y eso tiene que
  * funcionar igual con el almacenamiento caído.
+ *
+ * Después avisa al oyente, si hay uno. También con el almacenamiento caído: la
+ * plataforma guarda por su lado, y que el navegador no pueda escribir no es
+ * motivo para que el avance no llegue al servidor.
  */
 export function registrarTurno(datos: DatosTurno): {
   turno: TurnoRegistrado;
@@ -187,6 +214,15 @@ export function registrarTurno(datos: DatosTurno): {
   };
 
   const guardado = escribir([...leer(), turno]);
+
+  // Un oyente que falla no puede tumbar el informe: el turno ya está guardado
+  // y la nota se tiene que ver igual.
+  try {
+    oyente?.(turno);
+  } catch (error) {
+    console.error("[historial] el oyente del turno falló:", error);
+  }
+
   return { turno, guardado };
 }
 

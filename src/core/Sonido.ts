@@ -20,7 +20,8 @@
  *     mismo sonido y se corta. Cada efecto guarda varias copias y va rotando,
  *     así suenan superpuestos como corresponde.
  *
- * Los archivos van en `public/audio/` y se sirven desde `/audio/`.
+ * Los archivos van en `public/audio/` y se sirven desde `audio/`, dentro de la
+ * carpeta del sitio (ver vite.config.ts).
  */
 
 export type EfectoSonido =
@@ -108,7 +109,7 @@ const EFECTOS: Record<EfectoSonido, DefinicionEfecto> = {
  */
 const DE_LA_SALA: readonly EfectoSonido[] = ["turnoBanco", "puertaGolpe", "exclamacion"];
 
-const CARPETA = "/audio/";
+const CARPETA = `${import.meta.env.BASE_URL}audio/`;
 
 interface CanalEfecto {
   copias: HTMLAudioElement[];

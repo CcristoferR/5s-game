@@ -1,8 +1,28 @@
 import { Scene } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, Image, TextBlock } from "@babylonjs/gui";
-import { generarCertificado, descargarCertificado, compartirCertificado } from "../core/Certificate";
-import { emitirCertificado, explicarRechazo } from "../portal/Datos";
+import {
+  generarCertificado,
+  descargarCertificado,
+  compartirCertificado,
+  CERTIFICADO_5S,
+  type DisenoCertificado,
+} from "../core/Certificate";
+import { emitirCertificado, explicarRechazo, CURSO_ID } from "../portal/Datos";
 import { PALETA, TEXTO, crearBotonPrincipal, crearBotonSecundario, afinarGui } from "./EstiloUI";
+
+/** Qué certificado se emite y cómo se ve. Sin esto, el del 5S. */
+export interface CursoDelCertificado {
+  cursoId: string;
+  diseno: DisenoCertificado;
+  /** Lo que se dice si el servidor responde que el curso no está completo. */
+  incompleto: string;
+}
+
+const CURSO_5S: CursoDelCertificado = {
+  cursoId: CURSO_ID,
+  diseno: CERTIFICADO_5S,
+  incompleto: "Todavía no completaste las cinco fases del curso.",
+};
 
 /**
  * Pantalla del certificado.
@@ -20,7 +40,8 @@ import { PALETA, TEXTO, crearBotonPrincipal, crearBotonSecundario, afinarGui } f
 export function mostrarCertificado(
   scene: Scene,
   onCerrar: () => void,
-  datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number }
+  datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number },
+  curso: CursoDelCertificado = CURSO_5S
 ): void {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("certificadoUI", true, scene);
   // Resolución de la capa según la pantalla: sin esto el texto sale blando
@@ -66,16 +87,13 @@ export function mostrarCertificado(
   void emitir();
 
   async function emitir(): Promise<void> {
-    const resultado = await emitirCertificado();
+    const resultado = await emitirCertificado(curso.cursoId);
 
     if (!resultado.ok) {
       // El caso esperable es "curso_incompleto", que en teoría no debería
-      // ocurrir porque al certificado solo se llega tras aprobar el nivel 5.
+      // ocurrir porque al certificado solo se llega tras completar el curso.
       // Si pasa, el mensaje dice qué falta en vez de dejar la pantalla muda.
-      aviso.text =
-        resultado.motivo === "curso_incompleto"
-          ? "Todavía no completaste las cinco fases del curso."
-          : explicarRechazo("otro");
+      aviso.text = resultado.motivo === "curso_incompleto" ? curso.incompleto : explicarRechazo("otro");
       aviso.color = PALETA.error;
       return;
     }
@@ -85,7 +103,7 @@ export function mostrarCertificado(
   }
 
   function dibujar(certificado: Parameters<typeof generarCertificado>[0]): void {
-    const dataUrl = generarCertificado(certificado, datosAuditoria);
+    const dataUrl = generarCertificado(certificado, datosAuditoria, curso.diseno);
 
     const imagen = new Image("imagenCertificado", dataUrl);
     // 880x623 conserva exactamente la proporción del lienzo (1200x850): si se
@@ -113,7 +131,7 @@ export function mostrarCertificado(
     botonDescargar.top = "338px";
     botonDescargar.left = "-130px";
     botonDescargar.onPointerUpObservable.add(() =>
-      descargarCertificado(dataUrl, certificado.codigo)
+      descargarCertificado(dataUrl, certificado.codigo, curso.diseno)
     );
     fondo.addControl(botonDescargar);
 
@@ -121,7 +139,7 @@ export function mostrarCertificado(
     botonCompartir.top = "338px";
     botonCompartir.left = "130px";
     botonCompartir.onPointerUpObservable.add(() =>
-      void compartirCertificado(dataUrl, certificado.codigo)
+      void compartirCertificado(dataUrl, certificado.codigo, curso.diseno)
     );
     fondo.addControl(botonCompartir);
   }

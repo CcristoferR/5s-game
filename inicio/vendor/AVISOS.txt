@@ -1,0 +1,3 @@
+GSAP y ScrollTrigger 3.14.2 — Copyright GreenSock, Inc. Todos los derechos reservados. Licencia estándar: https://gsap.com/standard-license/ . Se conservan los avisos originales en cada archivo.
+Lenis 1.3.11 — MIT. Ver lenis.LICENSE.txt.
+Geist Variable 5.2.5 (@fontsource-variable/geist) — SIL Open Font License 1.1. Ver ../fonts/OFL.txt.

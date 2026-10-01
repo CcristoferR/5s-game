@@ -17,6 +17,55 @@ const ANCHO = 1200;
 const ALTO = 850;
 
 /**
+ * Lo que cambia de un curso a otro en el papel. El resto —marco, nombre,
+ * casillas, código— es el mismo documento para todos.
+ */
+export interface DisenoCertificado {
+  /** "Operación 5S". */
+  titulo: string;
+  /** La línea bajo el título. */
+  bajada: string;
+  /** Lo que se certifica, tras el nombre: "completó las cinco fases del programa:". */
+  logro: string;
+  /** Las fases o escenarios, en una línea. */
+  contenido: string;
+  /** Lo que va dentro del sello. */
+  sello: string;
+  /** Comienzo del nombre del archivo descargado: "certificado-5s". */
+  archivo: string;
+  /** Título y texto al compartir. */
+  compartirTitulo: string;
+  compartirTexto: string;
+}
+
+export const CERTIFICADO_5S: DisenoCertificado = {
+  titulo: "Operación 5S",
+  bajada: "Programa de formación en metodología 5S",
+  logro: "completó las cinco fases del programa:",
+  contenido: "Clasificar · Ordenar · Limpiar · Estandarizar · Disciplina",
+  sello: "5S",
+  archivo: "certificado-5s",
+  compartirTitulo: "Certificado 5S",
+  compartirTexto: "Completé el programa de formación 5S.",
+};
+
+/**
+ * El de guardias. Dice "basado en el manual de apoyo OS10" y nada más: el
+ * curso oficial de guardia lo dictan capacitadores acreditados y se rinde ante
+ * OS10, y este papel no puede leerse como si lo reemplazara.
+ */
+export const CERTIFICADO_GUARDIAS: DisenoCertificado = {
+  titulo: "Guardias de Seguridad",
+  bajada: "Formación práctica basada en el manual de apoyo OS10",
+  logro: "aprobó los tres escenarios del curso:",
+  contenido: "Condominio · Supermercado · Banco",
+  sello: "GS",
+  archivo: "certificado-guardias",
+  compartirTitulo: "Certificado Guardias de Seguridad",
+  compartirTexto: "Aprobé el curso Guardias de Seguridad.",
+};
+
+/**
  * Píxeles reales por unidad de dibujo.
  *
  * Todo se traza con las medidas de arriba, pero el lienzo se crea al doble y
@@ -32,7 +81,8 @@ const ESCALA = 2;
 
 export function generarCertificado(
   certificado: Certificado,
-  datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number }
+  datosAuditoria?: { promedioCalificacion: number; tasaAcierto: number },
+  diseno: DisenoCertificado = CERTIFICADO_5S
 ): string {
   const canvas = document.createElement("canvas");
   canvas.width = ANCHO * ESCALA;
@@ -44,10 +94,10 @@ export function generarCertificado(
   ctx.scale(ESCALA, ESCALA);
 
   fondoYMarco(ctx);
-  encabezado(ctx);
-  cuerpo(ctx, certificado);
+  encabezado(ctx, diseno);
+  cuerpo(ctx, certificado, diseno);
   resultados(ctx, certificado, datosAuditoria);
-  pie(ctx, certificado);
+  pie(ctx, certificado, diseno);
 
   return canvas.toDataURL("image/png");
 }
@@ -86,7 +136,7 @@ function fondoYMarco(ctx: CanvasRenderingContext2D): void {
   });
 }
 
-function encabezado(ctx: CanvasRenderingContext2D): void {
+function encabezado(ctx: CanvasRenderingContext2D, d: DisenoCertificado): void {
   ctx.textAlign = "center";
 
   ctx.fillStyle = "#8a7a4a";
@@ -97,11 +147,11 @@ function encabezado(ctx: CanvasRenderingContext2D): void {
 
   ctx.fillStyle = "#12261c";
   ctx.font = "bold 52px Georgia, 'Times New Roman', serif";
-  ctx.fillText("Operación 5S", ANCHO / 2, 192);
+  ctx.fillText(d.titulo, ANCHO / 2, 192);
 
   ctx.fillStyle = "#5a6b60";
   ctx.font = "20px system-ui, sans-serif";
-  ctx.fillText("Programa de formación en metodología 5S", ANCHO / 2, 226);
+  ctx.fillText(d.bajada, ANCHO / 2, 226);
 
   ctx.strokeStyle = "#c9a227";
   ctx.lineWidth = 2;
@@ -111,7 +161,7 @@ function encabezado(ctx: CanvasRenderingContext2D): void {
   ctx.stroke();
 }
 
-function cuerpo(ctx: CanvasRenderingContext2D, c: Certificado): void {
+function cuerpo(ctx: CanvasRenderingContext2D, c: Certificado, d: DisenoCertificado): void {
   ctx.textAlign = "center";
 
   ctx.fillStyle = "#5a6b60";
@@ -143,9 +193,9 @@ function cuerpo(ctx: CanvasRenderingContext2D, c: Certificado): void {
 
   ctx.fillStyle = "#3a4a42";
   ctx.font = "19px system-ui, sans-serif";
-  ctx.fillText("completó las cinco fases del programa:", ANCHO / 2, 462);
+  ctx.fillText(d.logro, ANCHO / 2, 462);
   ctx.font = "600 19px system-ui, sans-serif";
-  ctx.fillText("Clasificar · Ordenar · Limpiar · Estandarizar · Disciplina", ANCHO / 2, 492);
+  ctx.fillText(d.contenido, ANCHO / 2, 492);
 }
 
 function resultados(
@@ -196,7 +246,7 @@ function resultados(
   });
 }
 
-function pie(ctx: CanvasRenderingContext2D, c: Certificado): void {
+function pie(ctx: CanvasRenderingContext2D, c: Certificado, d: DisenoCertificado): void {
   // Sello a la izquierda.
   const sx = 250;
   const sy = 700;
@@ -213,7 +263,7 @@ function pie(ctx: CanvasRenderingContext2D, c: Certificado): void {
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 26px system-ui, sans-serif";
-  ctx.fillText("5S", sx, sy + 9);
+  ctx.fillText(d.sello, sx, sy + 9);
 
   // Código de verificación a la derecha. Es lo que convierte esta imagen en
   // un documento comprobable: sin él, cualquiera podría fabricar uno igual.
@@ -264,12 +314,16 @@ function fechaCorta(iso: string): string {
   });
 }
 
-export function descargarCertificado(dataUrl: string, codigo: string): void {
+export function descargarCertificado(
+  dataUrl: string,
+  codigo: string,
+  diseno: DisenoCertificado = CERTIFICADO_5S
+): void {
   const enlace = document.createElement("a");
   enlace.href = dataUrl;
   // El código en el nombre del archivo: si alguien guarda varios certificados,
   // se distinguen sin abrirlos.
-  enlace.download = `certificado-5s-${codigo}.png`;
+  enlace.download = `${diseno.archivo}-${codigo}.png`;
   enlace.click();
 }
 
@@ -279,7 +333,11 @@ export function descargarCertificado(dataUrl: string, codigo: string): void {
  * No todos los navegadores lo soportan, sobre todo en escritorio. Si no está
  * disponible no hace nada: la descarga sigue siendo la vía principal.
  */
-export async function compartirCertificado(dataUrl: string, codigo: string): Promise<void> {
+export async function compartirCertificado(
+  dataUrl: string,
+  codigo: string,
+  diseno: DisenoCertificado = CERTIFICADO_5S
+): Promise<void> {
   const nav = navigator as Navigator & {
     share?: (datos: unknown) => Promise<void>;
     canShare?: (datos: unknown) => boolean;
@@ -287,12 +345,12 @@ export async function compartirCertificado(dataUrl: string, codigo: string): Pro
   if (!nav.share) return;
 
   const blob = await (await fetch(dataUrl)).blob();
-  const archivo = new File([blob], `certificado-5s-${codigo}.png`, { type: "image/png" });
+  const archivo = new File([blob], `${diseno.archivo}-${codigo}.png`, { type: "image/png" });
 
   try {
     await nav.share({
-      title: "Certificado 5S",
-      text: `Completé el programa de formación 5S. Código de verificación: ${codigo}`,
+      title: diseno.compartirTitulo,
+      text: `${diseno.compartirTexto} Código de verificación: ${codigo}`,
       files: [archivo],
     });
   } catch {

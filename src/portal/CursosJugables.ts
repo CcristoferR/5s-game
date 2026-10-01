@@ -85,7 +85,9 @@ const REGISTRO: Record<string, CargadorDeJuego> = {
   }),
 
   [CURSO_GUARDIAS]: () => ({
-    totalFases: 1,
+    // Una fase por escenario: condominio, supermercado y banco. Tiene que
+    // cuadrar con total_fases de la fila del curso en la base.
+    totalFases: 3,
     // Igual que el 5S: necesita la escena que monta main.ts, asi que main.ts
     // publica aqui su arrancador. El import dinamico se hace ahi, para que el
     // navegador no descargue este juego si la persona abrio el otro.

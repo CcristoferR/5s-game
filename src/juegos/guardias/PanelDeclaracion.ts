@@ -93,6 +93,13 @@ export interface DocumentoDeclaracion {
 
 /** Lo que cuenta la tarjeta del cierre. */
 export interface CierreBanco {
+  /** De 0 a 100. Ver CalificacionBanco. */
+  nota: number;
+  aprobado: boolean;
+  /** Nota mínima para aprobar, para decirla en la tarjeta. */
+  minimo: number;
+  /** Si el turno se pudo guardar en este equipo. */
+  guardado: boolean;
   decisionesBien: number;
   decisionesTotal: number;
   declaracionBien: number;
@@ -119,7 +126,7 @@ export interface PanelDeclaracion {
   mostrarPregunta(p: PreguntaEnPanel, alElegir: (o: OpcionDeclaracion) => void, alSeguir: () => void): void;
   /** Lo declarado, en papel, para firmar. */
   mostrarDocumento(doc: DocumentoDeclaracion, alFirmar: () => void): void;
-  /** El final del turno, por ahora: cómo fue y las dos salidas. */
+  /** El final del turno: la nota, cómo fue y las dos salidas. */
   mostrarCierre(cierre: CierreBanco, alRepetir: () => void, alSalir: () => void): void;
   dispose(): void;
 }
@@ -702,15 +709,28 @@ export function crearPanelDeclaracion(scene: Scene): PanelDeclaracion {
       const cierre =
         "Carabineros se queda con lo que viste. Nada puede reemplazar lo que no alcanzaste a ver: por eso, en " +
         "un asalto, lo primero es no exponerse, y lo segundo, mirar.";
+      // La nota, como en el informe del condominio: el color dice si aprobó
+      // antes de leer el número, y la línea de abajo, cuánto hacía falta.
+      const colorNota = c.aprobado ? PALETA.acierto : PALETA.error;
+      const minimo = c.guardado
+        ? `Mínimo para aprobar: ${c.minimo}. El turno queda registrado.`
+        : `Mínimo para aprobar: ${c.minimo}. No se pudo guardar el turno en este equipo.`;
       const alto =
-        28 + 18 + 10 + altoDeTexto(titulo, DENTRO, TEXTO.titulo) + 20 + 1 + 18 + 34 + 10 + 34 + 4 +
+        28 + 18 + 10 + altoDeTexto(titulo, DENTRO, TEXTO.titulo) + 14 + 44 + 4 +
+        altoDeTexto(minimo, DENTRO, TEXTO.menor) + 20 + 1 + 18 + 34 + 10 + 34 + 4 +
         altoDeTexto(detalle, DENTRO, TEXTO.menor) + 20 + altoDeTexto(cierre, DENTRO, TEXTO.menor) + 110;
       const velo = nuevoVelo("CierreBanco", 0.76);
-      const { tarjeta, columna } = nuevaTarjeta(velo, "CierreBanco", ANCHO_CIERRE, alto, ACENTO, false);
+      const { tarjeta, columna } = nuevaTarjeta(velo, "CierreBanco", ANCHO_CIERRE, alto, colorNota, false);
 
-      columna.addControl(crearRotulo("rotuloCierreBanco", "FIN DEL TURNO", ACENTO));
+      columna.addControl(
+        crearRotulo("rotuloCierreBanco", c.aprobado ? "TURNO APROBADO" : "TURNO NO APROBADO", colorNota)
+      );
       columna.addControl(crearEspacio("aireTituloCierreBanco", 10));
       columna.addControl(crearParrafo("tituloCierreBanco", titulo, DENTRO, TEXTO.titulo, PALETA.titulo, "600"));
+      columna.addControl(crearEspacio("aireNotaBanco", 14));
+      columna.addControl(crearParrafo("puntajeCierreBanco", `${c.nota} / 100`, DENTRO, TEXTO.mayor, colorNota, "600"));
+      columna.addControl(crearEspacio("aireMinimoBanco", 4));
+      columna.addControl(crearParrafo("minimoCierreBanco", minimo, DENTRO, TEXTO.menor, PALETA.tenue));
       columna.addControl(crearEspacio("aireDivisorCierreBanco", 20));
       columna.addControl(crearDivisor("divisorCierreBanco", DENTRO));
       columna.addControl(crearEspacio("airePostDivisorCierreBanco", 18));

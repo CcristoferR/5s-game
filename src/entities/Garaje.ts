@@ -13,7 +13,7 @@ import "@babylonjs/loaders/glTF";
 import { crearExteriorGaraje, hacerVidriosTransparentes } from "./CieloExterior";
 
 export interface OpcionesGaraje {
-  /** Ruta del .glb dentro de /public. Vite lo sirve desde la raíz. */
+  /** Ruta del .glb. Por defecto el de public/models, dentro de la carpeta del sitio. */
   ruta?: string;
   /** Multiplicador extra si el garaje entra muy grande o muy chico. */
   escala?: number;
@@ -51,7 +51,7 @@ export interface GarajeCargado {
  * sigue funcionando sin tocar este archivo.
  */
 export async function cargarGaraje(scene: Scene, opciones: OpcionesGaraje = {}): Promise<GarajeCargado> {
-  const ruta = opciones.ruta ?? "/models/garaje.glb";
+  const ruta = opciones.ruta ?? `${import.meta.env.BASE_URL}models/garaje.glb`;
   const escala = opciones.escala ?? 1;
 
   // El exterior se arma antes de pedir el modelo: no depende de él y así el

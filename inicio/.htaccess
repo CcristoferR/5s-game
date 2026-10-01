@@ -1,0 +1,43 @@
+# ===========================================================================
+# Raíz de classplay.cl: la página de inicio
+# ===========================================================================
+#
+# La plataforma vive en /ingreso/ y lleva su propio .htaccess (el de public/
+# en el proyecto). Este es el de la raíz, y viaja en el zip de la página de
+# inicio: npm run publicar:inicio.
+
+# Siempre por https.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Comprimir el texto.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript image/svg+xml
+</IfModule>
+
+# La página de inicio se revalida siempre: un cambio se ve al recargar.
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# Tipos de archivo para las fuentes y los videos locales.
+<IfModule mod_mime.c>
+  AddType font/woff2 .woff2
+  AddType image/webp .webp
+  AddType video/webm .webm
+  AddType video/mp4 .mp4
+</IfModule>
+
+# Los recursos conservan su nombre al reemplazarlos: siempre revalidar.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(css|js|webp|jpg|svg|woff2|webm|mp4)$">
+    Header set Cache-Control "public, max-age=0, must-revalidate"
+  </FilesMatch>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

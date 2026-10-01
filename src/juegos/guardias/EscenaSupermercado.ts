@@ -44,7 +44,7 @@ import { afinarMateriales } from "./MaterialesModelo";
 // iluminación: un galpón se ilumina distinto que una sala de ventas.
 
 export interface OpcionesSupermercado {
-  /** Ruta del .glb dentro de /public. Vite lo sirve desde la raíz. */
+  /** Ruta del .glb. Por defecto el de public/models, dentro de la carpeta del sitio. */
   ruta?: string;
   /** Multiplicador extra, por si el escenario entra grande o chico. */
   escala?: number;
@@ -114,7 +114,7 @@ export async function cargarSupermercado(
   scene: Scene,
   opciones: OpcionesSupermercado = {}
 ): Promise<SupermercadoCargado> {
-  const ruta = opciones.ruta ?? "/models/supermercado.glb";
+  const ruta = opciones.ruta ?? `${import.meta.env.BASE_URL}models/supermercado.glb`;
   const escala = opciones.escala ?? 1;
 
   const resultado = await ImportMeshAsync(ruta, scene);

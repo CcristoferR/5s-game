@@ -29,6 +29,16 @@ const COLORES_PODIO: Record<number, string> = {
   3: "#c98a4b",
 };
 
+/** De qué curso es el ranking y cómo se cuentan sus partes. Sin esto, el 5S. */
+export interface CursoDelRanking {
+  cursoId: string;
+  totalFases: number;
+  /** Cómo se llaman sus partes en la fila: "fases" o "escenarios". */
+  unidad: string;
+}
+
+const RANKING_5S: CursoDelRanking = { cursoId: CURSO_ID, totalFases: 5, unidad: "fases" };
+
 /**
  * Ranking del curso.
  *
@@ -46,7 +56,11 @@ const COLORES_PODIO: Record<number, string> = {
  * no acá: si dependieran de esta pantalla, bastaría con abrir la consola del
  * navegador para saltárselos.
  */
-export function mostrarRankingCurso(scene: Scene, onCerrar: () => void): void {
+export function mostrarRankingCurso(
+  scene: Scene,
+  onCerrar: () => void,
+  curso: CursoDelRanking = RANKING_5S
+): void {
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("rankingUI", true, scene);
   // Resolución de la capa según la pantalla: sin esto el texto sale blando
 
@@ -139,7 +153,10 @@ export function mostrarRankingCurso(scene: Scene, onCerrar: () => void): void {
   async function cargar(): Promise<void> {
     // Las dos consultas van en paralelo: son independientes y así la pantalla
     // no espera una detrás de la otra.
-    const [podio, posicion] = await Promise.all([podioDelCurso(CURSO_ID, 10), miPosicion(CURSO_ID)]);
+    const [podio, posicion] = await Promise.all([
+      podioDelCurso(curso.cursoId, 10),
+      miPosicion(curso.cursoId),
+    ]);
 
     // La escena pudo destruirse mientras llegaban los datos: si el jugador
     // cerró la pantalla o volvió al menú, escribir acá reventaría contra
@@ -158,7 +175,7 @@ export function mostrarRankingCurso(scene: Scene, onCerrar: () => void): void {
       lista.addControl(
         crearParrafo(
           "vacioRanking",
-          "Nadie de tu empresa completó fases de este curso por ahora. En cuanto alguien apruebe la primera, aparecerá acá.",
+          `Nadie de tu empresa completó ${curso.unidad} de este curso por ahora. En cuanto alguien apruebe la primera, aparecerá acá.`,
           ANCHO_CONTENIDO,
           TEXTO.cuerpo
         )
@@ -182,7 +199,10 @@ export function mostrarRankingCurso(scene: Scene, onCerrar: () => void): void {
         ? `Tu puntaje: ${posicion.puntajeTotal} · ${formatearDuracion(posicion.segundosTotal)}`
         : `Tu posición: ${posicion.posicion}º de ${posicion.participantes} · ${posicion.puntajeTotal} puntos`;
     } else {
-      resumen.text = "Completa una fase para entrar al ranking.";
+      resumen.text =
+        curso.unidad === "fases"
+          ? "Completa una fase para entrar al ranking."
+          : "Aprueba un escenario para entrar al ranking.";
     }
   }
 
@@ -232,7 +252,7 @@ export function mostrarRankingCurso(scene: Scene, onCerrar: () => void): void {
 
     const detalle = new TextBlock(
       `detalleRanking_${fila.perfilId}`,
-      `${fila.area || "—"} · ${fila.fasesAprobadas} de 5 fases · ${formatearDuracion(fila.segundosTotal)}`
+      `${fila.area || "—"} · ${fila.fasesAprobadas} de ${curso.totalFases} ${curso.unidad} · ${formatearDuracion(fila.segundosTotal)}`
     );
     detalle.color = PALETA.rotulo;
     detalle.fontSize = TEXTO.rotulo;

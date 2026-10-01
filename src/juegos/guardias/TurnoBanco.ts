@@ -58,7 +58,7 @@ export const MINUTOS_HASTA_CARABINEROS = 20;
 export const MINUTO_FINAL = 90;
 
 /**
- * ─── PRUEBA RÁPIDA — PONER EN false AL TERMINAR DE PROBAR ───────────────
+ * ─── PRUEBA RÁPIDA — SOLO MIENTRAS SE PRUEBA ────────────────────────────
  *
  * Mientras se construye el asalto, esperar los dos minutos de mañana
  * tranquila en cada prueba es perder el tiempo. Con esto en true, al cerrar
@@ -68,8 +68,13 @@ export const MINUTO_FINAL = 90;
  *
  * En false, el turno es el de verdad: dos minutos de mañana y el asalto sin
  * aviso.
+ *
+ * Para probar, cambiar el `false` de abajo por `true`. Solo vale en
+ * `npm run dev`: en la versión publicada (`npm run build`) import.meta.env.DEV
+ * es false, así que la plataforma nunca sale con la prueba rápida puesta
+ * aunque se olvide volverla a false.
  */
-export const PRUEBA_RAPIDA = true;
+export const PRUEBA_RAPIDA = import.meta.env.DEV && false;
 
 /**
  * Hasta dónde corre la mañana la prueba rápida: las 9:34, veintisiete

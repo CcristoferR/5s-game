@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "publicar": "npm run build && node scripts/empaquetar.mjs",
+    "publicar:inicio": "node scripts/empaquetar.mjs inicio",
     "preview": "vite preview",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
