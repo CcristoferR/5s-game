@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-02T12:10:00-03:00",
+  "title": "Design System: ClassPlay",
+  "extensions": {
+    "colorMeta": {
+      "lima-classplay": {
+        "role": "primary",
+        "displayName": "Lima ClassPlay",
+        "canonical": "oklch(88.4% 0.163 128.6)",
+        "tonalRamp": ["#001200", "#062e00", "#234d00", "#406d00", "#629100", "#82b435", "#a7db60", "#d1ff94"]
+      },
+      "verde-campo": {
+        "role": "primary",
+        "displayName": "Verde campo",
+        "canonical": "oklch(46.7% 0.109 131.5)",
+        "tonalRamp": ["#001100", "#0d2d00", "#294a00", "#466a21", "#688d46", "#89b067", "#aed68b", "#d4feb2"]
+      },
+      "noche-panel": {
+        "role": "neutral",
+        "displayName": "Noche panel",
+        "canonical": "oklch(20.3% 0.009 255.6)",
+        "tonalRamp": ["#090b0f", "#212429", "#3d4045", "#5a5e63", "#7d8186", "#9ea2a7", "#c3c8cd", "#eaeff5"]
+      },
+      "papel-fondo": {
+        "role": "neutral",
+        "displayName": "Papel cálido",
+        "canonical": "oklch(96.1% 0.005 95.1)",
+        "tonalRamp": ["#0c0b09", "#252421", "#40403d", "#5e5e5a", "#81807d", "#a2a19e", "#c8c7c3", "#efeeea"]
+      },
+      "aviso-noche": {
+        "role": "status",
+        "displayName": "Ámbar de aviso",
+        "canonical": "oklch(79.3% 0.117 74.2)",
+        "tonalRamp": ["#220000", "#431400", "#623200", "#845100", "#a9741e", "#cc9646", "#f4bc6d", "#ffe9bc"]
+      },
+      "error-noche": {
+        "role": "status",
+        "displayName": "Coral de error",
+        "canonical": "oklch(78.8% 0.094 33.1)",
+        "tonalRamp": ["#210000", "#470901", "#68291c", "#8b483a", "#b16b5b", "#d68c7b", "#feb1a0", "#ffe5dd"]
+      }
+    },
+    "typographyMeta": {
+      "marca": { "displayName": "Marca", "purpose": "El nombre classplay. junto a la C; es logo, no texto corrido." },
+      "display": { "displayName": "Display", "purpose": "Título de cada pantalla del portal y del panel." },
+      "cifra": { "displayName": "Cifra", "purpose": "Cifras de cabecera del panel, proporcionales." },
+      "title": { "displayName": "Título de bloque", "purpose": "Encabezado de cada plancha o bloque." },
+      "body": { "displayName": "Cuerpo", "purpose": "Tablas, fichas y ayudas." },
+      "label": { "displayName": "Rótulo", "purpose": "Rótulos de campos, ejes y notas bajo un título." },
+      "codigo": { "displayName": "Código", "purpose": "Códigos de inscripción, de certificado y claves temporales." }
+    },
+    "shadows": [
+      { "name": "flotante-noche", "value": "0 12px 32px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3)", "purpose": "Ayudas emergentes, avisos y la ficha lateral en tema oscuro." },
+      { "name": "flotante-papel", "value": "0 14px 36px rgba(19,20,23,.16), 0 2px 6px rgba(19,20,23,.08)", "purpose": "Lo mismo en tema claro." },
+      { "name": "apoyo-papel", "value": "0 1px 3px rgba(19,20,23,.08), 0 8px 24px rgba(19,20,23,.05)", "purpose": "Tarjeta blanca de acceso y Mi cuenta sobre el papel." }
+    ],
+    "motion": [
+      { "name": "salida-exponencial", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Entrada de los gráficos, la ficha y los avisos." },
+      { "name": "crecer-graficos", "value": "0.7s, 45ms de escalonado por fila", "purpose": "El único momento animado: las barras crecen y la curva se traza al abrir el panel por primera vez." },
+      { "name": "estado", "value": "0.15s", "purpose": "Hover y cambios de color de controles." }
+    ],
+    "breakpoints": [
+      { "name": "apilar-planchas", "value": "1100px" },
+      { "name": "riel-arriba", "value": "900px" },
+      { "name": "lista-movil", "value": "600px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "La acción principal de una pantalla: lima con tinta en tema oscuro.",
+      "html": "<button class=\"ds-btn-primario\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg>Generar código</button>",
+      "css": ".ds-btn-primario { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--portal-boton-fondo, #b8ed72); color: var(--portal-boton-texto, #131a0d); font: 600 14px Geist, system-ui, sans-serif; cursor: pointer; transition: background .15s; } .ds-btn-primario svg { width: 17px; height: 17px; } .ds-btn-primario:hover { background: var(--portal-boton-hover, #cbf590); } .ds-btn-primario:focus-visible { outline: 2px solid var(--portal-marca, #b8ed72); outline-offset: 2px; }"
+    },
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Acciones de apoyo: descargar, copiar, abrir el verificador.",
+      "html": "<button class=\"ds-btn-secundario\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3.5v11.5\"/><path d=\"m7.25 10.25 4.75 4.75 4.75-4.75\"/><path d=\"M4.5 20.5h15\"/></svg>Descargar</button>",
+      "css": ".ds-btn-secundario { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border: 1px solid var(--portal-borde, rgba(255,255,255,.1)); border-radius: 8px; background: var(--portal-realce, rgba(255,255,255,.05)); color: var(--portal-titulo, #f5f4f0); font: 500 14px Geist, system-ui, sans-serif; cursor: pointer; transition: background .15s, border-color .15s; } .ds-btn-secundario svg { width: 17px; height: 17px; } .ds-btn-secundario:hover { border-color: var(--portal-realce-borde, rgba(255,255,255,.3)); background: var(--portal-realce-medio, rgba(255,255,255,.09)); } .ds-btn-secundario:focus-visible { outline: 2px solid var(--portal-marca, #b8ed72); outline-offset: 2px; }"
+    },
+    {
+      "name": "Campo de texto",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Campo hundido en el panel; el foco se marca con el lima.",
+      "html": "<label class=\"ds-campo\"><span>Lote</span><input placeholder=\"PLANTA\" /></label>",
+      "css": ".ds-campo { display: flex; flex-direction: column; gap: 6px; font-family: Geist, system-ui, sans-serif; } .ds-campo span { color: var(--portal-rotulo, #9a9d96); font-size: 12.5px; font-weight: 500; } .ds-campo input { padding: 9px 12px; border: 1px solid var(--portal-borde, rgba(255,255,255,.1)); border-radius: 8px; background: var(--portal-hundido, #101215); color: var(--portal-titulo, #f5f4f0); font: 14px Geist, system-ui, sans-serif; } .ds-campo input::placeholder { color: var(--portal-tenue, #878a83); } .ds-campo input:focus { outline: none; border-color: var(--portal-marca-borde, rgba(184,237,114,.42)); box-shadow: 0 0 0 3px var(--portal-marca-suave, rgba(184,237,114,.12)); }"
+    },
+    {
+      "name": "Filtro",
+      "kind": "chip",
+      "refersTo": "filter-chip-active",
+      "description": "Filtros de lista con su cuenta; el activo se invierte.",
+      "html": "<div class=\"ds-filtros\"><button class=\"ds-filtro\" aria-pressed=\"true\">Todas <span>90</span></button><button class=\"ds-filtro\" aria-pressed=\"false\">Sin empezar <span>13</span></button></div>",
+      "css": ".ds-filtros { display: flex; gap: 6px; } .ds-filtro { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--portal-borde, rgba(255,255,255,.1)); border-radius: 999px; background: transparent; color: var(--portal-cuerpo, #c9cbc4); font: 500 13px Geist, system-ui, sans-serif; cursor: pointer; } .ds-filtro span { opacity: .72; font-size: 12px; font-variant-numeric: tabular-nums; } .ds-filtro:hover { background: var(--portal-realce, rgba(255,255,255,.05)); color: var(--portal-titulo, #f5f4f0); } .ds-filtro[aria-pressed=\"true\"] { border-color: var(--portal-titulo, #f5f4f0); background: var(--portal-titulo, #f5f4f0); color: var(--portal-fondo, #0d0e10); } .ds-filtro:focus-visible { outline: 2px solid var(--portal-marca, #b8ed72); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ítem del riel",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Sección del panel; la activa tiene el ícono en lima.",
+      "html": "<nav class=\"ds-riel\"><a class=\"ds-riel-item\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><rect x=\"3.5\" y=\"3.5\" width=\"7\" height=\"8.5\" rx=\"1.5\"/><rect x=\"13.5\" y=\"3.5\" width=\"7\" height=\"5\" rx=\"1.5\"/><rect x=\"13.5\" y=\"11.5\" width=\"7\" height=\"9\" rx=\"1.5\"/><rect x=\"3.5\" y=\"15\" width=\"7\" height=\"5.5\" rx=\"1.5\"/></svg>Resumen</a><a class=\"ds-riel-item\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><circle cx=\"9\" cy=\"8\" r=\"3.5\"/><path d=\"M15.5 20.5v-1.25a3.75 3.75 0 0 0-3.75-3.75h-5.5a3.75 3.75 0 0 0-3.75 3.75v1.25\"/></svg>Personas<span>130</span></a></nav>",
+      "css": ".ds-riel { display: flex; flex-direction: column; gap: 2px; width: 224px; } .ds-riel-item { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; color: var(--portal-cuerpo, #c9cbc4); font: 500 14.5px Geist, system-ui, sans-serif; cursor: pointer; transition: background .15s, color .15s; } .ds-riel-item svg { width: 19px; height: 19px; color: var(--portal-rotulo, #9a9d96); } .ds-riel-item span { margin-left: auto; color: var(--portal-rotulo, #9a9d96); font-size: 12px; font-variant-numeric: tabular-nums; } .ds-riel-item:hover { background: var(--portal-realce, rgba(255,255,255,.05)); color: var(--portal-titulo, #f5f4f0); } .ds-riel-item[aria-current=\"page\"] { background: var(--portal-realce-medio, rgba(255,255,255,.09)); color: var(--portal-titulo, #f5f4f0); } .ds-riel-item[aria-current=\"page\"] svg { color: var(--portal-marca, #b8ed72); }"
+    },
+    {
+      "name": "Banda de cifras",
+      "kind": "custom",
+      "refersTo": "plancha",
+      "description": "Las cifras de cabecera en una sola banda; cada una abre su lista.",
+      "html": "<div class=\"ds-cifras\"><button class=\"ds-cifra\"><span>Inscritos</span><strong>88</strong><small>+18 en los últimos 7 días</small></button><button class=\"ds-cifra\"><span>Completaron</span><strong>31<em>%</em></strong><small>27 de 88 personas</small></button></div>",
+      "css": ".ds-cifras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--portal-borde, rgba(255,255,255,.1)); border-radius: 12px; background: var(--portal-tarjeta, #14171b); font-family: Geist, system-ui, sans-serif; } .ds-cifra { display: flex; flex-direction: column; gap: 6px; padding: 18px 22px 20px; border: 0; border-left: 1px solid var(--portal-linea, rgba(255,255,255,.07)); background: transparent; color: inherit; text-align: left; cursor: pointer; } .ds-cifra:first-child { border-left: 0; } .ds-cifra:hover { background: var(--portal-realce, rgba(255,255,255,.05)); } .ds-cifra span, .ds-cifra small { color: var(--portal-rotulo, #9a9d96); font-size: 13px; } .ds-cifra strong { color: var(--portal-titulo, #f5f4f0); font-size: 34px; font-weight: 600; letter-spacing: -0.035em; line-height: 1.05; } .ds-cifra em { font-style: normal; font-size: .55em; font-weight: 500; color: var(--portal-cuerpo, #c9cbc4); }"
+    },
+    {
+      "name": "Barra de estados",
+      "kind": "custom",
+      "refersTo": "plancha",
+      "description": "Parte de un todo en la rampa del lima: completaron, en curso, sin empezar.",
+      "html": "<div class=\"ds-estados\"><div class=\"ds-estados-barra\"><span style=\"flex-grow:27;background:var(--grafico-completado,#b8ed72)\"></span><span style=\"flex-grow:48;background:var(--grafico-en-curso,#86b04e)\"></span><span style=\"flex-grow:13;background:var(--grafico-sin-empezar,#565c52)\"></span></div></div>",
+      "css": ".ds-estados { width: 320px; } .ds-estados-barra { display: flex; gap: 2px; height: 22px; } .ds-estados-barra span { min-width: 4px; } .ds-estados-barra span:last-child { border-radius: 0 4px 4px 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La consola nocturna",
+    "overview": "ClassPlay vive en la noche de su landing: un negro casi puro (#0D0E10) con paneles apenas más claros, líneas finas de un 7 a 10 % de blanco y un solo color que enciende la pantalla, el verde lima de la marca. El portal no decora: ordena. Cada pantalla es una consola de trabajo donde la información se agrupa en planchas separadas por líneas, no en tarjetas sueltas, y el lima aparece solo donde hay algo que hacer o algo que ya se logró.\n\nEl tono es de herramienta profesional que se mira de lejos en una planta: letra Geist con interletrado cerrado en los títulos, cifras grandes y proporcionales, y textos cortos en español de Chile que nombran la acción. El tema claro no invierte el oscuro: cambia a un papel cálido (#F3F2EE) con paneles blancos y pasa el lima, que sobre blanco no se ve, a un verde campo oscuro.",
+    "keyCharacteristics": [
+      "Un solo acento, lima, que además es el dato de \"completado\" en todos los gráficos.",
+      "Planchas con divisiones de 1 px en vez de tarjetas flotantes.",
+      "Cada cifra abre la lista que cuenta.",
+      "Íconos dibujados con un mismo trazo (1,75 en grilla de 24), nunca caracteres.",
+      "Dos temas con valores propios, validados por contraste."
+    ],
+    "rules": [
+      { "name": "La regla de la única voz", "body": "El lima es el único acento del portal. Si algo no es una acción principal, un foco o un logro, no lleva lima.", "section": "colors" },
+      { "name": "La regla del dato que se enciende", "body": "En los gráficos, más avance es más luz: el estado completado es el escalón más encendido de la rampa, nunca un color nuevo.", "section": "colors" },
+      { "name": "La regla de las cifras tabulares solo en columnas", "body": "Las tablas y los ejes usan cifras tabulares; una cifra suelta se deja proporcional.", "section": "typography" },
+      { "name": "La regla de la plancha", "body": "Los bloques que se leen juntos comparten una superficie y se separan con una línea de 1 px; no se anidan tarjetas dentro de tarjetas.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do usar el lima solo para la acción principal, el foco, la sección activa y el dato \"completado\".",
+      "Do validar cualquier color nuevo de gráfico con el validador de dataviz contra la superficie del tema (#14171B y #FFFFFF).",
+      "Do acompañar todo color de estado con su ícono y su palabra.",
+      "Do dar a cada cifra un destino: la lista filtrada que la explica.",
+      "Do dibujar los íconos en la grilla de 24 con trazo de 1,75."
+    ],
+    "donts": [
+      "Don't poner un rótulo en mayúsculas encima de un título.",
+      "Don't usar caracteres (✓, !, ⚠) como íconos.",
+      "Don't anidar tarjetas ni agregar bordes laterales de color más gruesos que 1 px.",
+      "Don't usar el lima como texto o trazo sobre el tema claro; ahí va el verde campo.",
+      "Don't volver a escribir \"5S\" como marca de la plataforma: la marca es ClassPlay; 5S es el nombre de un curso."
+    ]
+  }
+}

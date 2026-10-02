@@ -7,6 +7,10 @@
    detrás y desemboca en él, así que su sitio es el oscuro industrial siempre —
    una carga en blanco que abre a un galpón en penumbra sería un salto de luz
    justo al entrar.
+
+   Con la marca de ClassPlay: el mismo negro, los mismos grises y la letra
+   Geist del portal. El color de cada fase se queda en el rótulo y en la línea:
+   es lo que identifica a cada S.
    --------------------------------------------------------------------------- */
 
 .cargaNivel {
@@ -18,9 +22,11 @@
   justify-content: center;
   padding: 32px;
 
-  background: radial-gradient(circle at 50% 38%, #12171b 0%, #05070a 78%);
-  color: #f5f7f6;
-  font-family: system-ui, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(184, 237, 114, 0.05) 0%, rgba(184, 237, 114, 0) 55%),
+    #0d0e10;
+  color: #f5f4f0;
+  font-family: "Geist", system-ui, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 
   opacity: 0;
@@ -39,34 +45,34 @@
 }
 
 .cargaNivel__caja {
-  --fase-color: #7fb495;
+  --fase-color: #b8ed72;
   max-width: 560px;
   text-align: center;
 }
 
 .cargaNivel__rotulo {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   color: var(--fase-color);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
-/* El término japonés es lo primero que se lee y lo que se tiene que recordar:
-   va grande y con la letra abierta, como el rótulo de una sección. */
+/* El nombre de la fase es lo primero que se lee y lo que se tiene que
+   recordar: grande, con mayúsculas y minúsculas y las letras juntas, como los
+   títulos de la landing. */
 .cargaNivel__fase {
   margin: 0;
-  font-size: 54px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  line-height: 1.05;
+  font-size: 60px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
 }
 
 .cargaNivel__traduccion {
-  margin: 8px 0 0;
-  color: rgba(224, 230, 228, 0.62);
+  margin: 10px 0 0;
+  color: #9a9d96;
   font-size: 19px;
   font-weight: 500;
 }
@@ -74,71 +80,60 @@
 .cargaNivel__contexto {
   margin: 26px auto 0;
   max-width: 520px;
-  color: rgba(224, 230, 228, 0.78);
+  color: #c9cbc4;
   font-size: 16px;
   line-height: 1.62;
 }
 
 /* --- Señal de actividad ---
 
-   Tres puntos y no una barra de progreso. No hay forma honesta de saber qué
-   porcentaje del nivel lleva armado: una barra sería una animación inventada
-   que además se congelaría a mitad de camino, porque el hilo principal está
-   ocupado justo mientras se muestra. Los puntos no prometen ningún avance,
-   solo dicen que algo está pasando.
+   Una línea que recorre y no una barra que se llena: no hay forma honesta de
+   saber qué porcentaje del nivel lleva armado, y una barra inventada además se
+   congelaría a mitad de camino, porque el hilo principal está ocupado justo
+   mientras se muestra. Es la misma línea de la pantalla de arranque y de la
+   portada del curso.
 
-   La animación va sobre transform y opacity a propósito: son las dos
-   propiedades que el navegador anima FUERA del hilo principal. Cualquier otra
-   —alto, color, posición— se congelaría durante la construcción del garaje, y
-   una señal de actividad detenida transmite lo contrario de lo que pretende. */
-.cargaNivel__pulso {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 34px;
+   Se anima con transform, que el navegador mueve FUERA del hilo principal:
+   sigue corriendo mientras se construye el garaje. */
+.cargaNivel__linea {
+  width: 96px;
+  height: 2px;
+  margin: 36px auto 0;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.cargaNivel__pulso span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.cargaNivel__linea span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
   background: var(--fase-color);
-  opacity: 0.35;
-  animation: cargaNivelPulso 1.15s ease-in-out infinite;
+  transform: translateX(-100%);
+  animation: cargaNivelRecorrido 1.25s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
-.cargaNivel__pulso span:nth-child(2) {
-  animation-delay: 0.16s;
-}
-
-.cargaNivel__pulso span:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
-@keyframes cargaNivelPulso {
-  0%,
-  100% {
-    opacity: 0.28;
-    transform: scale(0.82);
-  }
-  45% {
-    opacity: 1;
-    transform: scale(1.12);
+@keyframes cargaNivelRecorrido {
+  to {
+    transform: translateX(250%);
   }
 }
 
 /* Sin animación para quien pide reducir el movimiento. La pantalla y su texto
-   siguen igual: lo único que se detiene es el latido. */
+   siguen igual: lo único que se detiene es el recorrido. */
 @media (prefers-reduced-motion: reduce) {
-  .cargaNivel__pulso span {
+  .cargaNivel__linea span {
+    width: 100%;
+    transform: none;
+    opacity: 0.55;
     animation: none;
-    opacity: 0.6;
   }
 }
 
 @media (max-width: 640px) {
   .cargaNivel__fase {
-    font-size: 38px;
+    font-size: 42px;
   }
 
   .cargaNivel__contexto {

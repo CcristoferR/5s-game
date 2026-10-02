@@ -58,7 +58,7 @@ export function mostrarCertificado(
   fondo.width = "100%";
   fondo.height = "100%";
   fondo.thickness = 0;
-  fondo.background = "rgba(10, 12, 14, 0.96)";
+  fondo.background = "rgba(13, 14, 16, 0.97)";
   gui.addControl(fondo);
 
   const aviso = new TextBlock("avisoCertificado", "Emitiendo tu certificado…");

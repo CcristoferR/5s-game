@@ -76,6 +76,8 @@ const BRIEFINGS: Record<number, BriefingCarga> = {
 const ENCABEZADO = {
   titulo: "Guardias de Seguridad",
   bajada: "Formación y perfeccionamiento · manual de apoyo OS10",
+  // El menú cuenta "escenarios", no "fases": así le habla el curso a quien lo hace.
+  unidad: { una: "escenario", varias: "escenarios" },
 };
 
 const ESCENARIOS: readonly NivelMenuInfo[] = [

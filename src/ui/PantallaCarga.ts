@@ -101,9 +101,7 @@ function contenidoDe(briefing: BriefingCarga): string {
       <h1 class="cargaNivel__fase">${escapar(briefing.fase)}</h1>
       <p class="cargaNivel__traduccion">${escapar(briefing.traduccion)}</p>
       <p class="cargaNivel__contexto">${escapar(briefing.contexto)}</p>
-      <div class="cargaNivel__pulso" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </div>
+      <div class="cargaNivel__linea" aria-hidden="true"><span></span></div>
     </div>`;
 }
 
@@ -122,6 +120,7 @@ function contenido(numeroNivel: number): string {
           Vas a aprender a mirar, tomar objetos y soltarlos donde corresponde.
           Son los mismos controles en las cinco fases.
         </p>
+        <div class="cargaNivel__linea" aria-hidden="true"><span></span></div>
       </div>`;
   }
 
@@ -133,9 +132,7 @@ function contenido(numeroNivel: number): string {
       <h1 class="cargaNivel__fase">${escapar(briefing.fase)}</h1>
       <p class="cargaNivel__traduccion">${escapar(briefing.traduccion)}</p>
       <p class="cargaNivel__contexto">${escapar(briefing.contexto)}</p>
-      <div class="cargaNivel__pulso" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </div>
+      <div class="cargaNivel__linea" aria-hidden="true"><span></span></div>
     </div>`;
 }
 

@@ -1,515 +1,869 @@
 import "./portal.css";
+import "./admin/admin.css";
 import {
   cambiarEstadoCodigo,
-  darDeBajaInscripcion,
-  reactivarInscripcion,
-  eliminarCuenta,
-  explicarRechazoEliminar,
+  cambiarEstadoCurso,
   cambiarRol,
-  explicarRechazoRol,
-  crearAdministrador,
-  restablecerClave,
-  leerBitacora,
-  describirAccion,
-  type EntradaBitacora,
   cambiarSuspension,
-  explicarRechazoSuspension,
-  explicarRechazoClave,
-  LARGO_MINIMO_CLAVE,
-  type ResultadoAltaAdmin,
+  crearAdministrador,
   crearCodigo,
+  darDeBajaInscripcion,
+  eliminarCuenta,
+  explicarRechazoClave,
+  explicarRechazoEliminar,
+  explicarRechazoRol,
+  explicarRechazoSuspension,
+  LARGO_MINIMO_CLAVE,
+  leerBitacora,
+  listarCertificados,
   listarCodigos,
+  listarCursos,
   listarInscripciones,
   listarPerfiles,
-  listarCursos,
-  cambiarEstadoCurso,
-  type Curso,
-  type Codigo,
-  type Inscripcion,
-  type Perfil,
+  listarProgreso,
+  reactivarInscripcion,
+  restablecerClave,
+  type ResultadoAltaAdmin,
 } from "./Datos";
+import { rankingCompleto, resultadosDelPanel } from "./Ranking";
 import {
+  exportarCodigos,
   exportarPersonas,
   exportarRanking,
-  exportarCodigos,
   exportarResumenAreas,
-  resumenPorArea,
-  type ResumenArea,
+  type AlcanceReporte,
 } from "./Reportes";
 import { mostrarVerificacion } from "./PantallaVerificacion";
 import { cerrarSesion, leerSesion } from "./Sesion";
-import { rankingCompleto, formatearDuracion, type FilaRankingAdmin } from "./Ranking";
-import { CURSO_ID } from "./Datos";
 import { manejar } from "./Manejador";
+import { cambiarPreferencias, leerPreferencias } from "./Preferencias";
+import { aplicarTemaUI } from "../ui/EstiloUI";
+import { marcaClassplay } from "./Marca";
+import { icono } from "./Iconos";
+import { armarMatriculas, empresasDe, type FiltroPersonas, type Vista } from "./admin/Indicadores";
+import { conectarGraficos } from "./admin/Graficos";
+import { fichaHtml } from "./admin/Ficha";
+import { escapar, iniciales } from "./admin/Formato";
+import {
+  esqueleto,
+  navegacion,
+  resultadoPersonas,
+  selectores,
+  titulos,
+  vistaCodigos,
+  vistaCursos,
+  vistaPersonas,
+  vistaReportes,
+  vistaResumen,
+  vistaSeguridad,
+  VISTAS,
+  type DatosPanel,
+  type EstadoPanel,
+  type FiltroCodigos,
+  type OrdenPersonas,
+} from "./admin/Vistas";
 
 /**
- * Vista de administración.
+ * Panel de administración de ClassPlay.
  *
- * Es para gestionar el curso, no para jugarlo: desde acá se emiten los códigos
- * que habilitan la entrada y se ve quién se inscribió con cada uno. Por eso el
- * administrador no pasa por el menú de niveles — no tendría sentido llevarlo a
- * clasificar herramientas.
+ * Lo usa Bitplay para todas las empresas cliente: un riel a la izquierda con
+ * las secciones, y arriba el alcance —curso y empresa— que rige lo que se ve.
+ * Cada cifra del resumen abre la lista de personas que cuenta, porque un
+ * número que no se puede abrir obliga a buscar a mano a quién se refiere.
  *
- * Todo lo que se ve acá sale de src/portal/Datos.ts. Cuando exista el servidor,
- * esta pantalla no cambia: cambia de dónde vienen los datos.
+ * ─── CÓMO SE DIBUJA ───────────────────────────────────────────────────────
+ *
+ * Los datos se piden todos juntos (perfiles, inscripciones, progreso,
+ * certificados, códigos, resultados por fase, rankings y bitácora) y el resto
+ * se calcula acá: cambiar de curso, de empresa, de sección o de página no
+ * vuelve a consultar el servidor. Solo una acción que escribe —suspender,
+ * emitir un código— recarga, y mientras recarga la pantalla anterior queda a
+ * la vista, atenuada, en vez de parpadear a un esqueleto.
+ *
+ * Los clics se escuchan una sola vez en la raíz, por el atributo data-accion:
+ * las vistas se redibujan enteras y así no hay que volver a enganchar nada.
  */
-/** Secciones del panel. El orden es el de la barra de navegación. */
-type Pestana = "personas" | "codigos" | "cursos" | "reportes" | "seguridad";
 
-const PESTANAS: Array<{ id: Pestana; rotulo: string }> = [
-  { id: "personas", rotulo: "Personas" },
-  { id: "codigos", rotulo: "Códigos" },
-  { id: "cursos", rotulo: "Cursos" },
-  { id: "reportes", rotulo: "Reportes" },
-  { id: "seguridad", rotulo: "Seguridad" },
-];
+const CLAVE_ESTADO = "classplay-panel";
+
+/** Lo que se recuerda entre visitas: la sección y el alcance elegidos. */
+function leerEstadoGuardado(): Pick<EstadoPanel, "vista" | "cursoId" | "empresa"> {
+  const porDefecto = { vista: "resumen" as Vista, cursoId: null, empresa: null };
+  try {
+    const crudo = localStorage.getItem(CLAVE_ESTADO);
+    if (!crudo) return porDefecto;
+    const datos = JSON.parse(crudo) as Partial<EstadoPanel>;
+    return {
+      vista: VISTAS.some((v) => v.id === datos.vista) ? (datos.vista as Vista) : "resumen",
+      cursoId: typeof datos.cursoId === "string" ? datos.cursoId : null,
+      empresa: typeof datos.empresa === "string" ? datos.empresa : null,
+    };
+  } catch {
+    return porDefecto;
+  }
+}
 
 export function mostrarAdministracion(onSalir: () => void): void {
   const raiz = document.createElement("div");
-  raiz.className = "portal portal--ancho";
+  raiz.className = "portal portal--consola";
   document.body.appendChild(raiz);
 
-  // ESTADO QUE SOBREVIVE AL REPINTADO.
-  //
-  // Cada acción del panel —suspender, dar de baja, emitir un código— vuelve a
-  // pedir los datos y reconstruye el HTML entero. Si la pestaña activa y el
-  // texto del buscador no se guardaran acá, después de cada clic el panel
-  // saltaría a "Personas" con el buscador vacío. Con doscientas personas eso
-  // significa volver a filtrar en cada acción: es la diferencia entre un panel
-  // que se usa y uno que se demuestra.
-  let pestanaActiva: Pestana = "personas";
-  let busqueda = "";
+  const estado: EstadoPanel = {
+    ...leerEstadoGuardado(),
+    personas: { busqueda: "", filtro: "todas", orden: "nombre", pagina: 1 },
+    codigos: { filtro: "todos", recienCreado: null },
+    ranking: { pagina: 1 },
+    nuevoAdminAbierto: false,
+    tablas: new Set(),
+  };
 
-  // Se dibuja el esqueleto antes de la primera consulta: sin esto la pantalla
-  // queda en blanco mientras responde el servidor y no se sabe si está
-  // cargando o si no hay nada.
-  raiz.innerHTML = esqueletoCargando();
-  void pintar();
+  let datos: DatosPanel | null = null;
+  let fichaPerfil: string | null = null;
+  let claveTemporal: string | null = null;
+  let primeraPintura = true;
+  let esperaBusqueda = 0;
 
-  async function pintar(): Promise<void> {
-    const [perfiles, codigos, inscripciones, cursos, ranking, areas, sesion, bitacora] = await Promise.all([
-      listarPerfiles(),
-      listarCodigos(),
-      listarInscripciones(),
-      listarCursos(),
-      // Sin recorte por empresa ni límite: administración necesita la tabla
-      // entera. La función de base de datos verifica el rol antes de
-      // responder, así que esta llamada falla si no es administrador.
-      rankingCompleto(CURSO_ID),
-      resumenPorArea(),
-      // Hace falta saber quién está mirando para no ofrecerle el botón que le
-      // quitaría su propio permiso: la base lo rechaza igual, pero es mejor
-      // que el botón no esté a que aparezca y falle.
-      leerSesion(),
-      leerBitacora(150),
-    ]);
+  raiz.innerHTML = armazon();
 
-    raiz.innerHTML = plantilla(
-      perfiles,
-      codigos,
-      inscripciones,
-      cursos,
-      ranking,
-      areas,
-      sesion?.perfil.id ?? null,
-      pestanaActiva,
-      bitacora
-    );
-    conectar();
+  const $ = <T extends HTMLElement>(selector: string): T => raiz.querySelector<T>(selector)!;
+  const nav = $("#rielNav");
+  const yo = $("#rielYo");
+  const botonTema = $<HTMLButtonElement>("#botonTema");
+  const lienzo = $("#lienzo");
+  const cabezaTitulos = $("#lienzoTitulos");
+  const cabezaAlcance = $("#lienzoAlcance");
+  const cuerpo = $("#lienzoCuerpo");
+  const ficha = $<HTMLDialogElement>("#ficha");
+  const avisos = $("#avisos");
+
+  conectarGraficos(raiz);
+  pintarMarco();
+  cuerpo.innerHTML = esqueleto();
+  enganchar();
+  void cargar();
+
+  // -------------------------------------------------------------------------
+  // Datos
+  // -------------------------------------------------------------------------
+
+  async function cargar(): Promise<void> {
+    cuerpo.setAttribute("aria-busy", "true");
+    if (datos) cuerpo.classList.add("lienzo__cuerpo--recargando");
+
+    try {
+      const [perfiles, codigos, inscripciones, cursos, progresos, certificados, resultados, sesion, bitacora] =
+        await Promise.all([
+          listarPerfiles(),
+          listarCodigos(),
+          listarInscripciones(),
+          listarCursos(),
+          listarProgreso(),
+          listarCertificados(),
+          resultadosDelPanel(),
+          // Hace falta saber quién mira para no ofrecerle lo que le quitaría
+          // su propio acceso: la base lo rechaza igual, pero es mejor que el
+          // botón no esté a que aparezca y falle.
+          leerSesion(),
+          leerBitacora(150),
+        ]);
+
+      // Un ranking por curso, todos a la vez. La función verifica en el
+      // servidor que quien llama sea administrador.
+      const rankings = new Map(
+        await Promise.all(cursos.map(async (c) => [c.id, await rankingCompleto(c.id)] as const))
+      );
+
+      datos = {
+        perfiles,
+        cursos,
+        inscripciones,
+        progresos,
+        codigos,
+        certificados,
+        resultados,
+        rankings,
+        bitacora,
+        perfilPropio: sesion?.perfil ?? null,
+        matriculas: armarMatriculas({ perfiles, cursos, inscripciones, progresos, certificados }),
+        empresas: empresasDe(perfiles),
+        cargadoEn: new Date(),
+      };
+
+      // Lo recordado de la visita anterior puede no existir más: un curso
+      // borrado o una empresa sin gente. Se vuelve a "todos" en vez de
+      // mostrar un panel vacío sin explicación.
+      if (estado.cursoId && !cursos.some((c) => c.id === estado.cursoId)) estado.cursoId = null;
+      if (estado.empresa && !datos.empresas.some((x) => x.clave === estado.empresa)) estado.empresa = null;
+    } catch (error) {
+      console.error("[admin] cargar:", error);
+      if (!datos) {
+        cuerpo.removeAttribute("aria-busy");
+        cuerpo.innerHTML = `
+          <div class="vacio vacio--error">${icono("alerta")}
+            <p>No se pudieron cargar los datos. Revisa la conexión y vuelve a intentar.</p>
+            <button class="boton-primario" type="button" data-accion="recargar">${icono("recargar")}Reintentar</button>
+          </div>`;
+        return;
+      }
+      avisar("No se pudieron actualizar los datos. Revisa tu conexión.", "error");
+    } finally {
+      cuerpo.classList.remove("lienzo__cuerpo--recargando");
+      cuerpo.removeAttribute("aria-busy");
+    }
+
+    pintarMarco();
+    pintarVista(false);
+    if (fichaPerfil && ficha.open) pintarFicha();
+  }
+
+  // -------------------------------------------------------------------------
+  // Dibujo
+  // -------------------------------------------------------------------------
+
+  function pintarMarco(): void {
+    nav.innerHTML = navegacion(datos, estado);
+    pintarTitulos();
+    cabezaAlcance.innerHTML = selectores(datos, estado);
+
+    const propio = datos?.perfilPropio;
+    yo.innerHTML = propio
+      ? `<span class="avatar" aria-hidden="true">${escapar(iniciales(propio.nombreCompleto))}</span>
+         <span class="riel__yoDatos"><strong>${escapar(propio.nombreCompleto)}</strong><small>Administración</small></span>`
+      : "";
+
+    const claro = leerPreferencias().tema === "claro";
+    botonTema.innerHTML = icono(claro ? "luna" : "sol");
+    botonTema.setAttribute("aria-label", claro ? "Cambiar a tema oscuro" : "Cambiar a tema claro");
+    botonTema.title = claro ? "Tema oscuro" : "Tema claro";
+  }
+
+  function pintarTitulos(): void {
+    cabezaTitulos.innerHTML = titulos(datos, estado);
   }
 
   /**
-   * Cambia de sección sin volver a pedir los datos.
+   * Dibuja la sección activa.
    *
-   * Las cuatro secciones se arman con la misma consulta, así que navegar entre
-   * ellas no necesita red: se muestra el panel que toca y se ocultan los otros.
-   * Ir a Códigos y volver a Personas es instantáneo y no gasta una consulta.
+   * @param alInicio Vuelve el lienzo arriba. Al cambiar de sección sí; al
+   *                 recargar tras una acción no, para no perder el lugar.
    */
-  function irAPestana(destino: Pestana): void {
-    pestanaActiva = destino;
+  function pintarVista(alInicio = true): void {
+    if (!datos) return;
 
-    raiz.querySelectorAll<HTMLElement>("[data-panel]").forEach((panel) => {
-      panel.hidden = panel.dataset.panel !== destino;
-    });
+    const vistas: Record<Vista, () => string> = {
+      resumen: () => vistaResumen(datos!, estado),
+      personas: () => vistaPersonas(datos!, estado),
+      codigos: () => vistaCodigos(datos!, estado),
+      cursos: () => vistaCursos(datos!, estado),
+      reportes: () => vistaReportes(datos!, estado),
+      seguridad: () => vistaSeguridad(datos!, estado),
+    };
 
-    raiz.querySelectorAll<HTMLButtonElement>("[data-pestana]").forEach((boton) => {
-      const activa = boton.dataset.pestana === destino;
-      boton.classList.toggle("admin__pestana--activa", activa);
-      boton.setAttribute("aria-selected", String(activa));
-    });
+    cuerpo.innerHTML = vistas[estado.vista]();
+    if (alInicio) {
+      // En pantallas angostas el que desplaza es la página entera, no el lienzo.
+      lienzo.scrollTop = 0;
+      raiz.scrollTop = 0;
+    }
+
+    // El único movimiento del panel: los gráficos se dibujan al entrar la
+    // primera vez. Después aparecen quietos, porque cambiar de filtro con
+    // todo animándose cada vez cansa.
+    if (primeraPintura) {
+      primeraPintura = false;
+      raiz.classList.add("consola--entrada");
+      window.setTimeout(() => raiz.classList.remove("consola--entrada"), 1600);
+    }
   }
+
+  function pintarResultadoPersonas(): void {
+    const zona = raiz.querySelector<HTMLElement>("#resultadoPersonas");
+    if (zona && datos) zona.innerHTML = resultadoPersonas(datos, estado);
+  }
+
+  function pintarFicha(): void {
+    if (!datos || !fichaPerfil) return;
+    const contenido = ficha.querySelector<HTMLElement>(".ficha__cuerpo");
+    const desplazamiento = contenido?.scrollTop ?? 0;
+    ficha.innerHTML = fichaHtml(datos, fichaPerfil, claveTemporal);
+    const nuevo = ficha.querySelector<HTMLElement>(".ficha__cuerpo");
+    if (nuevo) nuevo.scrollTop = desplazamiento;
+    // El botón que tenía el foco ya no existe: sin esto el foco cae al
+    // documento y el teclado queda fuera de la ficha.
+    if (!ficha.contains(document.activeElement)) {
+      ficha.querySelector<HTMLElement>("#fichaNombre")?.focus({ preventScroll: true });
+    }
+  }
+
+  function irA(vista: Vista): void {
+    estado.vista = vista;
+    guardarEstado();
+    pintarMarco();
+    pintarVista();
+  }
+
+  function guardarEstado(): void {
+    try {
+      localStorage.setItem(
+        CLAVE_ESTADO,
+        JSON.stringify({ vista: estado.vista, cursoId: estado.cursoId, empresa: estado.empresa })
+      );
+    } catch {
+      // Sin almacenamiento el panel funciona igual; solo no recuerda el alcance.
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Ficha
+  // -------------------------------------------------------------------------
+
+  function abrirFicha(perfilId: string): void {
+    if (!datos) return;
+    fichaPerfil = perfilId;
+    claveTemporal = null;
+    pintarFicha();
+    if (!ficha.open) ficha.showModal();
+    ficha.querySelector<HTMLElement>("#fichaNombre")?.focus({ preventScroll: true });
+  }
+
+  function cerrarFicha(): void {
+    if (ficha.open) ficha.close();
+  }
+
+  ficha.addEventListener("close", () => {
+    const anterior = fichaPerfil;
+    fichaPerfil = null;
+    // La clave temporal no se guarda en ninguna parte: al cerrar se pierde,
+    // y así debe ser.
+    claveTemporal = null;
+    ficha.innerHTML = "";
+    if (anterior) {
+      raiz
+        .querySelector<HTMLElement>(`[data-accion="abrir-ficha"][data-perfil="${CSS.escape(anterior)}"]`)
+        ?.focus({ preventScroll: true });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Avisos
+  // -------------------------------------------------------------------------
 
   /**
-   * Filtra la tabla de personas ocultando filas, sin volver a construirla.
-   *
-   * Reconstruir el HTML en cada tecla perdería el foco del campo y el punto de
-   * inserción del cursor. Ocultar filas mantiene el foco intacto y además es
-   * más rápido: no se vuelve a armar nada.
+   * Aviso flotante. Con la ficha abierta va dentro de ella: lo que está fuera
+   * de un diálogo modal queda tapado y nadie lo vería.
    */
-  function filtrar(texto: string): void {
-    busqueda = texto;
-    const aguja = texto.trim().toLowerCase();
+  function avisar(texto: string, tipo: "ok" | "error"): void {
+    const destino = ficha.open ? ficha.querySelector<HTMLElement>(".ficha__avisos") ?? avisos : avisos;
 
-    let visibles = 0;
-    raiz.querySelectorAll<HTMLTableRowElement>("[data-buscable]").forEach((fila) => {
-      const coincide = !aguja || (fila.dataset.buscable ?? "").includes(aguja);
-      fila.hidden = !coincide;
-      if (coincide) visibles++;
-    });
+    const aviso = document.createElement("div");
+    aviso.className = `aviso aviso--${tipo}`;
+    aviso.setAttribute("role", tipo === "error" ? "alert" : "status");
+    aviso.innerHTML = `${icono(tipo === "ok" ? "ok" : "alerta")}<p></p>
+      <button class="icono-boton icono-boton--mini" type="button" data-accion="cerrar-aviso" aria-label="Cerrar aviso">${icono("cerrar")}</button>`;
+    aviso.querySelector("p")!.textContent = texto;
+    destino.appendChild(aviso);
 
-    const contador = raiz.querySelector<HTMLElement>("#contadorPersonas");
-    if (contador) {
-      contador.textContent = aguja
-        ? `${visibles} de ${raiz.querySelectorAll("[data-buscable]").length}`
-        : `${visibles} en total`;
-    }
-
-    // Aviso de "sin resultados": distinto de "no hay nadie registrado". Sin
-    // esta distinción, filtrar mal parece un panel roto o una base vacía.
-    const sinResultados = raiz.querySelector<HTMLElement>("#sinResultados");
-    if (sinResultados) sinResultados.hidden = visibles > 0 || !aguja;
+    while (destino.children.length > 3) destino.firstElementChild?.remove();
+    // Los errores se quedan hasta que alguien los lea y los cierre.
+    if (tipo === "ok") window.setTimeout(() => aviso.remove(), 6000);
   }
 
-  function conectar(): void {
-    const $ = <T extends HTMLElement>(sel: string): T => raiz.querySelector(sel) as T;
+  // -------------------------------------------------------------------------
+  // Confirmación en dos pasos
+  // -------------------------------------------------------------------------
 
-    raiz.querySelectorAll<HTMLButtonElement>("[data-pestana]").forEach((boton) => {
-      boton.addEventListener("click", () => irAPestana(boton.dataset.pestana as Pestana));
-    });
+  /**
+   * Primer clic: el botón cambia a la pregunta. Segundo clic: se ejecuta.
+   *
+   * Sin ventanas encima de ventanas. Si nadie confirma en seis segundos, el
+   * botón vuelve solo a su estado: una confirmación armada que queda ahí
+   * esperando es un accidente para el próximo clic distraído.
+   */
+  function armar(boton: HTMLElement): void {
+    boton.dataset.armado = "1";
+    boton.dataset.original = boton.innerHTML;
+    boton.innerHTML = `${icono("alerta")}<span>${escapar(boton.dataset.confirmar ?? "¿Confirmar?")}</span>`;
+    boton.classList.add("accion--confirma");
+    boton.dataset.temporizador = String(window.setTimeout(() => desarmar(boton), 6000));
+  }
 
-    const buscador = raiz.querySelector<HTMLInputElement>("#buscadorPersonas");
-    if (buscador) {
-      // El valor se restituye tras cada repintado y se vuelve a aplicar el
-      // filtro: si no, una acción sobre una persona filtrada devolvería la
-      // tabla completa y habría que escribir el nombre otra vez.
-      buscador.value = busqueda;
-      filtrar(busqueda);
-      buscador.addEventListener("input", () => filtrar(buscador.value));
+  function desarmar(boton: HTMLElement): void {
+    if (boton.dataset.armado !== "1") return;
+    window.clearTimeout(Number(boton.dataset.temporizador));
+    boton.innerHTML = boton.dataset.original ?? boton.innerHTML;
+    boton.classList.remove("accion--confirma");
+    delete boton.dataset.armado;
+  }
+
+  /** Corre una acción que escribe en la base, con el botón ocupado mientras tanto. */
+  async function trabajar(boton: HTMLElement, tarea: () => Promise<void>): Promise<void> {
+    const b = boton as HTMLButtonElement;
+    b.disabled = true;
+    b.setAttribute("aria-busy", "true");
+    try {
+      await tarea();
+    } catch (error) {
+      console.error("[admin]", error);
+      avisar("No se pudo completar la acción. Revisa tu conexión.", "error");
+    } finally {
+      if (b.isConnected) {
+        b.disabled = false;
+        b.removeAttribute("aria-busy");
+        desarmar(b);
+      }
+    }
+  }
+
+  const nombreDe = (perfilId: string): string =>
+    datos?.perfiles.find((p) => p.id === perfilId)?.nombreCompleto ?? "La persona";
+
+  // -------------------------------------------------------------------------
+  // Acciones
+  // -------------------------------------------------------------------------
+
+  async function ejecutar(boton: HTMLElement): Promise<void> {
+    if ((boton as HTMLButtonElement).disabled) return;
+    const accion = boton.dataset.accion!;
+
+    if (boton.dataset.confirmar && boton.dataset.armado !== "1") {
+      armar(boton);
+      return;
     }
 
-    $<HTMLButtonElement>("#btnSalirAdmin").addEventListener("click", () => {
-      // El error del cierre se registra en vez de perderse.
-      //
-      // No es un detalle de estilo: se cierra la sesion y AL INSTANTE se desmonta
-      // la pantalla. Si el cierre falla, nadie se entera y la persona se queda con
-      // una sesion viva en el servidor creyendo que salio. No se pone await para
-      // no cambiar el momento en que se desmonta; solo se deja de tragar el fallo.
-      cerrarSesion().catch((error) => console.error("[admin] cerrar sesion:", error));
-      raiz.remove();
-      onSalir();
-    });
+    switch (accion) {
+      // --- Navegación ---
+      case "ir": {
+        if (boton.dataset.filtro) {
+          estado.personas.filtro = boton.dataset.filtro as FiltroPersonas;
+          estado.personas.pagina = 1;
+          estado.personas.busqueda = "";
+        }
+        if (boton.dataset.orden) estado.personas.orden = boton.dataset.orden as OrdenPersonas;
+        cerrarFicha();
+        irA(boton.dataset.vista as Vista);
+        return;
+      }
+      case "elegir-curso": {
+        estado.cursoId = boton.dataset.curso ?? null;
+        estado.ranking.pagina = 1;
+        estado.personas.pagina = 1;
+        if (boton.dataset.quedarse) {
+          guardarEstado();
+          pintarMarco();
+          pintarVista();
+        } else {
+          irA("resumen");
+        }
+        return;
+      }
+      case "recargar":
+        await cargar();
+        return;
+      case "tema": {
+        const tema = leerPreferencias().tema === "claro" ? "oscuro" : "claro";
+        cambiarPreferencias({ tema });
+        aplicarTemaUI(tema);
+        pintarMarco();
+        return;
+      }
+      case "salir":
+        // El error del cierre se registra en vez de perderse: si falla, la
+        // sesión seguiría viva en el servidor creyendo la persona que salió.
+        cerrarSesion().catch((error) => console.error("[admin] cerrar sesion:", error));
+        raiz.remove();
+        onSalir();
+        return;
+      case "verificador":
+        // El panel se retira y se vuelve a armar al cerrar el verificador: es
+        // más limpio que superponer pantallas y los datos vuelven al día.
+        raiz.remove();
+        mostrarVerificacion({ onVolver: () => mostrarAdministracion(onSalir) });
+        return;
 
-    $<HTMLFormElement>("#formCodigo").addEventListener("submit", manejar("admin", async (evento) => {
-      evento.preventDefault();
+      // --- Vistas ---
+      case "filtro-personas":
+        estado.personas.filtro = boton.dataset.filtro as FiltroPersonas;
+        estado.personas.pagina = 1;
+        pintarVista(false);
+        return;
+      case "limpiar-busqueda":
+        estado.personas.busqueda = "";
+        estado.personas.filtro = "todas";
+        estado.personas.pagina = 1;
+        pintarVista(false);
+        return;
+      case "pagina":
+        estado.personas.pagina = Number(boton.dataset.destino) || 1;
+        pintarResultadoPersonas();
+        raiz.querySelector("#resultadoPersonas")?.scrollIntoView({ block: "start" });
+        return;
+      case "pagina-ranking":
+        estado.ranking.pagina = Number(boton.dataset.destino) || 1;
+        pintarVista(false);
+        return;
+      case "filtro-codigos":
+        estado.codigos.filtro = boton.dataset.filtro as FiltroCodigos;
+        pintarVista(false);
+        return;
+      case "descartar-creado":
+        estado.codigos.recienCreado = null;
+        pintarVista(false);
+        return;
+      case "alternar-tabla": {
+        const id = boton.dataset.bloque!;
+        const comoTabla = !estado.tablas.has(id);
+        if (comoTabla) estado.tablas.add(id);
+        else estado.tablas.delete(id);
+        // Se alterna en el lugar, sin redibujar: así no salta la página.
+        const bloque = boton.closest(".bloque");
+        bloque?.querySelector<HTMLElement>(".bloque__grafico")?.toggleAttribute("hidden", comoTabla);
+        bloque?.querySelector<HTMLElement>(".gemela")?.toggleAttribute("hidden", !comoTabla);
+        boton.setAttribute("aria-pressed", String(comoTabla));
+        boton.innerHTML = `${icono(comoTabla ? "grafico" : "tabla")}<span>${comoTabla ? "Ver gráfico" : "Ver tabla"}</span>`;
+        return;
+      }
+      case "nuevo-admin":
+        estado.nuevoAdminAbierto = !estado.nuevoAdminAbierto;
+        pintarVista(false);
+        if (estado.nuevoAdminAbierto) raiz.querySelector<HTMLInputElement>("#adminNombre")?.focus();
+        return;
+      case "abrir-ficha":
+        abrirFicha(boton.dataset.perfil!);
+        return;
+      case "cerrar-ficha":
+        cerrarFicha();
+        return;
+      case "cerrar-aviso":
+        boton.closest(".aviso")?.remove();
+        return;
+      case "copiar":
+        await copiar(boton.dataset.texto ?? "");
+        return;
 
-      const cursoId = $<HTMLSelectElement>("#nuevoCurso").value;
-      const lote = $<HTMLInputElement>("#nuevoLote").value;
-      const cupos = Number($<HTMLInputElement>("#nuevoCupos").value);
-      const dias = Number($<HTMLInputElement>("#nuevoDias").value);
-      const nota = $<HTMLInputElement>("#nuevaNota").value;
+      // --- Reportes ---
+      case "reporte":
+        await trabajar(boton, async () => {
+          boton.classList.add("trabajando");
+          const alcance: AlcanceReporte = { cursoId: estado.cursoId, empresa: estado.empresa };
+          const tipo = boton.dataset.reporte;
+          try {
+            const filas =
+              tipo === "personas"
+                ? await exportarPersonas(alcance)
+                : tipo === "ranking"
+                  ? await exportarRanking(alcance)
+                  : tipo === "areas"
+                    ? await exportarResumenAreas(alcance)
+                    : await exportarCodigos({ cursoId: estado.cursoId });
+            avisar(
+              filas === 0
+                ? "No hay datos para ese reporte con el curso y la empresa elegidos."
+                : `Reporte descargado: ${filas} ${filas === 1 ? "fila" : "filas"}.`,
+              filas === 0 ? "error" : "ok"
+            );
+          } finally {
+            boton.classList.remove("trabajando");
+          }
+        });
+        return;
 
+      // --- Escrituras ---
+      case "codigo-baja":
+      case "codigo-activar": {
+        const codigo = boton.dataset.codigo!;
+        const activar = accion === "codigo-activar";
+        await trabajar(boton, async () => {
+          await cambiarEstadoCodigo(codigo, activar);
+          await cargar();
+          avisar(
+            activar ? `${codigo} vuelve a estar disponible.` : `${codigo} quedó dado de baja: ya no se puede canjear.`,
+            "ok"
+          );
+        });
+        return;
+      }
+      case "curso-retirar":
+      case "curso-publicar": {
+        const publicar = accion === "curso-publicar";
+        await trabajar(boton, async () => {
+          await cambiarEstadoCurso(boton.dataset.curso!, publicar);
+          await cargar();
+          avisar(
+            publicar
+              ? "El curso vuelve a aparecer en el catálogo."
+              : "El curso ya no aparece en el catálogo. Las inscripciones y el avance se conservan.",
+            "ok"
+          );
+        });
+        return;
+      }
+      case "inscripcion-baja":
+      case "inscripcion-reactivar": {
+        const reactivar = accion === "inscripcion-reactivar";
+        await trabajar(boton, async () => {
+          if (reactivar) await reactivarInscripcion(boton.dataset.inscripcion!);
+          else await darDeBajaInscripcion(boton.dataset.inscripcion!);
+          await cargar();
+          avisar(
+            reactivar ? "Inscripción reactivada." : "Inscripción dada de baja. El cupo del código quedó libre.",
+            "ok"
+          );
+        });
+        return;
+      }
+      case "suspender":
+      case "reactivar-cuenta": {
+        const perfilId = boton.dataset.perfil!;
+        const suspender = accion === "suspender";
+        await trabajar(boton, async () => {
+          const resultado = await cambiarSuspension(perfilId, suspender);
+          if (!resultado.ok) {
+            avisar(explicarRechazoSuspension(resultado.motivo), "error");
+            return;
+          }
+          const nombre = nombreDe(perfilId);
+          await cargar();
+          avisar(
+            suspender
+              ? `${nombre} ya no puede entrar. Su avance y sus certificados se conservan.`
+              : `${nombre} vuelve a tener acceso.`,
+            "ok"
+          );
+        });
+        return;
+      }
+      case "clave": {
+        const perfilId = boton.dataset.perfil!;
+        await trabajar(boton, async () => {
+          const resultado = await restablecerClave(perfilId);
+          if (!resultado.ok) {
+            avisar(explicarRechazoClave(resultado.motivo), "error");
+            return;
+          }
+          // No se recarga nada: no cambió ningún dato a la vista, y la clave
+          // tiene que quedar en pantalla hasta que se cierre la ficha.
+          claveTemporal = resultado.clave;
+          pintarFicha();
+          ficha.querySelector<HTMLElement>(".ficha__clave")?.scrollIntoView({ block: "nearest" });
+        });
+        return;
+      }
+      case "promover":
+      case "degradar": {
+        const perfilId = boton.dataset.perfil!;
+        const nuevoRol = accion === "promover" ? "administrador" : "trabajador";
+        await trabajar(boton, async () => {
+          const resultado = await cambiarRol(perfilId, nuevoRol);
+          if (!resultado.ok) {
+            avisar(explicarRechazoRol(resultado.motivo), "error");
+            return;
+          }
+          await cargar();
+          avisar(
+            nuevoRol === "administrador"
+              ? `${nombreDe(perfilId)} verá el panel la próxima vez que entre.`
+              : `${nombreDe(perfilId)} vuelve a ser trabajador.`,
+            "ok"
+          );
+        });
+        return;
+      }
+      case "eliminar": {
+        const perfilId = boton.dataset.perfil!;
+        await trabajar(boton, async () => {
+          const resultado = await eliminarCuenta(perfilId);
+          if (!resultado.ok) {
+            avisar(explicarRechazoEliminar(resultado.motivo), "error");
+            return;
+          }
+          cerrarFicha();
+          await cargar();
+          avisar(
+            `${resultado.nombre} se eliminó por completo. Su RUT vuelve a quedar libre para registrarse.`,
+            "ok"
+          );
+        });
+        return;
+      }
+    }
+  }
+
+  async function copiar(texto: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(texto);
+      avisar(`Copiado: ${texto}`, "ok");
+    } catch {
+      // Sin permiso de portapapeles (o en http): se deja seleccionado para
+      // copiarlo a mano, que es mejor que fallar callado.
+      const campo = document.createElement("textarea");
+      campo.value = texto;
+      campo.setAttribute("readonly", "");
+      campo.style.position = "fixed";
+      campo.style.opacity = "0";
+      (ficha.open ? ficha : raiz).appendChild(campo);
+      campo.select();
+      const ok = document.execCommand("copy");
+      campo.remove();
+      avisar(ok ? `Copiado: ${texto}` : `No se pudo copiar. El texto es: ${texto}`, ok ? "ok" : "error");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Formularios
+  // -------------------------------------------------------------------------
+
+  async function emitirCodigo(form: HTMLFormElement): Promise<void> {
+    const campo = <T extends HTMLElement>(id: string): T => form.querySelector<T>(`#${id}`)!;
+    const cupos = Number(campo<HTMLInputElement>("nuevoCupos").value);
+    const textoDias = campo<HTMLInputElement>("nuevoDias").value.trim();
+    const dias = Number(textoDias);
+
+    if (!Number.isInteger(cupos) || cupos < 1 || cupos > 5000) {
+      avisar("Los cupos tienen que ser un número entero entre 1 y 5.000.", "error");
+      campo<HTMLInputElement>("nuevoCupos").focus();
+      return;
+    }
+    if (textoDias && (!Number.isInteger(dias) || dias < 1 || dias > 3650)) {
+      avisar("La vigencia va en días, entre 1 y 3.650. Déjala vacía si el código no vence.", "error");
+      campo<HTMLInputElement>("nuevoDias").focus();
+      return;
+    }
+
+    const boton = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    await trabajar(boton, async () => {
       // La vigencia se pide en días y la base la guarda como fecha: se
-      // convierte acá para que el administrador no tenga que calcularla.
-      const venceEn =
-        Number.isFinite(dias) && dias > 0
-          ? new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10)
-          : null;
-
+      // convierte acá para que nadie tenga que calcularla.
+      const venceEn = textoDias ? new Date(Date.now() + dias * 86_400_000).toISOString().slice(0, 10) : null;
       const creado = await crearCodigo({
-        cursoId,
-        lote,
-        usosMaximos: Number.isFinite(cupos) && cupos > 0 ? cupos : 20,
-        nota,
+        cursoId: campo<HTMLSelectElement>("nuevoCurso").value,
+        lote: campo<HTMLInputElement>("nuevoLote").value,
+        usosMaximos: cupos,
+        nota: campo<HTMLInputElement>("nuevaNota").value,
         venceEn,
       });
 
-      // El formulario se limpia salvo los cupos: lo habitual es emitir varios
-      // lotes seguidos con el mismo tamaño y distinta etiqueta.
-      if (creado) {
-        $<HTMLInputElement>("#nuevoLote").value = "";
-        $<HTMLInputElement>("#nuevaNota").value = "";
-      }
-
-      await pintar();
-
-      // Se avisa el código recién creado porque es el dato que el supervisor
-      // tiene que copiar y repartir; si se pierde entre la tabla, hay que
-      // buscarlo a ojo.
-      avisar(
-        creado
-          ? `Código creado: ${creado.codigo}`
-          : "No se pudo crear el código. Revisa tu conexión.",
-        creado ? "ok" : "error"
-      );
-    }));
-
-    $<HTMLFormElement>("#formAdmin").addEventListener("submit", manejar("admin", async (evento) => {
-      evento.preventDefault();
-
-      const boton = $<HTMLFormElement>("#formAdmin").querySelector("button")!;
-      const clave = $<HTMLInputElement>("#adminClave").value;
-
-      // El botón se bloquea mientras trabaja: crear la cuenta son tres viajes
-      // al servidor y un segundo envío dejaría dos cuentas a medio hacer.
-      boton.disabled = true;
-
-      const resultado = await crearAdministrador({
-        nombreCompleto: $<HTMLInputElement>("#adminNombre").value,
-        identificador: $<HTMLInputElement>("#adminIdentificador").value,
-        empresa: $<HTMLInputElement>("#adminEmpresa").value,
-        area: $<HTMLInputElement>("#adminArea").value,
-        clave,
-      });
-
-      boton.disabled = false;
-
-      if (!resultado.ok) {
-        avisar(explicarRechazoAlta(resultado.motivo), "error");
-        // La cuenta quedó creada pero sin el ascenso: conviene refrescar para
-        // que aparezca en la tabla y se pueda terminar con un clic.
-        if (resultado.motivo === "rol_pendiente") await pintar();
+      if (!creado) {
+        avisar("No se pudo crear el código. Revisa tu conexión e intenta de nuevo.", "error");
         return;
       }
 
-      $<HTMLFormElement>("#formAdmin").reset();
-      await pintar();
-      avisar(`${resultado.perfil.nombreCompleto} ya puede entrar al panel.`, "ok");
-    }));
-
-    raiz.querySelectorAll<HTMLButtonElement>("[data-codigo]").forEach((boton) => {
-      boton.addEventListener("click", manejar("admin", async () => {
-        const codigo = boton.dataset.codigo!;
-        const activar = boton.dataset.accion === "activar";
-        await cambiarEstadoCodigo(codigo, activar);
-        await pintar();
-      }));
-    });
-
-    raiz.querySelector<HTMLButtonElement>("#abrirVerificacion")?.addEventListener("click", () => {
-      // El panel se retira y se vuelve a pintar al cerrar el verificador: es
-      // más limpio que superponer pantallas, y garantiza que los datos que se
-      // ven al volver estén al día.
-      raiz.remove();
-      mostrarVerificacion({ onVolver: () => mostrarAdministracion(onSalir) });
-    });
-
-    raiz.querySelectorAll<HTMLButtonElement>("[data-reporte]").forEach((boton) => {
-      boton.addEventListener("click", manejar("admin", async () => {
-        const tipo = boton.dataset.reporte!;
-        const etiqueta = boton.querySelector(".reporte__nombre")!.textContent;
-
-        // El botón se desactiva mientras arma el archivo. Con muchas filas la
-        // consulta tarda, y sin esta señal el administrador vuelve a hacer
-        // clic y se descarga el mismo reporte tres veces.
-        boton.disabled = true;
-        boton.classList.add("reporte--trabajando");
-
-        try {
-          const cuantas =
-            tipo === "personas" ? await exportarPersonas()
-            : tipo === "ranking" ? await exportarRanking()
-            : tipo === "areas" ? await exportarResumenAreas()
-            : await exportarCodigos();
-
-          avisar(
-            cuantas === 0
-              ? `${etiqueta}: no hay datos para exportar todavía.`
-              : `${etiqueta}: ${cuantas} ${cuantas === 1 ? "fila descargada" : "filas descargadas"}.`,
-            cuantas === 0 ? "error" : "ok"
-          );
-        } catch (error) {
-          console.error("[reportes]", error);
-          avisar("No se pudo generar el reporte. Revisa tu conexión.", "error");
-        } finally {
-          boton.disabled = false;
-          boton.classList.remove("reporte--trabajando");
-        }
-      }));
-    });
-
-    raiz.querySelectorAll<HTMLButtonElement>("[data-curso]").forEach((boton) => {
-      boton.addEventListener("click", manejar("admin", async () => {
-        await cambiarEstadoCurso(boton.dataset.curso!, boton.dataset.accion === "publicar");
-        await pintar();
-      }));
-    });
-
-    raiz.querySelectorAll<HTMLButtonElement>("[data-baja]").forEach((boton) => {
-      boton.addEventListener("click", manejar("admin", async () => {
-        await darDeBajaInscripcion(boton.dataset.baja!);
-        await pintar();
-        avisar("Inscripción dada de baja. El cupo del código quedó libre.", "ok");
-      }));
-    });
-
-    raiz.querySelectorAll<HTMLButtonElement>("[data-reactivar]").forEach((boton) => {
-      boton.addEventListener("click", manejar("admin", async () => {
-        await reactivarInscripcion(boton.dataset.reactivar!);
-        await pintar();
-        avisar("Inscripción reactivada.", "ok");
-      }));
-    });
-
-    // Suspender pide confirmación; reactivar no.
-    //
-    // No es asimetría por descuido: suspender deja a una persona fuera del
-    // sistema de inmediato, y si estaba jugando pierde la sesión en el acto.
-    // Reactivar solo devuelve lo que ya tenía, así que exigir un segundo clic
-    // sería fricción sin motivo.
-    raiz.querySelectorAll<HTMLButtonElement>("[data-suspender]").forEach((boton) => {
-      const etiqueta = boton.textContent ?? "";
-      const suspender = boton.dataset.estado === "suspender";
-      let confirmando = false;
-
-      boton.addEventListener("click", manejar("admin", async () => {
-        if (suspender && !confirmando) {
-          confirmando = true;
-          boton.textContent = "Confirmar";
-          boton.classList.add("portal__accion--confirma");
-          return;
-        }
-
-        boton.disabled = true;
-        const resultado = await cambiarSuspension(boton.dataset.suspender!, suspender);
-
-        if (!resultado.ok) {
-          confirmando = false;
-          boton.disabled = false;
-          boton.textContent = etiqueta;
-          boton.classList.remove("portal__accion--confirma");
-          avisar(explicarRechazoSuspension(resultado.motivo), "error");
-          return;
-        }
-
-        const nombre = boton.closest("tr")?.querySelector("strong")?.textContent ?? "La cuenta";
-        await pintar();
-        avisar(
-          suspender
-            ? `${nombre} ya no puede entrar. Su avance y su certificado se conservan.`
-            : `${nombre} vuelve a tener acceso.`,
-          "ok"
-        );
-      }));
-    });
-
-    // Restablecer clave tambien confirma en dos pasos: genera una contrasenia
-    // nueva, y la anterior deja de servir en el acto.
-    raiz.querySelectorAll<HTMLButtonElement>("[data-clave]").forEach((boton) => {
-      const etiqueta = boton.textContent ?? "";
-      let confirmando = false;
-
-      boton.addEventListener("click", manejar("admin", async () => {
-        if (!confirmando) {
-          confirmando = true;
-          boton.textContent = "Confirmar";
-          boton.classList.add("portal__accion--confirma");
-          return;
-        }
-
-        boton.disabled = true;
-        const resultado = await restablecerClave(boton.dataset.clave!);
-
-        confirmando = false;
-        boton.disabled = false;
-        boton.textContent = etiqueta;
-        boton.classList.remove("portal__accion--confirma");
-
-        if (!resultado.ok) {
-          avisar(explicarRechazoClave(resultado.motivo), "error");
-          return;
-        }
-
-        // El aviso NO se refresca con pintar() a proposito: repintar borraria
-        // la banda y con ella la unica copia de la clave. No queda guardada en
-        // ninguna parte legible, asi que si se pierde hay que generar otra.
-        const nombre = boton.closest("tr")?.querySelector("strong")?.textContent ?? "la persona";
-        avisar(
-          `Clave temporal de ${nombre}: ${resultado.clave} — anotala ahora, no se vuelve a mostrar.`,
-          "ok"
-        );
-      }));
-    });
-
-    // Dar o quitar administrador confirma en el propio botón, igual que
-    // eliminar: es un permiso, no una preferencia, y conviene que cueste un
-    // clic de más.
-    raiz.querySelectorAll<HTMLButtonElement>("[data-rol]").forEach((boton) => {
-      const etiqueta = boton.textContent ?? "";
-      let confirmando = false;
-
-      boton.addEventListener("click", manejar("admin", async () => {
-        if (!confirmando) {
-          confirmando = true;
-          boton.textContent = "Confirmar";
-          boton.classList.add("portal__accion--confirma");
-          return;
-        }
-
-        boton.disabled = true;
-        const nuevoRol = boton.dataset.accion === "promover" ? "administrador" : "trabajador";
-        const resultado = await cambiarRol(boton.dataset.rol!, nuevoRol);
-
-        if (!resultado.ok) {
-          // Se deshace la confirmación para que el botón vuelva a su estado
-          // normal en vez de quedar pidiendo un clic que ya no va a funcionar.
-          confirmando = false;
-          boton.disabled = false;
-          boton.textContent = etiqueta;
-          boton.classList.remove("portal__accion--confirma");
-          avisar(explicarRechazoRol(resultado.motivo), "error");
-          return;
-        }
-
-        await pintar();
-        avisar(
-          nuevoRol === "administrador"
-            ? "Ahora es administrador. Verá el panel la próxima vez que entre."
-            : "Vuelve a ser trabajador.",
-          "ok"
-        );
-      }));
-    });
-
-    // Eliminar borra el registro y no se puede deshacer, así que pide una
-    // confirmación en el propio botón: el primer clic avisa, el segundo
-    // ejecuta. Sin ventanas encima de ventanas, igual que en el ranking.
-    raiz.querySelectorAll<HTMLButtonElement>("[data-eliminar]").forEach((boton) => {
-      let confirmando = false;
-      boton.addEventListener("click", manejar("admin", async () => {
-        if (!confirmando) {
-          confirmando = true;
-          boton.textContent = "Confirmar";
-          boton.classList.add("portal__accion--confirma");
-          return;
-        }
-        boton.disabled = true;
-        const resultado = await eliminarCuenta(boton.dataset.eliminar!);
-        boton.disabled = false;
-
-        if (!resultado.ok) {
-          confirmando = false;
-          boton.textContent = "Eliminar cuenta";
-          boton.classList.remove("portal__accion--confirma");
-          avisar(explicarRechazoEliminar(resultado.motivo), "error");
-          return;
-        }
-
-        await pintar();
-        avisar(
-          `${resultado.nombre} se eliminó por completo. Su RUT vuelve a estar disponible para registrarse.`,
-          "ok"
-        );
-      }));
+      // El código recién hecho queda arriba, grande y con su botón de copiar:
+      // es el dato que hay que repartir, y perdido en la tabla hay que
+      // buscarlo a ojo.
+      estado.codigos.recienCreado = creado.codigo;
+      estado.codigos.filtro = "todos";
+      await cargar();
     });
   }
 
-  // Banda de aviso, compartida por todas las acciones de la pantalla.
-  function avisar(texto: string, tipo: "ok" | "error"): void {
-    const banda = raiz.querySelector<HTMLParagraphElement>("#avisoAdmin");
-    if (!banda) return;
-    banda.textContent = texto;
-    banda.className = `portal__aviso portal__aviso--${tipo}`;
-    banda.hidden = false;
+  async function altaAdministrador(form: HTMLFormElement): Promise<void> {
+    const valor = (id: string): string => form.querySelector<HTMLInputElement>(`#${id}`)!.value;
+    if (!valor("adminNombre").trim() || !valor("adminIdentificador").trim()) {
+      avisar("Escribe el nombre y el RUT o correo de la persona.", "error");
+      return;
+    }
+    if (valor("adminClave").length < LARGO_MINIMO_CLAVE) {
+      avisar(`La contraseña necesita al menos ${LARGO_MINIMO_CLAVE} caracteres.`, "error");
+      return;
+    }
+
+    const boton = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    await trabajar(boton, async () => {
+      // El botón queda bloqueado mientras trabaja: crear la cuenta son tres
+      // viajes al servidor y un segundo envío dejaría dos cuentas a medias.
+      const resultado = await crearAdministrador({
+        nombreCompleto: valor("adminNombre"),
+        identificador: valor("adminIdentificador"),
+        empresa: valor("adminEmpresa"),
+        area: valor("adminArea"),
+        clave: valor("adminClave"),
+      });
+
+      if (!resultado.ok) {
+        avisar(explicarRechazoAlta(resultado.motivo), "error");
+        // La cuenta quedó creada pero sin el ascenso: se recarga para que
+        // aparezca y se pueda terminar desde su ficha.
+        if (resultado.motivo === "rol_pendiente") await cargar();
+        return;
+      }
+
+      estado.nuevoAdminAbierto = false;
+      await cargar();
+      avisar(`${resultado.perfil.nombreCompleto} ya puede entrar al panel.`, "ok");
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Eventos
+  // -------------------------------------------------------------------------
+
+  function enganchar(): void {
+    raiz.addEventListener("click", (evento) => {
+      const objetivo = evento.target as HTMLElement;
+
+      // Clic en el fondo oscuro que rodea la ficha: el propio <dialog> recibe
+      // el clic, no su contenido.
+      if (objetivo === ficha) {
+        cerrarFicha();
+        return;
+      }
+
+      const boton = objetivo.closest<HTMLElement>("[data-accion]");
+      if (boton && raiz.contains(boton)) {
+        evento.preventDefault();
+        void ejecutar(boton).catch((error) => console.error("[admin]", error));
+        return;
+      }
+
+      // Toda la fila de una persona abre su ficha, no solo el nombre.
+      const fila = objetivo.closest<HTMLElement>("tr[data-perfil]");
+      if (fila && !objetivo.closest("a, button, input, select, label")) abrirFicha(fila.dataset.perfil!);
+    });
+
+    raiz.addEventListener("change", (evento) => {
+      const objetivo = evento.target as HTMLSelectElement;
+      if (objetivo.id === "selCurso") {
+        estado.cursoId = objetivo.value || null;
+        estado.personas.pagina = 1;
+        estado.ranking.pagina = 1;
+        if (estado.personas.filtro === "sin_curso" && estado.cursoId) estado.personas.filtro = "todas";
+      } else if (objetivo.id === "selEmpresa") {
+        estado.empresa = objetivo.value || null;
+        estado.personas.pagina = 1;
+        estado.ranking.pagina = 1;
+      } else if (objetivo.id === "ordenPersonas") {
+        estado.personas.orden = objetivo.value as OrdenPersonas;
+        estado.personas.pagina = 1;
+        pintarResultadoPersonas();
+        return;
+      } else {
+        return;
+      }
+      guardarEstado();
+      pintarTitulos();
+      pintarVista(false);
+    });
+
+    raiz.addEventListener("input", (evento) => {
+      const objetivo = evento.target as HTMLInputElement;
+      if (objetivo.id !== "buscadorPersonas") return;
+      estado.personas.busqueda = objetivo.value;
+      estado.personas.pagina = 1;
+      // Solo se redibuja la tabla, no el buscador: el campo conserva el foco
+      // y el cursor donde estaban.
+      window.clearTimeout(esperaBusqueda);
+      esperaBusqueda = window.setTimeout(pintarResultadoPersonas, 120);
+    });
+
+    raiz.addEventListener(
+      "submit",
+      manejar("admin", async (evento: SubmitEvent) => {
+        const form = evento.target as HTMLFormElement;
+        evento.preventDefault();
+        if (form.id === "formCodigo") await emitirCodigo(form);
+        else if (form.id === "formAdmin") await altaAdministrador(form);
+      })
+    );
   }
 }
 
@@ -517,751 +871,47 @@ export function mostrarAdministracion(onSalir: () => void): void {
 function explicarRechazoAlta(motivo: Exclude<ResultadoAltaAdmin, { ok: true }>["motivo"]): string {
   switch (motivo) {
     case "identificador_repetido":
-      return "Ese RUT o correo ya tiene cuenta. Búscalo en la tabla y dale Hacer admin.";
+      return "Ese RUT o correo ya tiene cuenta. Búscalo en Personas y dale el rol desde su ficha.";
     case "clave_corta":
       return `La contraseña necesita al menos ${LARGO_MINIMO_CLAVE} caracteres.`;
     case "rol_pendiente":
-      return "La cuenta se creó, pero quedó como trabajador. Dale Hacer admin en la tabla.";
+      return "La cuenta se creó, pero quedó como trabajador. Ábrela en Personas y dale Hacer admin.";
     default:
       return "No se pudo crear la cuenta. Revisa tu conexión.";
   }
 }
 
-function plantilla(
-  perfiles: Perfil[],
-  codigos: Codigo[],
-  inscripciones: Inscripcion[],
-  cursos: Curso[],
-  ranking: FilaRankingAdmin[],
-  areas: ResumenArea[],
-  perfilPropio: string | null,
-  pestanaActiva: Pestana,
-  bitacora: EntradaBitacora[]
-): string {
-  const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
-  const activos = codigos.filter((c) => c.activo).length;
-
-  // El total de fases sale del curso y no de un 5 escrito a mano: si algun dia
-  // se publica un curso con otra cantidad de fases, el avance sigue siendo
-  // correcto sin tocar esta pantalla.
-  const totalFases = cursos.find((c) => c.id === CURSO_ID)?.totalFases ?? 5;
-
-  // Los cuatro grupos salen de agrupar por TAREA, no por tipo de dato: quien
-  // entra al panel viene a hacer algo concreto —dar de alta a alguien, emitir
-  // un código, mirar cómo va el curso— y cada una de esas tareas necesita su
-  // formulario y su tabla juntos. Antes estaban a media pantalla de distancia
-  // porque el orden era el de construcción, no el de uso.
-  const paneles: Record<Pestana, string> = {
-    personas: `
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Agregar administrador</h2>
-          <form id="formAdmin">
-            <div class="portal__fila">
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="adminNombre">Nombre completo</label>
-                <input class="portal__entrada" id="adminNombre" required />
-              </div>
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="adminIdentificador">RUT o correo</label>
-                <input class="portal__entrada" id="adminIdentificador" required />
-              </div>
-            </div>
-            <div class="portal__fila">
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="adminEmpresa">Empresa</label>
-                <input class="portal__entrada" id="adminEmpresa" />
-              </div>
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="adminArea">Área</label>
-                <input class="portal__entrada" id="adminArea" placeholder="Capacitación" />
-              </div>
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="adminClave">Contraseña</label>
-                <input class="portal__entrada" id="adminClave" type="password" required
-                       minlength="${LARGO_MINIMO_CLAVE}" placeholder="mínimo ${LARGO_MINIMO_CLAVE} caracteres" />
-              </div>
-            </div>
-            <button class="portal__boton" type="submit">Crear administrador</button>
-          </form>
-        </section>
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Personas registradas</h2>
-          <div class="portal__tablaEnvoltura">
-            ${tablaPersonas(perfiles, inscripciones, cursos, perfilPropio, ranking, totalFases)}
-          </div>
-        </section>`,
-
-    codigos: `
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Emitir código</h2>
-          <form id="formCodigo">
-            <div class="portal__fila">
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="nuevoCurso">Curso</label>
-                <select class="portal__entrada" id="nuevoCurso">
-                  ${cursos
-                    .filter((c) => c.activo)
-                    .map((c) => `<option value="${c.id}">${c.nombre}</option>`)
-                    .join("")}
-                </select>
-              </div>
-
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="nuevoLote">Lote</label>
-                <input class="portal__entrada" id="nuevoLote" placeholder="PLANTA" maxlength="10" />
-              </div>
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="nuevoCupos">Cupos</label>
-                <input class="portal__entrada" id="nuevoCupos" type="number" min="1" value="20" />
-              </div>
-              <div class="portal__campo">
-                <label class="portal__etiqueta" for="nuevoDias">Días de vigencia</label>
-                <input class="portal__entrada" id="nuevoDias" type="number" min="0" placeholder="sin vencimiento" />
-              </div>
-            </div>
-            <div class="portal__campo">
-              <label class="portal__etiqueta" for="nuevaNota">Nota interna</label>
-              <input class="portal__entrada" id="nuevaNota" placeholder="Turno mañana — planta principal" />
-            </div>
-            <button class="portal__boton" type="submit">Generar código</button>
-          </form>
-        </section>
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Códigos emitidos</h2>
-          <div class="portal__tablaEnvoltura">
-            ${tablaCodigos(codigos, cursos)}
-          </div>
-        </section>`,
-
-    cursos: `
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Cursos de la plataforma</h2>
-          <div class="portal__tablaEnvoltorio">
-            ${tablaCursos(cursos, inscripciones)}
-          </div>
-        </section>`,
-
-    seguridad: `
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Bitácora de seguridad</h2>
-          ${bitacoraHtml(bitacora)}
-        </section>`,
-
-    reportes: `
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Ranking del curso</h2>
-          <div class="portal__tablaEnvoltura">
-            ${tablaRanking(ranking)}
-          </div>
-        </section>
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Cobertura por área</h2>
-          <div class="portal__tablaEnvoltura">
-            ${tablaAreas(areas)}
-          </div>
-        </section>
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Reportes</h2>
-          <p class="portal__nota portal__nota--arriba">
-            Archivos Excel con formato, listos para archivar o adjuntar.
-          </p>
-
-          <div class="reportes">
-            <button class="reporte" type="button" data-reporte="personas">
-              <span class="reporte__nombre">Personas y avance</span>
-              <span class="reporte__desc">Una fila por inscripción, con fases completadas y estado</span>
-            </button>
-            <button class="reporte" type="button" data-reporte="ranking">
-              <span class="reporte__nombre">Ranking completo</span>
-              <span class="reporte__desc">Todos los participantes ordenados por puntaje</span>
-            </button>
-            <button class="reporte" type="button" data-reporte="areas">
-              <span class="reporte__nombre">Resumen por área</span>
-              <span class="reporte__desc">Cobertura de la capacitación en cada área</span>
-            </button>
-            <button class="reporte" type="button" data-reporte="codigos">
-              <span class="reporte__nombre">Códigos emitidos</span>
-              <span class="reporte__desc">Consumo de cupos y vigencia de cada código</span>
-            </button>
-          </div>
-        </section>
-        <section class="portal__seccion">
-          <h2 class="portal__tituloSeccion">Verificar un certificado</h2>
-          <p class="portal__nota portal__nota--arriba">
-            Comprueba si un certificado presentado por alguien fue emitido por esta
-            plataforma. Basta el código impreso al pie del documento.
-          </p>
-          <button class="reporte" type="button" id="abrirVerificacion">
-            <span class="reporte__nombre">Abrir verificador</span>
-            <span class="reporte__desc">
-              Escribe el código y confirma nombre, curso, puntaje y fecha de emisión
-            </span>
-          </button>
-        </section>`,
-  };
-
-  const pestanas = PESTANAS.map((p) => {
-    const activa = p.id === pestanaActiva;
-    return `<button type="button" role="tab" class="admin__pestana${activa ? " admin__pestana--activa" : ""}"
-                    data-pestana="${p.id}" aria-selected="${activa}">${p.rotulo}</button>`;
-  }).join("");
-
-  const cuerpos = PESTANAS.map(
-    (p) =>
-      `<div data-panel="${p.id}" role="tabpanel"${p.id === pestanaActiva ? "" : " hidden"}>${paneles[p.id]}</div>`
-  ).join("");
-
+/** El esqueleto fijo de la consola: riel, cabecera, lienzo, avisos y ficha. */
+function armazon(): string {
   return `
-    <div class="portal__tarjeta portal__tarjeta--ancha">
-      <div class="portal__filete portal__filete--admin"></div>
-      <div class="portal__cuerpo">
-
-        <div class="admin__encabezado">
-          <div>
-            <p class="portal__rotulo">ADMINISTRACIÓN</p>
-            <h1 class="portal__titulo">Curso 5S</h1>
-          </div>
-          <button class="portal__boton portal__boton--secundario admin__salir" id="btnSalirAdmin" type="button">
-            Cerrar sesión
-          </button>
+    <div class="consola">
+      <aside class="riel" aria-label="Panel de administración">
+        <div class="riel__marca">
+          ${marcaClassplay()}
+          <span class="riel__producto">Panel</span>
         </div>
-
-        <!-- Cifras de cabecera: lo que un administrador mira primero al
-             entrar, sin tener que abrir ninguna sección. -->
-        <div class="admin__cifras">
-          <div class="admin__cifra">
-            <span class="admin__cifraDato">${trabajadores.length}</span>
-            <span class="admin__cifraRotulo">Trabajadores</span>
-          </div>
-          <div class="admin__cifra">
-            <span class="admin__cifraDato">${inscripciones.filter((i) => i.activa).length}</span>
-            <span class="admin__cifraRotulo">Inscripciones activas</span>
-          </div>
-          <div class="admin__cifra">
-            <span class="admin__cifraDato">${activos}</span>
-            <span class="admin__cifraRotulo">Códigos vigentes</span>
-          </div>
-          <div class="admin__cifra">
-            <span class="admin__cifraDato">${ranking.filter((f) => f.fasesAprobadas >= 5).length}</span>
-            <span class="admin__cifraRotulo">Cursos completados</span>
+        <nav class="riel__nav" id="rielNav" aria-label="Secciones"></nav>
+        <div class="riel__pie">
+          <div class="riel__yo" id="rielYo"></div>
+          <div class="riel__acciones">
+            <button class="icono-boton" type="button" id="botonTema" data-accion="tema"></button>
+            <button class="icono-boton" type="button" data-accion="salir" aria-label="Cerrar sesión" title="Cerrar sesión">${icono("salir")}</button>
           </div>
         </div>
+      </aside>
 
-        <nav class="admin__pestanas" role="tablist" aria-label="Secciones">
-          ${pestanas}
-        </nav>
-
-        <p class="portal__aviso" id="avisoAdmin" hidden></p>
-
-        ${cuerpos}
-      </div>
-    </div>`;
-}
-
-/**
- * Esqueleto mientras llegan los datos.
- *
- * Reproduce la forma real del panel —cabecera, cifras, pestañas y filas— en
- * lugar de un texto "Cargando…". La pantalla no cambia de estructura al
- * llegar los datos, solo se rellena, y eso hace que la espera se perciba más
- * corta aunque dure lo mismo.
- */
-function esqueletoCargando(): string {
-  const filas = Array.from({ length: 6 }, () => `<div class="admin__hueso admin__hueso--fila"></div>`).join("");
-  const cifras = Array.from({ length: 4 }, () => `<div class="admin__hueso admin__hueso--cifra"></div>`).join("");
-
-  return `
-    <div class="portal__tarjeta portal__tarjeta--ancha">
-      <div class="portal__filete portal__filete--admin"></div>
-      <div class="portal__cuerpo" aria-busy="true">
-        <div class="admin__hueso admin__hueso--titulo"></div>
-        <div class="admin__cifras">${cifras}</div>
-        <div class="admin__hueso admin__hueso--pestanas"></div>
-        ${filas}
-      </div>
-    </div>`;
-}
-
-function tablaAreas(areas: ResumenArea[]): string {
-  if (areas.length === 0) {
-    return `<p class="portal__vacio">Todavía no hay personas inscritas.</p>`;
-  }
-
-  const filas = areas
-    .map((a) => {
-      // Bajo 50% se marca en rojo: es el umbral donde deja de ser un
-      // rezago normal y pasa a ser algo que hay que ir a mirar.
-      const color = a.cobertura >= 80 ? "ok" : a.cobertura >= 50 ? "media" : "baja";
-      return `
-        <tr>
-          <td>${a.area}</td>
-          <td>${a.inscritos}</td>
-          <td>${a.completados}</td>
-          <td>${a.enCurso}</td>
-          <td>${a.sinEmpezar}</td>
-          <td>
-            <div class="cobertura">
-              <div class="cobertura__carril">
-                <span class="cobertura__barra cobertura__barra--${color}" style="width:${a.cobertura}%"></span>
-              </div>
-              <span class="cobertura__cifra">${a.cobertura}%</span>
-            </div>
-          </td>
-        </tr>`;
-    })
-    .join("");
-
-  return `
-    <table class="portal__tabla">
-      <thead>
-        <tr>
-          <th>Área</th><th>Inscritos</th><th>Completados</th>
-          <th>En curso</th><th>Sin empezar</th><th>Cobertura</th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>`;
-}
-
-function tablaCodigos(codigos: Codigo[], cursos: Curso[]): string {
-  if (codigos.length === 0) {
-    return `<p class="portal__vacio">Todavía no hay códigos emitidos.</p>`;
-  }
-
-  const filas = codigos
-    .map((c) => {
-      const vencido = Boolean(c.venceEn && new Date(c.venceEn).getTime() < Date.now());
-      const agotado = c.usosActuales >= c.usosMaximos;
-
-      let estado = `<span class="portal__insignia portal__insignia--ok">Disponible</span>`;
-      if (!c.activo) estado = `<span class="portal__insignia portal__insignia--baja">Dado de baja</span>`;
-      else if (vencido) estado = `<span class="portal__insignia portal__insignia--baja">Vencido</span>`;
-      else if (agotado) estado = `<span class="portal__insignia portal__insignia--gastado">Sin cupos</span>`;
-
-      const accion = c.activo
-        ? `<button class="portal__boton portal__boton--secundario" data-codigo="${c.codigo}" data-accion="baja">Dar de baja</button>`
-        : `<button class="portal__boton portal__boton--secundario" data-codigo="${c.codigo}" data-accion="activar">Reactivar</button>`;
-
-      return `
-        <tr>
-          <td class="portal__codigo">${c.codigo}</td>
-          <td>${cursos.find((x) => x.id === c.cursoId)?.nombre ?? c.cursoId}</td>
-          <td>${c.usosActuales} / ${c.usosMaximos}</td>
-          <td>${c.venceEn ? fecha(c.venceEn) : "Sin vencimiento"}</td>
-          <td>${estado}</td>
-          <td>${c.nota || "—"}</td>
-          <td>${accion}</td>
-        </tr>`;
-    })
-    .join("");
-
-  return `
-    <table class="portal__tabla">
-      <thead>
-        <tr>
-          <th>Código</th><th>Curso</th><th>Usos</th><th>Vigencia</th><th>Estado</th><th>Nota</th><th></th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>`;
-}
-
-/**
- * Cursos publicados, con cuánta gente hay inscrita en cada uno.
- *
- * Retirar un curso no lo borra: deja de aparecer en el catálogo pero conserva
- * las inscripciones y el historial de quienes ya lo hicieron. Borrarlo haría
- * desaparecer la prueba de esas capacitaciones.
- */
-
-/**
- * Ranking completo, tal como lo ve administración.
- *
- * A diferencia del que ve el trabajador, acá va la lista entera y con la
- * empresa a la vista: es la información que hace falta para comparar áreas,
- * detectar quién quedó a mitad de camino y decidir a quién acompañar.
- *
- * El orden lo define la base de datos —puntaje descendente, y a igual puntaje
- * gana el menor tiempo—, así que esta función solo dibuja.
- */
-function tablaRanking(ranking: FilaRankingAdmin[]): string {
-  if (ranking.length === 0) {
-    return `<p class="portal__vacio">Todavía nadie completó una fase de este curso.</p>`;
-  }
-
-  const filas = ranking
-    .map(
-      (f) => `
-        <tr>
-          <td>${f.posicion}</td>
-          <td>${f.nombreCompleto}</td>
-          <td>${f.empresa || "—"}</td>
-          <td>${f.area || "—"}</td>
-          <td>${f.fasesAprobadas} de 5</td>
-          <td>${f.puntajeTotal}</td>
-          <td>${formatearDuracion(f.segundosTotal)}</td>
-        </tr>`
-    )
-    .join("");
-
-  return `
-    <table class="portal__tabla">
-      <thead>
-        <tr>
-          <th>#</th><th>Nombre</th><th>Empresa</th><th>Área</th>
-          <th>Fases</th><th>Puntaje</th><th>Tiempo</th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>`;
-}
-
-function tablaCursos(cursos: Curso[], inscripciones: Inscripcion[]): string {
-  if (cursos.length === 0) {
-    return `<p class="portal__vacio">Todavía no hay cursos publicados.</p>`;
-  }
-
-  const filas = cursos
-    .map((curso) => {
-      const inscritos = inscripciones.filter((i) => i.cursoId === curso.id && i.activa).length;
-      const estado = curso.activo
-        ? `<span class="portal__estado portal__estado--activo">Publicado</span>`
-        : `<span class="portal__estado portal__estado--baja">Retirado</span>`;
-      const accion = curso.activo
-        ? `<button class="portal__accion" data-curso="${curso.id}" data-accion="retirar">Retirar</button>`
-        : `<button class="portal__accion" data-curso="${curso.id}" data-accion="publicar">Publicar</button>`;
-
-      return `
-        <tr class="${curso.activo ? "" : "portal__fila--baja"}">
-          <td>${curso.nombre}</td>
-          <td>${curso.totalFases} fases</td>
-          <td>${curso.duracionMinutos} min</td>
-          <td>${inscritos}</td>
-          <td>${estado}</td>
-          <td class="portal__acciones">${accion}</td>
-        </tr>`;
-    })
-    .join("");
-
-  return `
-    <table class="portal__tabla">
-      <thead>
-        <tr><th>Curso</th><th>Fases</th><th>Duración</th><th>Inscritos</th><th>Estado</th><th></th></tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>
-    <p class="portal__nota">
-      Un curso retirado deja de aparecer en el catálogo, pero conserva las inscripciones
-      y el historial de quienes ya lo cursaron.
-    </p>`;
-}
-
-function tablaPersonas(
-  perfiles: Perfil[],
-  inscripciones: Inscripcion[],
-  cursos: Curso[],
-  perfilPropio: string | null,
-  ranking: FilaRankingAdmin[],
-  totalFases: number
-): string {
-  // Avance por persona, indexado para no recorrer el ranking en cada fila.
-  //
-  // El dato ya venia en la consulta del ranking y no se estaba usando: quien
-  // aparece ahi tiene fases aprobadas registradas. No hace falta ninguna
-  // consulta nueva, solo cruzarlo por perfilId.
-  const avancePorPerfil = new Map(ranking.map((f) => [f.perfilId, f]));
-  if (perfiles.length === 0) {
-    return `<p class="portal__vacio">Todav\u00eda no se registr\u00f3 nadie.</p>`;
-  }
-
-  const filas = perfiles
-    .map((p) => {
-      const inscripcion = inscripciones.find((i) => i.perfilId === p.id);
-      const activa = inscripcion?.activa ?? false;
-
-      const avance = avancePorPerfil.get(p.id);
-      const fases = avance?.fasesAprobadas ?? 0;
-
-      // Eliminar solo se ofrece a quien no tiene nada que perder.
-      //
-      // Antes esto estaba fijo en true y el boton aparecia SIEMPRE, incluso
-      // sobre alguien con el curso terminado y certificado emitido. Un clic de
-      // mas y se borraba un historial irrecuperable. Ahora, en cuanto hay una
-      // sola fase registrada, la accion destructiva desaparece y queda
-      // "Dar de baja", que conserva el historial.
-      // Ya no se usa para ocultar el botón de eliminar: ese ahora está siempre
-      // disponible y la protección la da la confirmación de dos pasos.
-
-      const esAdmin = p.rol === "administrador";
-      const esUnoMismo = p.id === perfilPropio;
-
-      // La suspensión se muestra junto al rol y no en una columna aparte: es
-      // el dato que manda sobre todos los demás. Alguien suspendido no entra,
-      // da igual qué rol tenga o en qué curso esté inscrito.
-      const rol = p.suspendido
-        ? `<span class="portal__estado portal__estado--baja">Suspendida</span>`
-        : esAdmin
-          ? `<span class="portal__estado portal__estado--activo">Administrador</span>`
-          : `<span class="portal__estado portal__estado--neutro">Trabajador</span>`;
-
-      const estado = !inscripcion
-        ? `<span class="portal__estado portal__estado--neutro">Sin inscripci\u00f3n</span>`
-        : activa
-          ? `<span class="portal__estado portal__estado--activo">Activa</span>`
-          : `<span class="portal__estado portal__estado--baja">De baja</span>`;
-
-      const curso = inscripcion
-        ? cursos.find((c) => c.id === inscripcion.cursoId)?.nombre ?? "\u2014"
-        : "\u2014";
-
-      const acciones: string[] = [];
-
-      // El propio administrador no ve el bot\u00f3n sobre su fila: quitarse el
-      // permiso es la forma m\u00e1s f\u00e1cil de quedarse afuera del panel.
-      if (!esUnoMismo) {
-        acciones.push(
-          esAdmin
-            ? `<button class="portal__accion" data-rol="${p.id}" data-accion="degradar">Quitar admin</button>`
-            : `<button class="portal__accion" data-rol="${p.id}" data-accion="promover">Hacer admin</button>`
-        );
-      }
-
-      // Restablecer clave se ofrece siempre, tambien sobre la propia fila: es
-      // el caso legitimo de un administrador que perdio la suya y todavia
-      // tiene la sesion abierta.
-      acciones.push(
-        `<button class="portal__accion" data-clave="${p.id}">Restablecer clave</button>`
-      );
-
-      // Suspender no se ofrece sobre la propia fila ni sobre otro
-      // administrador: la función del servidor rechaza ambos casos, y es mejor
-      // que el botón no esté a que aparezca y falle.
-      if (!esUnoMismo && !esAdmin) {
-        acciones.push(
-          p.suspendido
-            ? `<button class="portal__accion portal__accion--reactivar" data-suspender="${p.id}" data-estado="activar">Reactivar cuenta</button>`
-            : `<button class="portal__accion" data-suspender="${p.id}" data-estado="suspender">Suspender</button>`
-        );
-      }
-
-      // Dar de baja es lo cotidiano y es reversible; eliminar borra el
-      // registro y solo se ofrece cuando no hay nada que perder.
-      if (inscripcion && activa) {
-        acciones.push(
-          `<button class="portal__accion" data-baja="${inscripcion.id}">Dar de baja</button>`
-        );
-      }
-      if (inscripcion && !activa) {
-        acciones.push(
-          `<button class="portal__accion" data-reactivar="${inscripcion.id}">Reactivar</button>`
-        );
-      }
-      // El botón aparece SIEMPRE, también sobre quien ya terminó el curso.
-      //
-      // Antes se ocultaba a quien tuviera avance, para evitar borrados
-      // accidentales. Pero eso hacía imposible limpiar una cuenta de prueba
-      // una vez jugada, que es justo lo que hay que poder hacer. La protección
-      // ahora está en la confirmación y en el propio texto del botón, no en
-      // esconder la acción.
-      {
-        acciones.push(
-          `<button class="portal__accion portal__accion--riesgo" data-eliminar="${p.id}">Eliminar cuenta</button>`
-        );
-      }
-
-      // Seis columnas en vez de diez: los datos que siempre se leen juntos
-      // \u2014nombre y ficha, empresa y \u00e1rea, curso y c\u00f3digo, estado y fecha\u2014
-      // van apilados en una sola celda. No se pierde ning\u00fan dato y la tabla
-      // entra en la tarjeta sin barra de desplazamiento.
-      return `
-        <tr class="${p.suspendido ? "portal__fila--baja" : activa || !inscripcion ? "" : "portal__fila--baja"}"
-            data-buscable="${escapar(
-              [p.nombreCompleto, p.identificador, p.empresa, p.area, curso].join(" ").toLowerCase()
-            )}">
-          <td class="portal__apilada">
-            <strong>${escapar(p.nombreCompleto)}</strong>
-            <span class="portal__subdato">${escapar(p.identificador)}</span>
-          </td>
-          <td class="portal__apilada">
-            ${escapar(p.empresa) || "\u2014"}
-            <span class="portal__subdato">${escapar(p.area) || "\u2014"}</span>
-          </td>
-          <td>${rol}</td>
-          <td class="portal__apilada">
-            ${escapar(curso)}
-            <span class="portal__subdato portal__subdato--codigo">${escapar(inscripcion?.codigoUsado || "\u2014")}</span>
-          </td>
-          <td class="portal__apilada">
-            ${estado}
-            <span class="portal__subdato">${inscripcion ? fecha(inscripcion.inscritoEn) : "\u2014"}</span>
-          </td>
-          <td>${celdaAvance(fases, totalFases, avance?.puntajeTotal ?? 0)}</td>
-          <td class="portal__acciones">${acciones.join("")}</td>
-        </tr>`;
-    })
-    .join("");
-
-  return `
-    <div class="admin__herramientas">
-      <input class="portal__entrada admin__buscador" id="buscadorPersonas" type="search"
-             placeholder="Buscar por nombre, RUT, empresa o área…" autocomplete="off" />
-      <span class="admin__contador" id="contadorPersonas"></span>
+      <main class="lienzo" id="lienzo">
+        <header class="lienzo__cabeza">
+          <div class="lienzo__titulos" id="lienzoTitulos"></div>
+          <div class="lienzo__alcance" role="group" aria-label="Alcance de los datos">
+            <div class="lienzo__selectores" id="lienzoAlcance"></div>
+            <button class="icono-boton" type="button" data-accion="recargar" aria-label="Actualizar los datos" title="Actualizar los datos">${icono("recargar")}</button>
+          </div>
+        </header>
+        <div class="lienzo__cuerpo" id="lienzoCuerpo"></div>
+      </main>
     </div>
 
-    <p class="portal__vacio" id="sinResultados" hidden>
-      Ninguna persona coincide con esa búsqueda.
-    </p>
-
-    <table class="portal__tabla portal__tabla--personas">
-      <thead>
-        <tr>
-          <th>Persona</th><th>Empresa / \u00e1rea</th><th>Rol</th>
-          <th>Curso</th><th>Inscripci\u00f3n</th><th>Avance</th><th></th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>
-    <p class="portal__nota">
-      Dar de baja libera el cupo del c\u00f3digo y conserva el historial. Eliminar
-      borra el registro. Para sumar un administrador, la persona se registra con
-      un c\u00f3digo y ac\u00e1 se le cambia el rol.
-    </p>`;
-}
-
-/**
- * Escapa el texto que viene de la base antes de incrustarlo en el HTML.
- *
- * Los nombres, empresas y \u00e1reas los escribe cada persona al registrarse. Sin
- * esto, alguien que ponga etiquetas HTML en su nombre las ejecuta en el
- * navegador del administrador, que es justamente quien m\u00e1s permisos tiene.
- */
-/**
- * Bitácora en línea de tiempo, no en tabla.
- *
- * Una tabla obliga a leer columna por columna para reconstruir qué pasó. Acá
- * cada entrada es una frase —quién, qué y sobre quién— con la hora al margen,
- * así que el recorrido es vertical y se escanea de un vistazo. Es la forma en
- * que se leen los registros de actividad en un software real, y la que evita
- * que la sección se vea cargada.
- *
- * Las entradas van agrupadas por día: sin eso, cien líneas repitiendo la fecha
- * completa son exactamente el muro de datos que había que evitar.
- */
-function bitacoraHtml(entradas: EntradaBitacora[]): string {
-  if (entradas.length === 0) {
-    return `
-      <p class="portal__nota">
-        Toda acción administrativa queda registrada acá: cambios de rol,
-        suspensiones, contraseñas restablecidas y cuentas eliminadas.
-      </p>
-      <p class="portal__vacio">Todavía no se registró ninguna acción.</p>`;
-  }
-
-  const porDia = new Map<string, EntradaBitacora[]>();
-  entradas.forEach((e) => {
-    const dia = new Date(e.ocurridoEn).toLocaleDateString("es-CL", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-    if (!porDia.has(dia)) porDia.set(dia, []);
-    porDia.get(dia)!.push(e);
-  });
-
-  const dias = [...porDia.entries()]
-    .map(([dia, delDia]) => {
-      const filas = delDia
-        .map((e) => {
-          const { titulo, tono } = describirAccion(e.accion);
-          const hora = new Date(e.ocurridoEn).toLocaleTimeString("es-CL", {
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-
-          const sobre = e.objetivoNombre
-            ? ` <span class="bitacora__objetivo">${escapar(e.objetivoNombre)}</span>`
-            : "";
-
-          const extra = e.detalle.identificador
-            ? `<span class="bitacora__extra">${escapar(typeof e.detalle.identificador === "string" ? e.detalle.identificador : "")}</span>`
-            : "";
-
-          return `
-            <li class="bitacora__entrada bitacora__entrada--${tono}">
-              <span class="bitacora__hora">${hora}</span>
-              <span class="bitacora__punto" aria-hidden="true"></span>
-              <span class="bitacora__texto">
-                <strong>${escapar(e.actorNombre)}</strong> · ${titulo}${sobre}
-                ${extra}
-              </span>
-            </li>`;
-        })
-        .join("");
-
-      return `
-        <div class="bitacora__dia">
-          <h3 class="bitacora__fecha">${dia}</h3>
-          <ul class="bitacora__lista">${filas}</ul>
-        </div>`;
-    })
-    .join("");
-
-  return `
-    <p class="portal__nota">
-      Registro de solo escritura: las entradas no se pueden editar ni borrar,
-      ni desde acá ni desde la base de datos. Se muestran las
-      ${entradas.length} más recientes.
-    </p>
-    ${dias}`;
-}
-
-/**
- * Celda de avance: cuantas fases lleva y cuanto suma.
- *
- * Tres estados distintos y no una sola barra, porque responden preguntas
- * distintas: "todavia no empezo" es un problema de seguimiento, "va por la 3"
- * es normal, y "termino" cierra el caso. Con una barra al 0% los dos primeros
- * se ven casi igual.
- *
- * Esto es lo que faltaba en el panel. El ranking dice quien va PRIMERO —sirve
- * para premiar— pero no responde "¿esta persona empezo?", que es la pregunta
- * de todos los dias. Y quien no empezo no aparece en el ranking, asi que ahi
- * es invisible.
- */
-function celdaAvance(fases: number, total: number, puntaje: number): string {
-  if (fases === 0) {
-    return `<span class="portal__estado portal__estado--neutro">Sin empezar</span>`;
-  }
-
-  const completo = fases >= total;
-  const porcentaje = Math.round((Math.min(fases, total) / total) * 100);
-
-  return `
-    <div class="admin__avance">
-      <div class="admin__avanceCifra">
-        <span class="${completo ? "admin__avanceHecho" : ""}">${fases} de ${total}</span>
-        <span class="admin__avancePuntaje">${puntaje} pts</span>
-      </div>
-      <div class="cobertura__carril">
-        <span class="cobertura__barra cobertura__barra--${completo ? "ok" : "media"}"
-              style="width:${porcentaje}%"></span>
-      </div>
-    </div>`;
-}
-
-function escapar(texto: string): string {
-  return texto
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function fecha(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString("es-CL", { day: "numeric", month: "short", year: "numeric" });
-  } catch {
-    return "—";
-  }
+    <div class="avisos" id="avisos" aria-live="polite"></div>
+    <dialog class="ficha" id="ficha" aria-labelledby="fichaNombre"></dialog>`;
 }

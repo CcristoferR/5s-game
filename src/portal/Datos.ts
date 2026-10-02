@@ -1,4 +1,5 @@
 import { supabase, correoDeIdentificador, clienteAislado } from "./supabase";
+import { prefijoDeCurso } from "./CatalogoCursos";
 
 /**
  * Capa de datos de la plataforma.
@@ -979,11 +980,12 @@ export async function crearCodigo(datos: {
   venceEn?: string | null;
   nota: string;
 }): Promise<Codigo | null> {
+  const cursoId = datos.cursoId ?? CURSO_ID;
   const { data, error } = await supabase
     .from("codigos")
     .insert({
-      codigo: generarCodigo(datos.lote),
-      curso_id: datos.cursoId ?? CURSO_ID,
+      codigo: generarCodigo(cursoId, datos.lote),
+      curso_id: cursoId,
       usos_maximos: Math.max(1, Math.round(datos.usosMaximos)),
       vence_en: datos.venceEn || null,
       nota: datos.nota.trim(),
@@ -1006,7 +1008,9 @@ export async function cambiarEstadoCodigo(codigo: string, activo: boolean): Prom
 /**
  * Genera un código legible.
  *
- * Formato: PREFIJO-LOTE-9999. El lote lo elige el administrador y sirve para
+ * Formato: PREFIJO-LOTE-9999. El prefijo dice de qué curso es (5S, GS…) y
+ * sale de CatalogoCursos: antes era 5S fijo, y un código de guardias se leía
+ * como si fuera del 5S. El lote lo elige el administrador y sirve para
  * reconocer de un vistazo a qué grupo pertenece un código sin abrir la tabla
  * — "PLANTA" o "TURNO-A" dicen más que cuatro letras al azar. Si no se indica,
  * se usan letras aleatorias.
@@ -1014,7 +1018,7 @@ export async function cambiarEstadoCodigo(codigo: string, activo: boolean): Prom
  * Sin caracteres que se confundan al dictarlo: nada de O/0 ni I/l/1, porque
  * alguien va a leerlo en voz alta en una planta ruidosa.
  */
-function generarCodigo(lote?: string): string {
+function generarCodigo(cursoId: string, lote?: string): string {
   const letras = "ABCDEFGHJKMNPQRSTUVWXYZ";
   const numeros = "23456789";
   const bytes = new Uint8Array(8);
@@ -1035,7 +1039,7 @@ function generarCodigo(lote?: string): string {
 
   let cifras = "";
   for (let i = 4; i < 8; i++) cifras += numeros[bytes[i] % numeros.length];
-  return `5S-${bloque}-${cifras}`;
+  return `${prefijoDeCurso(cursoId)}-${bloque}-${cifras}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,6 +1413,63 @@ export async function emitirCertificado(cursoId = CURSO_ID): Promise<ResultadoCe
       emitidoEn: r.emitido_en ?? new Date().toISOString(),
     },
   };
+}
+
+/**
+ * Un certificado tal como quedó guardado al emitirse.
+ *
+ * Distinto de Certificado, que es lo que se imprime: este lleva además a
+ * quién y de qué curso es, para cruzarlo con las inscripciones.
+ */
+export interface CertificadoEmitido {
+  codigo: string;
+  perfilId: string;
+  cursoId: string;
+  nombreCompleto: string;
+  empresa: string;
+  area: string;
+  puntaje: number;
+  emitidoEn: string;
+}
+
+type FilaCertificado = {
+  codigo: string;
+  perfil_id: string;
+  curso_id: string;
+  nombre_completo: string;
+  empresa: string | null;
+  area: string | null;
+  puntaje: number | null;
+  emitido_en: string;
+};
+
+/**
+ * Certificados emitidos.
+ *
+ * La política de la tabla hace el recorte: el administrador recibe todos, y
+ * un trabajador solo los suyos. La misma llamada sirve al panel y a Mi cuenta.
+ */
+export async function listarCertificados(): Promise<CertificadoEmitido[]> {
+  const { data, error } = await supabase
+    .from("certificados")
+    .select("*")
+    .order("emitido_en", { ascending: false });
+
+  if (error) {
+    avisarError("listarCertificados", error);
+    return [];
+  }
+
+  return (data as FilaCertificado[]).map((f) => ({
+    codigo: f.codigo,
+    perfilId: f.perfil_id,
+    cursoId: f.curso_id,
+    nombreCompleto: f.nombre_completo,
+    empresa: f.empresa ?? "",
+    area: f.area ?? "",
+    puntaje: f.puntaje ?? 0,
+    emitidoEn: f.emitido_en,
+  }));
 }
 
 export interface Verificacion {

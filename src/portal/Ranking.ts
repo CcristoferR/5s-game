@@ -179,6 +179,81 @@ export async function rankingCompleto(
   );
 }
 
+/** El mejor intento de una persona en una fase, tal como lo guarda el servidor. */
+export interface ResultadoFase {
+  perfilId: string;
+  cursoId: string;
+  fase: number;
+  puntaje: number;
+  segundos: number;
+  actualizadoEn: string;
+}
+
+type FilaResultado = {
+  perfil_id: string;
+  curso_id: string;
+  fase: number;
+  puntaje: number | null;
+  segundos: number | null;
+  actualizado_en: string;
+};
+
+function desdeResultado(f: FilaResultado): ResultadoFase {
+  return {
+    perfilId: f.perfil_id,
+    cursoId: f.curso_id,
+    fase: f.fase,
+    puntaje: f.puntaje ?? 0,
+    segundos: f.segundos ?? 0,
+    actualizadoEn: f.actualizado_en,
+  };
+}
+
+/**
+ * Los resultados propios, fase por fase.
+ *
+ * Consulta directa a la tabla: la política deja leer las filas propias, que es
+ * justo lo que necesita Mi cuenta. No hay forma de que devuelva las de otro.
+ */
+export async function misResultados(): Promise<ResultadoFase[]> {
+  const { data, error } = await supabase
+    .from("resultados_fase")
+    .select("*")
+    .order("curso_id")
+    .order("fase");
+
+  if (error) {
+    avisarError("misResultados", error);
+    return [];
+  }
+
+  return (data as FilaResultado[]).map(desdeResultado);
+}
+
+/**
+ * Todos los resultados por fase, para los indicadores del panel.
+ *
+ * Va por función porque la tabla no deja leer filas ajenas ni al
+ * administrador; la función comprueba el rol antes de responder (ver
+ * supabase/2026-10-02-panel.sql).
+ *
+ * Devuelve null, y no una lista vacía, cuando la función no responde: así el
+ * panel distingue "todavía no corriste el SQL" de "nadie aprobó nada" y no
+ * dibuja promedios en cero que parecerían un dato.
+ */
+export async function resultadosDelPanel(cursoId?: string | null): Promise<ResultadoFase[] | null> {
+  const { data, error } = await supabase.rpc("panel_resultados", {
+    p_curso_id: cursoId ?? null,
+  });
+
+  if (error) {
+    avisarError("resultadosDelPanel", error);
+    return null;
+  }
+
+  return ((data ?? []) as FilaResultado[]).map(desdeResultado);
+}
+
 /** Formatea segundos como "4 min 12 s", que se lee mejor que "252 s". */
 export function formatearDuracion(segundos: number): string {
   if (segundos < 60) return `${segundos} s`;

@@ -1,5 +1,7 @@
 import "./portal.css";
 import { verificarCertificado, type Verificacion } from "./Datos";
+import { marcaClassplay } from "./Marca";
+import { icono } from "./Iconos";
 
 /**
  * Verificación de un certificado.
@@ -98,10 +100,7 @@ export function mostrarVerificacion(opciones?: {
 function plantilla(conVolver: boolean): string {
   return `
     <header class="barra">
-      <div class="barra__marca">
-        <span class="barra__sello">5S</span>
-        <span class="barra__nombre">Verificación de certificados</span>
-      </div>
+      <div class="barra__marca">${marcaClassplay({ etiqueta: "Verificación de certificados" })}</div>
       ${conVolver ? `<button class="boton boton--borde" id="volverVerificar" type="button">Volver</button>` : ""}
     </header>
 
@@ -150,7 +149,7 @@ function tarjetaValida(v: Verificacion, codigo: string): string {
   return `
     <section class="verif__resultado verif__resultado--valido">
       <div class="verif__veredicto">
-        <span class="verif__marca verif__marca--ok">✓</span>
+        <span class="verif__marca verif__marca--ok">${icono("ok")}</span>
         <div>
           <h2>Certificado válido</h2>
           <p>Esta emisión está registrada en la plataforma.</p>
@@ -188,7 +187,7 @@ function tarjetaInvalida(codigo: string): string {
   return `
     <section class="verif__resultado verif__resultado--invalido">
       <div class="verif__veredicto">
-        <span class="verif__marca verif__marca--error">!</span>
+        <span class="verif__marca verif__marca--error">${icono("alerta")}</span>
         <div>
           <h2>No encontramos ese código</h2>
           <p>

@@ -5,12 +5,23 @@ import {
   listarProgreso,
   listarCursos,
   listarCodigos,
-  rankingDe,
+  listarCertificados,
   type Perfil,
-  type Inscripcion,
-  type Progreso,
   type Curso,
 } from "./Datos";
+import { rankingCompleto } from "./Ranking";
+import { describirCurso } from "./CatalogoCursos";
+import {
+  armarMatriculas,
+  coberturaPorArea,
+  coincideEmpresa,
+  empresasDe,
+  estadoCodigo,
+  matriculasEnAlcance,
+  rankingEnAlcance,
+  type Matricula,
+} from "./admin/Indicadores";
+import { duracion } from "./admin/Formato";
 
 /**
  * Reportes descargables en Excel.
@@ -52,7 +63,7 @@ interface Columna {
 
 function nuevoLibro(): ExcelJS.Workbook {
   const libro = new ExcelJS.Workbook();
-  libro.creator = "Plataforma de capacitación";
+  libro.creator = "ClassPlay";
   libro.created = new Date();
   return libro;
 }
@@ -186,34 +197,91 @@ function comoFecha(iso?: string | null): Date | string {
 }
 
 // ---------------------------------------------------------------------------
-// Personas y avance
+// Alcance
 // ---------------------------------------------------------------------------
 
-export async function exportarPersonas(): Promise<number> {
-  const [perfiles, inscripciones, progresos, cursos] = await Promise.all([
+/**
+ * Qué parte de los datos va en el archivo: el curso y la empresa que estaban
+ * elegidos en el panel al apretar "Descargar". Sin nada, va todo.
+ */
+export interface AlcanceReporte {
+  cursoId?: string | null;
+  /** Clave normalizada de la empresa (ver claveEmpresa en Indicadores). */
+  empresa?: string | null;
+}
+
+async function datosBase(): Promise<{
+  perfiles: Perfil[];
+  cursos: Curso[];
+  matriculas: Matricula[];
+}> {
+  const [perfiles, inscripciones, progresos, cursos, certificados] = await Promise.all([
     listarPerfiles(),
     listarInscripciones(),
     listarProgreso(),
     listarCursos(),
+    listarCertificados(),
   ]);
+  return {
+    perfiles,
+    cursos,
+    matriculas: armarMatriculas({ perfiles, cursos, inscripciones, progresos, certificados }),
+  };
+}
 
-  const trabajadores = perfiles.filter((p) => p.rol === "trabajador");
+/** "Operación 5S · Bitplay", para el subtítulo de la hoja. */
+function describirAlcance(cursos: Curso[], perfiles: Perfil[], alcance: AlcanceReporte): string {
+  const curso = alcance.cursoId ? cursos.find((c) => c.id === alcance.cursoId) : null;
+  const empresa = alcance.empresa
+    ? empresasDe(perfiles).find((e) => e.clave === alcance.empresa)?.nombre ?? "Empresa"
+    : null;
+  return [curso ? describirCurso(curso).corto : "Todos los cursos", empresa ?? "Todas las empresas"].join(" · ");
+}
+
+/** Sufijo del nombre de archivo: "operacion-5s-bitplay". */
+function sufijo(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/todos los cursos|todas las empresas/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function nombreArchivo(base: string, alcance: string): string {
+  const s = sufijo(alcance);
+  return `${base}${s ? `-${s}` : ""}-${selloFecha()}.xlsx`;
+}
+
+const ROTULO_ESTADO: Record<Matricula["estado"], string> = {
+  completado: "Completado",
+  en_curso: "En curso",
+  sin_empezar: "Sin empezar",
+};
+
+// ---------------------------------------------------------------------------
+// Personas y avance
+// ---------------------------------------------------------------------------
+
+export async function exportarPersonas(alcance: AlcanceReporte = {}): Promise<number> {
+  const { perfiles, cursos, matriculas } = await datosBase();
+  const cursoId = alcance.cursoId ?? null;
+  const empresa = alcance.empresa ?? null;
+
+  const trabajadores = perfiles.filter((p) => p.rol === "trabajador" && coincideEmpresa(p, empresa));
 
   const filas = trabajadores.flatMap((persona) => {
-    const suyas = inscripciones.filter((i) => i.perfilId === persona.id);
+    const suyas = matriculas.filter((m) => m.perfil.id === persona.id && (!cursoId || m.curso.id === cursoId));
 
-    // Alguien registrado sin inscripción también aparece: que exista una
-    // cuenta sin curso asignado es información útil, no un dato a esconder.
-    if (suyas.length === 0) return [filaPersona(persona, null, null, null)];
-
-    return suyas.map((inscripcion) => {
-      const curso = cursos.find((c) => c.id === inscripcion.cursoId) ?? null;
-      const avance =
-        progresos.find((p) => p.perfilId === persona.id && p.cursoId === inscripcion.cursoId) ??
-        null;
-      return filaPersona(persona, inscripcion, curso, avance);
-    });
+    // Alguien registrado sin inscripción también aparece cuando se piden todos
+    // los cursos: que exista una cuenta sin curso es información útil, no un
+    // dato a esconder. Con un curso elegido, solo van sus inscritos.
+    if (suyas.length === 0) return cursoId ? [] : [filaPersona(persona, null)];
+    return suyas.map((m) => filaPersona(persona, m));
   });
+
+  if (filas.length === 0) return 0;
 
   const columnas: Columna[] = [
     { titulo: "Nombre", ancho: 26 },
@@ -230,14 +298,16 @@ export async function exportarPersonas(): Promise<number> {
     { titulo: "Puntaje", ancho: 10, alineacion: "right", formato: "#,##0" },
     { titulo: "Estado", ancho: 14, alineacion: "center" },
     { titulo: "Finalización", ancho: 14, alineacion: "center", formato: FORMATO_FECHA },
+    { titulo: "Certificado", ancho: 16 },
   ];
 
+  const descripcion = describirAlcance(cursos, perfiles, alcance);
   const libro = nuevoLibro();
   const hoja = armarHoja(
     libro,
     "Personas",
     "Avance de la capacitación",
-    "Detalle por persona e inscripción. Incluye a quienes aún no han comenzado.",
+    `${descripcion}. Detalle por persona e inscripción, incluidas las que aún no comienzan.`,
     columnas,
     filas
   );
@@ -264,46 +334,34 @@ export async function exportarPersonas(): Promise<number> {
     };
   });
 
-  await descargarLibro(libro, `personas-${selloFecha()}.xlsx`);
+  await descargarLibro(libro, nombreArchivo("personas", descripcion));
   return filas.length;
 }
 
-function filaPersona(
-  persona: Perfil,
-  inscripcion: Inscripcion | null,
-  curso: Curso | null,
-  avance: Progreso | null
-): unknown[] {
-  const total = curso?.totalFases ?? 0;
-
+function filaPersona(persona: Perfil, m: Matricula | null): unknown[] {
+  const total = m?.curso.totalFases ?? 0;
   // La fase 0 es el tutorial: enseña los controles, no es contenido del curso,
   // así que no cuenta para el avance. Contarla inflaría el porcentaje.
-  const hechas = (avance?.fasesCompletadas ?? []).filter((f) => f >= 1).length;
-
-  let estado = "Sin inscribir";
-  if (inscripcion) {
-    if (avance?.completadoEn || (total > 0 && hechas >= total)) estado = "Completado";
-    else if (hechas > 0) estado = "En curso";
-    else estado = "Sin empezar";
-  }
+  const hechas = m ? Math.min(m.fasesHechas.length, total) : 0;
 
   return [
     persona.nombreCompleto,
     persona.identificador,
     persona.empresa,
     persona.area,
-    curso?.nombre ?? "",
-    inscripcion ? (inscripcion.activa ? "Activa" : "De baja") : "",
-    inscripcion?.codigoUsado ?? "",
-    comoFecha(inscripcion?.inscritoEn),
+    m?.curso.nombre ?? "",
+    m ? (m.inscripcion.activa ? "Activa" : "De baja") : "",
+    m?.inscripcion.codigoUsado ?? "",
+    comoFecha(m?.inscripcion.inscritoEn),
     hechas,
     total,
     // Se guarda como fracción porque la celda tiene formato de porcentaje:
     // Excel multiplica por cien al mostrarla. Poner 100 daría 10.000%.
-    total > 0 ? hechas / total : 0,
-    avance?.puntaje ?? 0,
-    estado,
-    comoFecha(avance?.completadoEn),
+    total > 0 ? (m?.estado === "completado" ? 1 : hechas / total) : 0,
+    m?.puntaje ?? 0,
+    m ? ROTULO_ESTADO[m.estado] : "Sin inscribir",
+    comoFecha(m?.completadoEn),
+    m?.certificado?.codigo ?? "",
   ];
 }
 
@@ -311,79 +369,109 @@ function filaPersona(
 // Ranking
 // ---------------------------------------------------------------------------
 
-export async function exportarRanking(): Promise<number> {
-  // Sin tope: la pantalla muestra los primeros, pero un reporte para archivo
-  // tiene que traer a todos.
-  const entradas = await rankingDe(undefined, 1000);
-
-  const filas = entradas.map((e, i) => [
-    i + 1,
-    e.nombre,
-    e.area,
-    e.puntaje,
-    comoFecha(e.completadoEn),
-  ]);
+/**
+ * Ranking de un curso, o una hoja por curso si no se eligió ninguno.
+ *
+ * Antes salía de la tabla de progreso y solo del 5S. Ahora sale de la misma
+ * función del servidor que ordena el ranking en pantalla (puntaje y, a igual
+ * puntaje, menor tiempo), así que el archivo y el panel nunca discrepan.
+ */
+export async function exportarRanking(alcance: AlcanceReporte = {}): Promise<number> {
+  const [cursosTodos, perfiles] = await Promise.all([listarCursos(), listarPerfiles()]);
+  const cursos = cursosTodos.filter((c) => !alcance.cursoId || c.id === alcance.cursoId);
+  const descripcion = describirAlcance(cursosTodos, perfiles, alcance);
 
   const columnas: Columna[] = [
     { titulo: "Posición", ancho: 10, alineacion: "center", formato: "0" },
-    { titulo: "Nombre", ancho: 30 },
-    { titulo: "Área", ancho: 20 },
-    { titulo: "Puntaje", ancho: 12, alineacion: "right", formato: "#,##0" },
-    { titulo: "Finalización", ancho: 15, alineacion: "center", formato: FORMATO_FECHA },
+    { titulo: "Nombre", ancho: 28 },
+    { titulo: "Empresa", ancho: 18 },
+    { titulo: "Área", ancho: 18 },
+    { titulo: "Fases", ancho: 8, alineacion: "center", formato: "0" },
+    { titulo: "Total", ancho: 8, alineacion: "center", formato: "0" },
+    { titulo: "Puntaje", ancho: 11, alineacion: "right", formato: "#,##0" },
+    { titulo: "Tiempo", ancho: 14, alineacion: "right" },
+    { titulo: "Última actividad", ancho: 16, alineacion: "center", formato: FORMATO_FECHA },
   ];
 
   const libro = nuevoLibro();
-  const hoja = armarHoja(
-    libro,
-    "Ranking",
-    "Ranking del curso",
-    "Participantes ordenados por puntaje obtenido.",
-    columnas,
-    filas
-  );
+  let total = 0;
 
-  // Los tres primeros en negrita y color: es un ranking, y el podio tiene que
-  // distinguirse sin leer la columna de posición.
-  filas.slice(0, 3).forEach((_, i) => {
-    const fila = hoja.getRow(6 + i);
-    for (let c = 1; c <= columnas.length; c++) {
-      fila.getCell(c).font = { name: "Calibri", size: 11, bold: true, color: { argb: VERDE } };
-    }
-  });
+  for (const curso of cursos) {
+    const filas = rankingEnAlcance(await rankingCompleto(curso.id), alcance.empresa ?? null).map((f) => [
+      f.posicion,
+      f.nombreCompleto,
+      f.empresa ?? "",
+      f.area ?? "",
+      f.fasesAprobadas,
+      curso.totalFases,
+      f.puntajeTotal,
+      duracion(f.segundosTotal),
+      comoFecha(f.ultimaActividad),
+    ]);
 
-  await descargarLibro(libro, `ranking-${selloFecha()}.xlsx`);
-  return filas.length;
+    // Con todos los cursos, un curso sin nadie en el ranking no aporta una
+    // hoja vacía: se omite.
+    if (filas.length === 0 && cursos.length > 1) continue;
+
+    const corto = describirCurso(curso).corto;
+    const hoja = armarHoja(
+      libro,
+      nombreDeHoja(corto),
+      `Ranking · ${curso.nombre}`,
+      `${describirAlcance(cursosTodos, perfiles, { ...alcance, cursoId: curso.id })}. Puntaje total del mejor intento de cada fase; a igual puntaje, gana el menor tiempo.`,
+      columnas,
+      filas
+    );
+
+    // Los tres primeros en negrita y color: es un ranking, y el podio tiene que
+    // distinguirse sin leer la columna de posición.
+    filas.slice(0, 3).forEach((_, i) => {
+      const fila = hoja.getRow(6 + i);
+      for (let c = 1; c <= columnas.length; c++) {
+        fila.getCell(c).font = { name: "Calibri", size: 11, bold: true, color: { argb: VERDE } };
+      }
+    });
+
+    total += filas.length;
+  }
+
+  if (total === 0) return 0;
+  await descargarLibro(libro, nombreArchivo("ranking", descripcion));
+  return total;
+}
+
+/** Excel no acepta : \ / ? * [ ] en el nombre de una hoja, ni más de 31 letras. */
+function nombreDeHoja(texto: string): string {
+  return texto.replace(/[:\\/?*[\]]/g, " ").slice(0, 31) || "Hoja";
 }
 
 // ---------------------------------------------------------------------------
 // Códigos emitidos
 // ---------------------------------------------------------------------------
 
-export async function exportarCodigos(): Promise<number> {
-  const [codigos, cursos] = await Promise.all([listarCodigos(), listarCursos()]);
-  const hoy = Date.now();
+export async function exportarCodigos(alcance: AlcanceReporte = {}): Promise<number> {
+  const [todos, cursos, perfiles] = await Promise.all([listarCodigos(), listarCursos(), listarPerfiles()]);
+  const codigos = todos.filter((c) => !alcance.cursoId || c.cursoId === alcance.cursoId);
+  if (codigos.length === 0) return 0;
 
-  const filas = codigos.map((c) => {
-    const vencido = Boolean(c.venceEn && new Date(c.venceEn).getTime() < hoy);
-    const agotado = c.usosActuales >= c.usosMaximos;
+  const ROTULO: Record<ReturnType<typeof estadoCodigo>, string> = {
+    disponible: "Disponible",
+    sin_cupos: "Sin cupos",
+    vencido: "Vencido",
+    baja: "Dado de baja",
+  };
 
-    let estado = "Disponible";
-    if (!c.activo) estado = "Dado de baja";
-    else if (vencido) estado = "Vencido";
-    else if (agotado) estado = "Sin cupos";
-
-    return [
-      c.codigo,
-      cursos.find((x) => x.id === c.cursoId)?.nombre ?? c.cursoId,
-      c.usosActuales,
-      c.usosMaximos,
-      Math.max(0, c.usosMaximos - c.usosActuales),
-      c.venceEn ? comoFecha(c.venceEn) : "Sin vencimiento",
-      estado,
-      c.nota,
-      comoFecha(c.creadoEn),
-    ];
-  });
+  const filas = codigos.map((c) => [
+    c.codigo,
+    cursos.find((x) => x.id === c.cursoId)?.nombre ?? c.cursoId,
+    c.usosActuales,
+    c.usosMaximos,
+    Math.max(0, c.usosMaximos - c.usosActuales),
+    c.venceEn ? comoFecha(c.venceEn) : "Sin vencimiento",
+    ROTULO[estadoCodigo(c)],
+    c.nota,
+    comoFecha(c.creadoEn),
+  ]);
 
   const columnas: Columna[] = [
     { titulo: "Código", ancho: 20 },
@@ -391,18 +479,20 @@ export async function exportarCodigos(): Promise<number> {
     { titulo: "Usos", ancho: 8, alineacion: "center", formato: "0" },
     { titulo: "Cupos", ancho: 8, alineacion: "center", formato: "0" },
     { titulo: "Disponibles", ancho: 12, alineacion: "center", formato: "0" },
-    { titulo: "Vigencia", ancho: 16, alineacion: "center" },
+    { titulo: "Vigencia", ancho: 16, alineacion: "center", formato: FORMATO_FECHA },
     { titulo: "Estado", ancho: 14, alineacion: "center" },
     { titulo: "Nota interna", ancho: 30 },
     { titulo: "Emitido", ancho: 14, alineacion: "center", formato: FORMATO_FECHA },
   ];
 
+  // Los códigos no son de una empresa: el alcance solo dice el curso.
+  const descripcion = describirAlcance(cursos, perfiles, { cursoId: alcance.cursoId }).split(" · ")[0];
   const libro = nuevoLibro();
   const hoja = armarHoja(
     libro,
     "Códigos de acceso",
     "Códigos emitidos",
-    "Consumo de cupos y vigencia de cada código de inscripción.",
+    `${descripcion}. Consumo de cupos y vigencia de cada código de inscripción.`,
     columnas,
     filas
   );
@@ -421,7 +511,7 @@ export async function exportarCodigos(): Promise<number> {
     celdaEstado.font = { name: "Calibri", size: 11, bold: true, color: { argb: color } };
   });
 
-  await descargarLibro(libro, `codigos-${selloFecha()}.xlsx`);
+  await descargarLibro(libro, nombreArchivo("codigos", descripcion));
   return filas.length;
 }
 
@@ -444,59 +534,35 @@ export interface ResumenArea {
  * Es lo primero que mira una jefatura: no le interesa persona por persona, le
  * interesa si su área está al día. Y hace visible que un turno completo quedó
  * sin capacitar, algo que en una lista de cien nombres pasa desapercibido.
+ *
+ * Cuenta igual que los indicadores del panel: inscripciones activas de
+ * trabajadores sin suspender. Con todos los cursos, una persona inscrita en
+ * dos cuenta en los dos.
  */
-export async function resumenPorArea(): Promise<ResumenArea[]> {
-  const [perfiles, inscripciones, progresos, cursos] = await Promise.all([
-    listarPerfiles(),
-    listarInscripciones(),
-    listarProgreso(),
-    listarCursos(),
-  ]);
-
-  const porArea = new Map<string, ResumenArea>();
-
-  perfiles
-    .filter((p) => p.rol === "trabajador")
-    .forEach((persona) => {
-      const inscripcion = inscripciones.find((i) => i.perfilId === persona.id && i.activa);
-      if (!inscripcion) return;
-
-      const area = persona.area?.trim() || "Sin área";
-      const curso = cursos.find((c) => c.id === inscripcion.cursoId);
-      const avance = progresos.find(
-        (p) => p.perfilId === persona.id && p.cursoId === inscripcion.cursoId
-      );
-
-      const total = curso?.totalFases ?? 5;
-      const hechas = (avance?.fasesCompletadas ?? []).filter((f) => f >= 1).length;
-
-      const actual = porArea.get(area) ?? {
-        area,
-        inscritos: 0,
-        completados: 0,
-        enCurso: 0,
-        sinEmpezar: 0,
-        cobertura: 0,
-      };
-
-      actual.inscritos += 1;
-      if (avance?.completadoEn || hechas >= total) actual.completados += 1;
-      else if (hechas > 0) actual.enCurso += 1;
-      else actual.sinEmpezar += 1;
-
-      porArea.set(area, actual);
-    });
-
-  return [...porArea.values()]
-    .map((r) => ({
-      ...r,
-      cobertura: r.inscritos > 0 ? Math.round((r.completados / r.inscritos) * 100) : 0,
-    }))
-    .sort((a, b) => b.inscritos - a.inscritos);
+export async function resumenPorArea(alcance: AlcanceReporte = {}): Promise<ResumenArea[]> {
+  const { matriculas } = await datosBase();
+  return resumenDeMatriculas(matriculas, alcance);
 }
 
-export async function exportarResumenAreas(): Promise<number> {
-  const resumen = await resumenPorArea();
+function resumenDeMatriculas(matriculas: Matricula[], alcance: AlcanceReporte): ResumenArea[] {
+  const enAlcance = matriculasEnAlcance(matriculas, {
+    cursoId: alcance.cursoId ?? null,
+    empresa: alcance.empresa ?? null,
+  });
+  return coberturaPorArea(enAlcance, Infinity).map((g) => ({
+    area: g.nombre,
+    inscritos: g.total,
+    completados: g.completado,
+    enCurso: g.en_curso,
+    sinEmpezar: g.sin_empezar,
+    cobertura: g.total > 0 ? Math.round((g.completado / g.total) * 100) : 0,
+  }));
+}
+
+export async function exportarResumenAreas(alcance: AlcanceReporte = {}): Promise<number> {
+  const { perfiles, cursos, matriculas } = await datosBase();
+  const resumen = resumenDeMatriculas(matriculas, alcance);
+  if (resumen.length === 0) return 0;
 
   const filas = resumen.map((r) => [
     r.area,
@@ -509,19 +575,20 @@ export async function exportarResumenAreas(): Promise<number> {
 
   const columnas: Columna[] = [
     { titulo: "Área", ancho: 26 },
-    { titulo: "Inscritos", ancho: 12, alineacion: "center", formato: "0" },
+    { titulo: alcance.cursoId ? "Inscritos" : "Inscripciones", ancho: 13, alineacion: "center", formato: "0" },
     { titulo: "Completados", ancho: 13, alineacion: "center", formato: "0" },
     { titulo: "En curso", ancho: 11, alineacion: "center", formato: "0" },
     { titulo: "Sin empezar", ancho: 13, alineacion: "center", formato: "0" },
     { titulo: "Cobertura", ancho: 13, alineacion: "center", formato: "0%" },
   ];
 
+  const descripcion = describirAlcance(cursos, perfiles, alcance);
   const libro = nuevoLibro();
   const hoja = armarHoja(
     libro,
     "Cobertura por área",
     "Cobertura de la capacitación",
-    "Porcentaje de personas que completaron el curso en cada área.",
+    `${descripcion}. Porcentaje de personas que completaron el curso en cada área.`,
     columnas,
     filas
   );
@@ -537,39 +604,37 @@ export async function exportarResumenAreas(): Promise<number> {
 
   // Fila de totales: la organización completa, que es el número que termina en
   // el informe a gerencia.
-  if (resumen.length > 0) {
-    const fila = hoja.getRow(6 + resumen.length);
-    const totales = resumen.reduce(
-      (acumulado, r) => ({
-        inscritos: acumulado.inscritos + r.inscritos,
-        completados: acumulado.completados + r.completados,
-        enCurso: acumulado.enCurso + r.enCurso,
-        sinEmpezar: acumulado.sinEmpezar + r.sinEmpezar,
-      }),
-      { inscritos: 0, completados: 0, enCurso: 0, sinEmpezar: 0 }
-    );
+  const fila = hoja.getRow(6 + resumen.length);
+  const totales = resumen.reduce(
+    (acumulado, r) => ({
+      inscritos: acumulado.inscritos + r.inscritos,
+      completados: acumulado.completados + r.completados,
+      enCurso: acumulado.enCurso + r.enCurso,
+      sinEmpezar: acumulado.sinEmpezar + r.sinEmpezar,
+    }),
+    { inscritos: 0, completados: 0, enCurso: 0, sinEmpezar: 0 }
+  );
 
-    const valores = [
-      "TOTAL",
-      totales.inscritos,
-      totales.completados,
-      totales.enCurso,
-      totales.sinEmpezar,
-      totales.inscritos > 0 ? totales.completados / totales.inscritos : 0,
-    ];
+  const valores = [
+    "TOTAL",
+    totales.inscritos,
+    totales.completados,
+    totales.enCurso,
+    totales.sinEmpezar,
+    totales.inscritos > 0 ? totales.completados / totales.inscritos : 0,
+  ];
 
-    valores.forEach((valor, c) => {
-      const celda = fila.getCell(c + 1);
-      celda.value = valor;
-      celda.font = { name: "Calibri", size: 11, bold: true, color: { argb: VERDE } };
-      celda.alignment = { vertical: "middle", horizontal: columnas[c].alineacion ?? "left" };
-      if (columnas[c].formato) celda.numFmt = columnas[c].formato;
-      celda.border = { top: { style: "medium", color: { argb: VERDE } } };
-    });
-    fila.height = 20;
-  }
+  valores.forEach((valor, c) => {
+    const celda = fila.getCell(c + 1);
+    celda.value = valor;
+    celda.font = { name: "Calibri", size: 11, bold: true, color: { argb: VERDE } };
+    celda.alignment = { vertical: "middle", horizontal: columnas[c].alineacion ?? "left" };
+    if (columnas[c].formato) celda.numFmt = columnas[c].formato;
+    celda.border = { top: { style: "medium", color: { argb: VERDE } } };
+  });
+  fila.height = 20;
 
-  await descargarLibro(libro, `cobertura-areas-${selloFecha()}.xlsx`);
+  await descargarLibro(libro, nombreArchivo("cobertura-areas", descripcion));
   return filas.length;
 }
 

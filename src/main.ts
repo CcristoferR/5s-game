@@ -7,7 +7,8 @@ import { mostrarAcceso } from "./portal/PantallaAcceso";
 import { mostrarAdministracion } from "./portal/PantallaAdmin";
 import { mostrarCatalogo } from "./portal/PantallaCatalogo";
 import { mostrarMiCuenta } from "./portal/PantallaMiCuenta";
-import { aplicarTemaUI } from "./ui/EstiloUI";
+import { aplicarTemaUI, prepararLetra } from "./ui/EstiloUI";
+import { cerrarPortada, portadaCubierta } from "./portal/Portada";
 import { iniciarPreferencias } from "./portal/Preferencias";
 import { mostrarVerificacion } from "./portal/PantallaVerificacion";
 import { registrarFaseCompletada, progresoDe } from "./portal/Datos";
@@ -559,21 +560,44 @@ async function iniciarCursoDelJugador(cursoId: string): Promise<void> {
   // mientras se construye uno: se avisa y se vuelve, en vez de abrir el juego
   // equivocado o dejar la pantalla en blanco.
   if (!juego) {
+    await cerrarPortada();
     window.alert("Este curso todavía no tiene contenido disponible.");
     if (perfilActivo) abrirCatalogo(perfilActivo);
     return;
   }
 
-  cursoActivo = cursoId;
-  gameManager.reiniciarTodo();
+  try {
+    cursoActivo = cursoId;
+    gameManager.reiniciarTodo();
 
-  // El progreso se lee del curso que se está abriendo, no de una constante.
-  if (perfilActivo) {
-    const guardado = await progresoDe(perfilActivo.id, cursoId);
+    // El progreso se lee del curso que se está abriendo, no de una constante.
+    // La letra de la interfaz se asegura en paralelo: Babylon mide cada texto
+    // la primera vez que lo dibuja y guarda esa medida, así que si dibujara
+    // antes de que Geist esté lista, se quedaría con la de respaldo.
+    //
+    // Y el menú se arma recién cuando la portada terminó de crecer: armarlo
+    // ocupa el hilo principal, que es el mismo que anima el recorte. La espera
+    // casi no se nota, porque la portada igual se queda un mínimo en pantalla.
+    const [guardado] = await Promise.all([
+      perfilActivo ? progresoDe(perfilActivo.id, cursoId) : Promise.resolve(null),
+      prepararLetra(),
+      portadaCubierta(),
+    ]);
     guardado?.fasesCompletadas.forEach((fase) => gameManager.completarNivel(fase));
+
+    await juego.abrir();
+  } catch (error) {
+    // Un curso que no abre (sin red al bajar el juego de guardias, por
+    // ejemplo) no puede dejar el lienzo vacío: se avisa y se vuelve.
+    console.error("[curso] no se pudo abrir:", error);
+    await cerrarPortada();
+    window.alert("No se pudo abrir el curso. Revisa la conexión a internet e intenta de nuevo.");
+    if (perfilActivo) abrirCatalogo(perfilActivo);
+    return;
   }
 
-  await juego.abrir();
+  // El menú del curso ya está armado detrás: la portada se desvanece.
+  await cerrarPortada();
 }
 
 // Abre lo que corresponda a una sesión guardada, revalidando el rol.
@@ -651,7 +675,25 @@ try {
   mostrarAcceso((resultado) => abrirSegunRol(resultado.perfil));
 }
 
-engine.runRenderLoop(() => sceneManager.scene.render());
+// La escena no se dibuja mientras la tapa entera una pantalla del portal
+// (acceso, catálogo, Mi cuenta, administración) o la de arranque.
+//
+// Detrás de ellas la escena está vacía, pero cada cuadro igual pasaba por las
+// sombras, el prepaso y el SSAO a resolución completa: en el panel, donde
+// alguien puede quedarse media hora, era la tarjeta gráfica trabajando de
+// balde, y en los equipos modestos les restaba fluidez a las animaciones del
+// portal. Al quitarse la pantalla, el cuadro siguiente ya dibuja.
+const tapadaPorElPortal = (): boolean => document.querySelector("body > .portal, body > #arranque") !== null;
+engine.runRenderLoop(() => {
+  if (tapadaPorElPortal()) return;
+  sceneManager.scene.render();
+});
+
+// Solo en desarrollo: deja la escena a mano para las pruebas automáticas que
+// recorren el juego desde Chrome. En la versión publicada esta línea no existe.
+if (import.meta.env.DEV) {
+  Object.assign(window, { __classplay: { escena: () => sceneManager.scene } });
+}
 // Al redimensionar se recalcula también la escala: arrastrar la ventana a un
 // monitor con otra densidad cambia devicePixelRatio, y sin esto el buffer se
 // quedaría dimensionado para la pantalla anterior.

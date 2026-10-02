@@ -14,6 +14,7 @@ import {
   crearBotonPrincipal,
   desvanecer,
   afinarGui,
+  conAlfa,
 } from "./EstiloUI";
 import { podioDelCurso, miPosicion, formatearDuracion, type FilaRanking, type MiPosicion } from "../portal/Ranking";
 import { CURSO_ID } from "../portal/Datos";
@@ -75,7 +76,7 @@ export function mostrarRankingCurso(
 
   const velo = crearVelo(gui, "veloRanking");
   const tarjeta = crearTarjeta(velo, "tarjetaRanking", ANCHO_TARJETA, ALTO_TARJETA);
-  crearFilete(tarjeta, "fileteRanking", ANCHO_TARJETA, PALETA.dato);
+  crearFilete(tarjeta, "fileteRanking", ANCHO_TARJETA, PALETA.marca);
 
   const encabezado = new StackPanel("encabezadoRanking");
   encabezado.isVertical = true;
@@ -215,9 +216,9 @@ export function mostrarRankingCurso(
     marco.thickness = fila.soyYo ? 1 : 0;
     // La fila propia se distingue con borde y fondo más claro: en una lista de
     // nombres ajenos, encontrarse rápido es lo primero que busca el jugador.
-    marco.color = fila.soyYo ? PALETA.dato : "transparent";
+    marco.color = fila.soyYo ? conAlfa(PALETA.marca, 0.55) : "transparent";
     marco.cornerRadius = 10;
-    marco.background = fila.soyYo ? "rgba(126,163,186,0.14)" : PALETA.tarjetaSuave;
+    marco.background = fila.soyYo ? conAlfa(PALETA.marca, 0.1) : PALETA.tarjetaSuave;
 
     const franja = new Rectangle(`franjaRanking_${fila.perfilId}`);
     franja.width = "4px";

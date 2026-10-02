@@ -35,7 +35,7 @@ import { preguntarCierreDeNivel } from "../ui/PreguntaCierre";
 import { tomarFotografia } from "../core/FotografiaCero";
 import { mostrarPanelMejora } from "../ui/PanelMejora";
 import { reproducir } from "../core/Sonido";
-import { TEXTO, PALETA, altoDeTexto } from "../ui/EstiloUI";
+import { TEXTO, PALETA, altoDeTexto, conAlfa } from "../ui/EstiloUI";
 import type { PuntoEnganche } from "../core/InputController";
 
 // ===========================================================================
@@ -1264,7 +1264,7 @@ function mostrarInformeEstandar(
     // por una franja de 4 px: en una lista de ocho renglones eso no se ve, y
     // era imposible saber de un vistazo cuantas estaban bien. Un tinte muy
     // suave separa los dos grupos sin taparle el sitio al texto.
-    fondoFila.background = fila.correcto ? "rgba(127,180,149,0.10)" : "rgba(201,141,128,0.10)";
+    fondoFila.background = fila.correcto ? conAlfa(PALETA.acierto, 0.1) : conAlfa(PALETA.error, 0.1);
     fondoFila.paddingBottom = "10px";
     lista.addControl(fondoFila);
 

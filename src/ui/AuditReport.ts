@@ -14,6 +14,7 @@ import {
   crearBotonPrincipal,
   altoDeTexto,
   desvanecer,
+  conAlfa,
 } from "./EstiloUI";
 
 export interface FilaInforme {
@@ -123,7 +124,7 @@ export function mostrarInformeAuditoria(
     marco.cornerRadius = 10;
     // Tinte según TU resultado. Muy suave: la lista se recorre leyendo, el
     // color solo tiene que agrupar de un vistazo cuáles fallaste.
-    marco.background = acerto ? "rgba(127,180,149,0.09)" : "rgba(201,141,128,0.11)";
+    marco.background = acerto ? conAlfa(PALETA.acierto, 0.09) : conAlfa(PALETA.error, 0.11);
     marco.paddingBottom = "10px";
     lista.addControl(marco);
 

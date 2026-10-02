@@ -17,16 +17,22 @@ const ALTO_PIE = 78;
 const C = {
   // Velo sobre la escena: la deja ver, apagada. La tarjeta va opaca encima, así
   // que el texto nunca se mezcla con el garaje aunque el fondo sea traslúcido.
-  velo: "rgba(9, 11, 13, 0.76)",
+  velo: "rgba(9, 10, 12, 0.76)",
 
   tarjeta: "#14171b",
   borde: "rgba(255,255,255,0.10)",
   linea: "rgba(255,255,255,0.07)",
 
-  titulo: "#f5f7f6",
-  cuerpo: "rgba(224,230,228,0.76)",
-  rotulo: "rgba(255,255,255,0.38)",
-  paso: "rgba(255,255,255,0.30)",
+  // Los grises del portal (ver portal.css) y el lima de la marca para la
+  // única acción de la tarjeta.
+  titulo: "#f5f4f0",
+  cuerpo: "#c9cbc4",
+  rotulo: "#9a9d96",
+  paso: "#878a83",
+
+  accion: "#b8ed72",
+  accionEncima: "#cbf590",
+  accionTexto: "#131a0d",
 };
 
 interface PasoApertura {
@@ -181,8 +187,8 @@ export function mostrarAperturaNivel(
   boton.fontWeight = "600";
   boton.cornerRadius = 8;
   boton.thickness = 0;
-  boton.background = "#eef0ef";
-  boton.color = "#12151a";
+  boton.background = C.accion;
+  boton.color = C.accionTexto;
   boton.left = -MARGEN + "px";
   boton.top = "-18px";
   boton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -193,14 +199,14 @@ export function mostrarAperturaNivel(
   boton.pointerDownAnimation = () => {};
   boton.pointerUpAnimation = () => {};
   if (boton.textBlock) {
-    boton.textBlock.color = "#12151a";
+    boton.textBlock.color = C.accionTexto;
     boton.textBlock.isHitTestVisible = false;
   }
   boton.onPointerEnterObservable.add(() => {
-    boton.background = "#ffffff";
+    boton.background = C.accionEncima;
   });
   boton.onPointerOutObservable.add(() => {
-    boton.background = "#eef0ef";
+    boton.background = C.accion;
   });
   tarjeta.addControl(boton);
 

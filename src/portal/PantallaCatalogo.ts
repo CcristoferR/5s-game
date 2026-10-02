@@ -8,6 +8,9 @@ import {
 } from "./Datos";
 import { cerrarSesion } from "./Sesion";
 import { manejar } from "./Manejador";
+import { marcaClassplay } from "./Marca";
+import { describirCurso, prefijoDeCurso } from "./CatalogoCursos";
+import { abrirPortada } from "./Portada";
 
 /**
  * Catálogo de cursos.
@@ -43,6 +46,13 @@ export function mostrarCatalogo(
     const tarjetas = await catalogoDe(perfil.id);
     raiz.innerHTML = plantilla(perfil, tarjetas);
     conectar(tarjetas);
+
+    // Las portadas se piden ya: así, al entrar a un curso, la imagen está en
+    // caché y aparece con la tarjeta en vez de llegar a mitad de la carga.
+    tarjetas.forEach((t) => {
+      const portada = describirCurso(t.curso).portada;
+      if (portada) new Image().src = portada.imagen;
+    });
   }
 
   function conectar(tarjetas: TarjetaCurso[]): void {
@@ -70,8 +80,25 @@ export function mostrarCatalogo(
     // cada uno tiene que saber cuál abre.
     raiz.querySelectorAll<HTMLButtonElement>("[data-entrar]").forEach((boton) => {
       boton.addEventListener("click", () => {
-        raiz.remove();
-        onEntrarCurso(boton.dataset.entrar!);
+        const cursoId = boton.dataset.entrar!;
+        const tarjeta = tarjetas.find((t) => t.curso.id === cursoId);
+        // La portada crece desde la tarjeta tocada y tapa la espera hasta que
+        // el menú del juego está dibujado (la retira main.ts).
+        //
+        // El catálogo se queda detrás mientras crece: si se retirara ya,
+        // alrededor de la tarjeta se vería el lienzo vacío del juego en vez
+        // del catálogo. Inerte, eso sí, para que no acepte un segundo clic.
+        const cubierta = tarjeta
+          ? abrirPortada({
+              curso: tarjeta.curso,
+              estado: tarjeta.estado,
+              fasesHechas: tarjeta.fasesHechas,
+              desde: boton.closest(".curso")?.getBoundingClientRect(),
+            })
+          : Promise.resolve();
+        raiz.inert = true;
+        void cubierta.then(() => raiz.remove());
+        onEntrarCurso(cursoId);
       });
     });
 
@@ -132,10 +159,7 @@ function plantilla(perfil: Perfil, tarjetas: TarjetaCurso[]): string {
 
   return `
     <header class="barra">
-      <div class="barra__marca">
-        <span class="barra__sello">5S</span>
-        <span class="barra__nombre">Plataforma de capacitación</span>
-      </div>
+      <div class="barra__marca">${marcaClassplay()}</div>
 
       <div class="barra__cuenta">
         <span class="barra__inicial">${escapar(iniciales(perfil.nombreCompleto))}</span>
@@ -258,7 +282,7 @@ function tarjetaCurso(t: TarjetaCurso): string {
             </label>
             <div class="canje__fila">
               <input class="canje__campo" id="cod-${curso.id}"
-                     placeholder="5S-XXXXX-XXXX" autocomplete="off" spellcheck="false" />
+                     placeholder="${prefijoDeCurso(curso.id)}-XXXX-0000" autocomplete="off" spellcheck="false" />
               <button class="boton boton--principal" type="submit">Canjear</button>
             </div>
             <p class="portal__aviso" hidden></p>

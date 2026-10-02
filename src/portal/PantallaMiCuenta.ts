@@ -14,6 +14,7 @@ import {
 import { establecerSilencio } from "../core/Sonido";
 import { aplicarTemaUI } from "../ui/EstiloUI";
 import { manejar } from "./Manejador";
+import { montarMiProgreso, seccionMiProgreso } from "./MiProgreso";
 
 /**
  * Mi cuenta.
@@ -58,6 +59,10 @@ export function mostrarMiCuenta(perfil: Perfil, onVolver: () => void): void {
     banda.textContent = texto;
     banda.className = `portal__aviso portal__aviso--${tipo}`;
     banda.hidden = false;
+    // La banda está arriba y los formularios más abajo: sin esto el aviso de
+    // "Datos actualizados" aparecía fuera de la vista y parecía que el botón
+    // no había hecho nada.
+    banda.scrollIntoView({ block: "nearest" });
   }
 
   function cerrar(): void {
@@ -159,7 +164,9 @@ export function mostrarMiCuenta(perfil: Perfil, onVolver: () => void): void {
     establecerSilencio(silencio);
   });
 
-  $<HTMLInputElement>("#miNombre").focus();
+  // El progreso se carga aparte: la pantalla aparece al tiro con los
+  // formularios, y el avance llega cuando responde el servidor.
+  montarMiProgreso(raiz, perfil, avisar);
 }
 
 function plantilla(perfil: Perfil): string {
@@ -185,6 +192,8 @@ function plantilla(perfil: Perfil): string {
         <p class="portal__bajada">${escapar(perfil.identificador)}</p>
 
       <p class="portal__aviso" id="avisoCuenta" hidden></p>
+
+      ${seccionMiProgreso()}
 
       <section class="portal__seccion">
         <h2 class="portal__tituloSeccion">Mis datos</h2>

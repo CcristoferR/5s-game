@@ -18,29 +18,36 @@ import { reproducir } from "../core/Sonido";
 //
 // La referencia es la tarjeta de apertura de nivel, que es la pantalla que ya
 // quedó bien: misma paleta, mismos rótulos en mayúscula chica, mismos radios.
+//
+// LOS COLORES SON LOS DEL PORTAL (ver portal.css y DESIGN.md). Pasar del
+// catálogo al curso no tiene que sentirse como cambiar de programa: mismos
+// grises, mismo verde lima como único acento, misma letra.
 
 export const PALETA = {
   /** Velo sobre la escena. Deja ver el garaje, apagado. */
-  velo: "rgba(9, 11, 13, 0.76)",
+  velo: "rgba(9, 10, 12, 0.76)",
 
   tarjeta: "#14171b",
   tarjetaSuave: "rgba(255,255,255,0.045)",
   borde: "rgba(255,255,255,0.10)",
   linea: "rgba(255,255,255,0.07)",
 
-  titulo: "#f5f7f6",
-  cuerpo: "rgba(224,230,228,0.78)",
-  rotulo: "rgba(255,255,255,0.38)",
-  tenue: "rgba(255,255,255,0.30)",
+  titulo: "#f5f4f0",
+  cuerpo: "#c9cbc4",
+  rotulo: "#9a9d96",
+  tenue: "#878a83",
 
-  acierto: "#7fb495",
-  error: "#c98d80",
-  aviso: "#bda079",
-  dato: "#7ea3ba",
+  /** El lima de ClassPlay: la acción principal y lo que está activo. */
+  marca: "#b8ed72",
 
-  accionFondo: "#eef0ef",
-  accionFondoHover: "#ffffff",
-  accionTexto: "#12151a",
+  acierto: "#9bd08a",
+  error: "#f0a493",
+  aviso: "#e8b061",
+  dato: "#8db4cc",
+
+  accionFondo: "#b8ed72",
+  accionFondoHover: "#cbf590",
+  accionTexto: "#131a0d",
 };
 
 /**
@@ -56,26 +63,29 @@ export const PALETA = {
  * sobre blanco y dejan de distinguirse entre sí.
  */
 const PALETA_CLARA: typeof PALETA = {
-  velo: "rgba(238, 241, 244, 0.82)",
+  velo: "rgba(243, 242, 238, 0.84)",
 
   tarjeta: "#ffffff",
-  tarjetaSuave: "rgba(18,26,33,0.04)",
-  borde: "rgba(18,26,33,0.14)",
-  linea: "rgba(18,26,33,0.09)",
+  tarjetaSuave: "rgba(19,20,23,0.04)",
+  borde: "rgba(19,20,23,0.13)",
+  linea: "rgba(19,20,23,0.08)",
 
-  titulo: "#14191e",
-  cuerpo: "rgba(30,38,45,0.82)",
-  rotulo: "rgba(30,38,45,0.5)",
-  tenue: "rgba(30,38,45,0.38)",
+  titulo: "#131417",
+  cuerpo: "#33352f",
+  rotulo: "#5e6059",
+  tenue: "#6f716b",
 
-  acierto: "#2f7d55",
-  error: "#a8412f",
-  aviso: "#8a6415",
+  // Sobre blanco el lima no se ve: va el verde oscuro de la marca.
+  marca: "#43661d",
+
+  acierto: "#3f7a22",
+  error: "#b23a2b",
+  aviso: "#94600b",
   dato: "#2c5f7d",
 
-  accionFondo: "#1c242b",
-  accionFondoHover: "#2a343d",
-  accionTexto: "#f4f7f8",
+  accionFondo: "#131417",
+  accionFondoHover: "#2b2d31",
+  accionTexto: "#f5f4f0",
 };
 
 const PALETA_OSCURA: typeof PALETA = { ...PALETA };
@@ -123,6 +133,32 @@ export const TEXTO = {
 
 export const RADIO = 12;
 export const MARGEN = 40;
+
+/**
+ * Letra de toda la interfaz del juego: Geist, la del portal y la landing.
+ *
+ * No se escribe en cada texto. En Babylon la letra se hereda del contenedor
+ * de arriba, así que basta con fijarla en la raíz de cada capa (afinarGui lo
+ * hace) y todos los textos de esa capa la toman. Un texto que necesita otra
+ * —los relojes en monoespaciada— la sigue pidiendo él mismo.
+ */
+export const FUENTE_JUEGO = '"Geist", system-ui, "Segoe UI", sans-serif';
+
+/**
+ * Asegura que Geist esté cargada antes de abrir una pantalla del juego.
+ *
+ * Babylon mide cada letra la primera vez que la dibuja y guarda esa medida:
+ * si dibuja antes de que la fuente llegue, se queda con la de respaldo. El
+ * portal ya la usa, así que casi siempre está; el tope es para no trabar la
+ * entrada si la red falla justo ahí.
+ */
+export async function prepararLetra(): Promise<void> {
+  if (!("fonts" in document)) return;
+  await Promise.race([
+    Promise.all([document.fonts.load('400 16px "Geist"'), document.fonts.load('600 16px "Geist"')]),
+    new Promise((listo) => setTimeout(listo, 2000)),
+  ]).catch(() => undefined);
+}
 
 // ---------------------------------------------------------------------------
 // Piezas
@@ -183,6 +219,20 @@ export function afinarGui(gui: AdvancedDynamicTexture): void {
   // Filtrado trilineal al muestrear: con más resolución de la que se
   // muestra, sin filtrar quedan los cantos dentados.
   gui.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+
+  // La letra de la marca para todos los textos de esta capa (ver FUENTE_JUEGO).
+  //
+  // No se fija en la raíz misma: Babylon 9 no se la pasa a nadie. Al buscar la
+  // letra hacia arriba, un control sin padre —la raíz— devuelve siempre la de
+  // fábrica (Arial), tenga o no una propia. Por eso se viste a cada pieza que
+  // cuelga directo de la raíz, ahora y cuando se agregue, y sus textos la
+  // heredan de ahí. La que ya pide otra letra (un reloj en monoespaciada) se
+  // respeta.
+  const vestir = (control: Control | null): void => {
+    if (control && !control.fontFamily) control.fontFamily = FUENTE_JUEGO;
+  };
+  gui.rootContainer.children.forEach(vestir);
+  gui.rootContainer.onControlAddedObservable.add(vestir);
 }
 
 
@@ -321,10 +371,10 @@ export function crearDivisor(nombre: string, ancho: number): Rectangle {
 }
 
 /**
- * Botón de acción principal: relleno claro, texto oscuro.
+ * Botón de acción principal: lima con tinta oscura, como en el portal.
  *
  * Va uno solo por pantalla. Es lo que el jugador tiene que apretar para seguir,
- * y por eso es la única superficie clara de toda la interfaz.
+ * y por eso es la única superficie de color de toda la interfaz.
  */
 export function crearBotonPrincipal(nombre: string, texto: string, ancho = 160): Button {
   const boton = Button.CreateSimpleButton(nombre, texto);
@@ -450,7 +500,7 @@ export function crearBotonOpcion(nombre: string, texto: string, ancho: number): 
   boton.onPointerEnterObservable.add(() => {
     boton.background = PALETA.tarjetaSuave;
     boton.color = PALETA.tenue;
-    acento.background = PALETA.dato;
+    acento.background = PALETA.marca;
     casilla.color = PALETA.tenue;
     letra.color = PALETA.titulo;
   });
@@ -533,7 +583,7 @@ export function marcarOpcion(boton: Button, correcta: boolean): void {
   const color = correcta ? PALETA.acierto : PALETA.error;
 
   boton.color = color;
-  boton.background = correcta ? "rgba(127,180,149,0.16)" : "rgba(201,141,128,0.16)";
+  boton.background = conAlfa(color, 0.16);
 
   const acento = boton.getChildByName(`${boton.name}_acento`) as Rectangle | null;
   if (acento) acento.background = color;
@@ -541,7 +591,7 @@ export function marcarOpcion(boton: Button, correcta: boolean): void {
   const casilla = boton.getChildByName(`${boton.name}_casilla`) as Rectangle | null;
   if (casilla) {
     casilla.color = color;
-    casilla.background = correcta ? "rgba(127,180,149,0.2)" : "rgba(201,141,128,0.2)";
+    casilla.background = conAlfa(color, 0.2);
 
     const letra = casilla.getChildByName(`${boton.name}_letra`) as TextBlock | null;
     if (letra) {
@@ -624,7 +674,7 @@ export function conAlfa(color: string, alfa: number): string {
  *
  * ─── POR QUÉ NO EL PRINCIPAL DEL SISTEMA ──────────────────────────────────
  *
- * El botón principal del sistema es un bloque casi blanco, pensado para los
+ * El botón principal del sistema es un bloque lleno de color, pensado para los
  * menús que tapan la escena entera. Los paneles de un turno se apoyan sobre la
  * escena en penumbra, y un rectángulo blanco ahí es lo más luminoso del
  * cuadro: tira de la vista más que la propia escena y cansa en un turno que
@@ -643,7 +693,7 @@ export function crearBotonTurno(
   texto: string,
   ancho: number,
   variante: "principal" | "secundario",
-  acento: () => string = () => PALETA.dato
+  acento: () => string = () => PALETA.marca
 ): Button {
   const principal = variante === "principal";
   const boton = Button.CreateSimpleButton(nombre, texto);

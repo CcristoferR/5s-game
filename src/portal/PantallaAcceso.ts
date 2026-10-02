@@ -7,6 +7,7 @@ import {
   type Perfil,
 } from "./Datos";
 import { manejar } from "./Manejador";
+import { marcaClassplay } from "./Marca";
 
 /**
  * Puerta de entrada al curso.
@@ -156,8 +157,8 @@ function plantilla(): string {
     <div class="portal__tarjeta">
       <div class="portal__filete"></div>
       <div class="portal__cuerpo">
-        <p class="portal__rotulo">CAPACITACIÓN</p>
-        <h1 class="portal__titulo">Plataforma de capacitación</h1>
+        <div class="acceso__marca">${marcaClassplay({ grande: true })}</div>
+        <h1 class="portal__titulo">Ingresa a tus cursos</h1>
         <p class="portal__bajada">
           Ingresa con tu cuenta para ver tus cursos. Si es tu primera vez,
           regístrate: el código de cada curso se pide después.

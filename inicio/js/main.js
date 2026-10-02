@@ -123,8 +123,10 @@
   let panelAnimation = null;
   const placeIndicator = (animate = false) => {
     const tab = tabs[selectedTab];
-    if (gsap) gsap.to(indicator, { x: tab.offsetLeft, width: tab.offsetWidth, duration: animate && !reducedMotion.matches ? .55 : 0, ease: 'power3.out', overwrite: true });
-    else { indicator.style.width = `${tab.offsetWidth}px`; indicator.style.transform = `translateX(${tab.offsetLeft}px)`; }
+    // En móvil las pestañas forman dos filas: el indicador se ubica bajo la fila de la pestaña activa.
+    const y = tab.offsetTop + tab.offsetHeight - tabList.clientHeight;
+    if (gsap) gsap.to(indicator, { x: tab.offsetLeft, y, width: tab.offsetWidth, duration: animate && !reducedMotion.matches ? .55 : 0, ease: 'power3.out', overwrite: true });
+    else { indicator.style.width = `${tab.offsetWidth}px`; indicator.style.transform = `translate(${tab.offsetLeft}px, ${y}px)`; }
   };
   const activateTab = (index, focus = false) => {
     const oldPanel = panels[selectedTab];
@@ -161,6 +163,12 @@
   });
   placeIndicator();
   new ResizeObserver(() => placeIndicator()).observe(tabList);
+  // Las capturas de las otras pestañas se descargan al acercarse al panel: cambiar de pestaña no deja el marco vacío.
+  new IntersectionObserver((entries, observer) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    $$('.admin-view img').forEach((img) => { img.loading = 'eager'; });
+    observer.disconnect();
+  }, { rootMargin: '600px 0px' }).observe($('.admin-panels'));
 
   // Video optativo: se carga solo si el recurso real está listo y se ve en pantalla.
   const video = $('#portada-video');
@@ -210,21 +218,19 @@
       gsap.ticker.add(tick);
       gsap.ticker.lagSmoothing(0);
     }
-    // Portada: máscara tipográfica y contenido, en ese orden.
+    // Portada: la escena entra de fondo y luego el título por palabras, la bajada y la tarjeta.
     const intro = gsap.timeline();
-    intro.from('.hero-eyebrow', { opacity: 0, y: 8, duration: .6 })
+    intro.from('.hero-media', { opacity: .3, scale: 1.05, duration: 1.6, ease: 'power2.out', clearProps: 'opacity,transform' }, 0)
+      .from('.hero-eyebrow', { opacity: 0, y: 8, duration: .6 }, 0)
       .from('.word', { yPercent: 112, opacity: 0, stagger: .065, duration: .85 }, .05)
-      .from('.hero-description,.hero-buttons,.hero-side-note,.hero-foot', { opacity: 0, y: 16, stagger: .07 }, .4);
-    // Escenario del video, en su propia pantalla: se revela al llegar a él y la
-    // tarjeta de decisión flota solo después de aparecer y mientras sigue a la vista.
+      .from('.hero-description,.hero-buttons,.hero-foot', { opacity: 0, y: 16, stagger: .07 }, .4)
+      .from('.float-card', { opacity: 0, y: 18, duration: .8 }, .75);
+    // La tarjeta de decisión flota después de entrar y solo mientras la portada sigue a la vista.
     const floatTween = gsap.to('.float-card', { y: 5, repeat: -1, yoyo: true, duration: 3.5, ease: 'sine.inOut', paused: true });
-    let stageShown = false;
-    let stageVisible = false;
-    const syncFloat = () => (stageShown && stageVisible && finePointer.matches ? floatTween.play() : floatTween.pause());
-    gsap.timeline({ scrollTrigger: { trigger: '.hero-product', start: 'top 78%', once: true }, onComplete: () => { stageShown = true; syncFloat(); } })
-      .from('.hero-browser', finePointer.matches ? { opacity: 0, scale: 1.05, clipPath: 'inset(10% 0 10% 0 round 14px)', duration: .9, clearProps: 'transform,clipPath' } : { opacity: 0, y: 10, duration: .6, clearProps: 'transform' })
-      .from('.float-card', { opacity: 0, y: 18, stagger: .08, duration: .8 }, .35);
-    ScrollTrigger.create({ trigger: '.hero-product', start: 'top bottom', end: 'bottom top', onToggle: (s) => { stageVisible = s.isActive; syncFloat(); } });
+    let heroVisible = true;
+    const syncFloat = () => (heroVisible && finePointer.matches && !intro.isActive() ? floatTween.play() : floatTween.pause());
+    intro.eventCallback('onComplete', syncFloat);
+    ScrollTrigger.create({ trigger: '.hero', start: 'top bottom', end: 'bottom top', onToggle: (s) => { heroVisible = s.isActive; syncFloat(); } });
     // Cada elemento se revela una sola vez. Sin estilos que oculten contenido si JS falla.
     $$('.reveal').forEach((node) => gsap.from(node, { opacity: 0, y: 24, duration: .75, scrollTrigger: { trigger: node, start: 'top 91%', once: true } }));
     gsap.from('.bento-card', { opacity: 0, y: 32, stagger: .075, duration: .8, scrollTrigger: { trigger: '.bento-grid', start: 'top 85%', once: true } });
@@ -243,11 +249,9 @@
       cleanup.push(() => veil.remove());
     });
     if (finePointer.matches) {
-      // Parallax mínimo en capturas y luz de portada. Nunca mueve texto.
+      // Parallax mínimo en capturas y escena de portada. Nunca mueve texto.
       $$('.scene-media img').forEach((img) => gsap.fromTo(img, { scale: 1.055, yPercent: -1.5 }, { yPercent: 1.5, ease: 'none', scrollTrigger: { trigger: img.parentElement, start: 'top bottom', end: 'bottom top', scrub: .8 } }));
-      const glowX = gsap.quickTo('.hero-glow', 'x', { duration: 1.2 });
-      const glowY = gsap.quickTo('.hero-glow', 'y', { duration: 1.2 });
-      on($('.hero'), 'pointermove', (event) => { glowX((event.clientX / innerWidth - .5) * 70); glowY((event.clientY / innerHeight - .5) * 35); }, { passive: true });
+      gsap.to('.hero-media video', { yPercent: 6, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: .8 } });
       $$('[data-tilt]').forEach((card) => {
         const rotX = gsap.quickTo(card, 'rotationX', { duration: .65 });
         const rotY = gsap.quickTo(card, 'rotationY', { duration: .65 });

@@ -26,7 +26,11 @@ const ENCABEZADO_5S = {
 export interface EncabezadoCurso {
   titulo: string;
   bajada: string;
+  /** Cómo se llaman sus partes: "fase"/"fases", "escenario"/"escenarios". */
+  unidad?: { una: string; varias: string };
 }
+
+const UNIDAD_POR_DEFECTO = { una: "fase", varias: "fases" };
 
 /**
  * Colores del menú, por tema.
@@ -36,8 +40,10 @@ export interface EncabezadoCurso {
  * tocar la escena 3D. Los niveles no cambian —ahí sí manda la iluminación del
  * galpón— pero esta pantalla y las que se abren desde ella sí.
  *
- * El verde de acento se oscurece en claro. El mismo #4ec27a que resalta sobre
- * negro sobre blanco queda lavado y deja de leerse como "esto está activo".
+ * Son los colores del portal (ver portal.css): el negro y los grises de la
+ * marca, y el lima como único acento. En claro el lima pasa al verde oscuro
+ * de la marca: sobre blanco el lima queda lavado y deja de leerse como "esto
+ * está activo".
  */
 /** La forma de una paleta: los mismos nombres, cualquier color. */
 type PaletaMenu = Record<
@@ -46,60 +52,68 @@ type PaletaMenu = Record<
   | "bloqueadoFuerte" | "bloqueadoSuave"
   | "acento" | "filaActiva" | "filaActivaBorde" | "filaHover" | "filaActivaHover"
   | "huecoBarra"
-  | "fondoAlto" | "fondoBajo" | "destello",
+  | "fondoAlto" | "fondoBajo" | "destello" | "intensidadDestello"
+  | "marcaCuadro",
   string
 >;
 
 const PALETAS: Record<"oscuro" | "claro", PaletaMenu> = {
   oscuro: {
-    panel: "#181c20",
-    panelBorde: "#333b42",
-    linea: "#282f35",
+    panel: "#14171b",
+    panelBorde: "#2a2e33",
+    linea: "#222529",
 
-    titulo: "#ffffff",
-    texto: "#e8ecea",
-    secundario: "#a9b2b6",
-    terciario: "#7d868b",
+    titulo: "#f5f4f0",
+    texto: "#c9cbc4",
+    secundario: "#9a9d96",
+    terciario: "#878a83",
 
-    bloqueadoFuerte: "#939ca2",
-    bloqueadoSuave: "#7b858b",
+    bloqueadoFuerte: "#878a83",
+    bloqueadoSuave: "#6c6f69",
 
-    acento: "#4ec27a",
-    filaActiva: "#1d2a23",
-    filaActivaBorde: "#2f5a41",
-    filaHover: "#242b31",
-    filaActivaHover: "#25352b",
+    acento: "#b8ed72",
+    filaActiva: "#202621",
+    filaActivaBorde: "#455735",
+    filaHover: "#1b1f24",
+    filaActivaHover: "#262f25",
 
-    huecoBarra: "#2a3238",
+    huecoBarra: "#24272c",
 
-    fondoAlto: "#0d1013",
-    fondoBajo: "#06080a",
-    destello: "120,140,150",
+    // El brillo verde muy tenue de la portada de la landing, arriba al centro.
+    fondoAlto: "#0d0e10",
+    fondoBajo: "#08090b",
+    destello: "184,237,114",
+    intensidadDestello: "0.05",
+
+    marcaCuadro: "#1f2328",
   },
   claro: {
     panel: "#ffffff",
-    panelBorde: "#ccd4da",
-    linea: "#e2e7eb",
+    panelBorde: "#dcdbd6",
+    linea: "#ebeae6",
 
-    titulo: "#12181d",
-    texto: "#28323a",
-    secundario: "#5a666e",
-    terciario: "#7d888f",
+    titulo: "#131417",
+    texto: "#33352f",
+    secundario: "#5e6059",
+    terciario: "#6f716b",
 
-    bloqueadoFuerte: "#9aa4ab",
-    bloqueadoSuave: "#aab3b9",
+    bloqueadoFuerte: "#8b8d86",
+    bloqueadoSuave: "#a2a49d",
 
-    acento: "#1f8a4c",
-    filaActiva: "#e6f4ea",
-    filaActivaBorde: "#9dcfae",
-    filaHover: "#eef1f4",
-    filaActivaHover: "#d9edde",
+    acento: "#43661d",
+    filaActiva: "#f4f6f1",
+    filaActivaBorde: "#c7d1bb",
+    filaHover: "#f5f4f0",
+    filaActivaHover: "#ebf0e4",
 
-    huecoBarra: "#dde3e8",
+    huecoBarra: "#e6e5e0",
 
-    fondoAlto: "#f2f5f7",
-    fondoBajo: "#e2e7ec",
+    fondoAlto: "#f3f2ee",
+    fondoBajo: "#e9e8e3",
     destello: "255,255,255",
+    intensidadDestello: "0.10",
+
+    marcaCuadro: "#0d0e10",
   },
 };
 
@@ -161,6 +175,31 @@ export function mostrarMenuPrincipal(
   gui.useSmallestIdeal = true;
 
   gui.addControl(crearFondo());
+  // La marca arriba a la izquierda, como en la barra del portal: el curso se
+  // sigue viendo como parte de ClassPlay.
+  gui.addControl(crearMarca());
+
+  // Quién está jugando, arriba a la derecha y frente a la marca, como en la
+  // barra del portal. Sin esto, en un computador compartido de planta nadie
+  // sabe con qué sesión está abierto el curso. Antes iba dentro del panel,
+  // en la esquina, y con un título largo los dos textos se tocaban.
+  if (usuario) {
+    const identidad = new TextBlock("usuarioMenu", usuario);
+    identidad.color = C.secundario;
+    identidad.fontSize = 14;
+    identidad.fontWeight = "500";
+    identidad.width = "520px";
+    identidad.height = "30px";
+    identidad.left = "-40px";
+    identidad.top = "32px";
+    identidad.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    identidad.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    identidad.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    identidad.isHitTestVisible = false;
+    gui.addControl(identidad);
+  }
+
+  const unidad = encabezado.unidad ?? UNIDAD_POR_DEFECTO;
 
   // El tutorial (numero 0) aparece como una fila mas, pero NO es una de las
   // cinco fases: no cuenta para el progreso ni agrega un segmento a la barra.
@@ -183,7 +222,7 @@ export function mostrarMenuPrincipal(
   columna.width = ANCHO - 2 + "px";
   panel.addControl(columna);
 
-  columna.addControl(crearCabecera(encabezado, usuario));
+  columna.addControl(crearCabecera(encabezado));
   columna.addControl(separador("sepCabecera"));
 
   const filas: Array<{ marco: Rectangle; zona: Button; nivel: NivelMenuInfo }> = [];
@@ -195,10 +234,10 @@ export function mostrarMenuPrincipal(
   });
 
   columna.addControl(separador("sepProgreso"));
-  const progreso = crearProgreso(completadas, fases.length);
+  const progreso = crearProgreso(completadas, fases.length, unidad);
   columna.addControl(progreso.bloque);
 
-  const pie = crearPie(certificadoListo, Boolean(onCerrarSesion), fases.length);
+  const pie = crearPie(certificadoListo, Boolean(onCerrarSesion), fases.length, unidad);
   columna.addControl(pie.barra);
 
   // --- Interaccion ---
@@ -263,7 +302,7 @@ export function mostrarMenuPrincipal(
     // fases.length y NO niveles.length: la lista completa incluye el tutorial,
     // que no es una fase del curso. Usarla acá hacía que el contador dijera
     // "5 de 6 fases" con el curso entero terminado.
-    progreso.contador.text = Math.round(completadas * pConteo) + " de " + fases.length + " fases";
+    progreso.contador.text = `${Math.round(completadas * pConteo)} de ${fases.length} ${unidad.varias}`;
 
     progreso.rellenos.forEach((relleno, i) => {
       if (i >= completadas) return;
@@ -296,7 +335,7 @@ function crearFondo(): Image {
   ctx.fillRect(0, 0, 1600, 900);
 
   const luz = ctx.createRadialGradient(800, 300, 0, 800, 300, 900);
-  luz.addColorStop(0, `rgba(${C.destello},0.10)`);
+  luz.addColorStop(0, `rgba(${C.destello},${C.intensidadDestello})`);
   luz.addColorStop(1, `rgba(${C.destello},0)`);
   ctx.fillStyle = luz;
   ctx.fillRect(0, 0, 1600, 900);
@@ -318,7 +357,7 @@ function crearFondo(): Image {
 // cualquier equipo. Los emoji dependen de la fuente del sistema.
 function crearIcono(
   nombre: string,
-  tipo: "candado" | "check" | "flecha" | "sello" | "copa" | "salida",
+  tipo: "candado" | "check" | "flecha" | "sello" | "copa" | "volver" | "juego",
   color: string,
   tamano: number
 ): Image {
@@ -330,7 +369,7 @@ function crearIcono(
   ctx.scale(lado / 24, lado / 24);
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.8;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
@@ -355,22 +394,24 @@ function crearIcono(
     ctx.lineTo(16.2, 12);
     ctx.lineTo(10, 18.2);
     ctx.stroke();
-  } else if (tipo === "salida") {
-    // Puerta con flecha saliendo: el simbolo universal de cerrar sesion.
+  } else if (tipo === "volver") {
+    // Flecha hacia atrás: vuelve a la lista de cursos, no cierra la sesión.
     ctx.beginPath();
-    ctx.moveTo(13.5, 4.5);
-    ctx.lineTo(5.5, 4.5);
-    ctx.lineTo(5.5, 19.5);
-    ctx.lineTo(13.5, 19.5);
+    ctx.moveTo(19.5, 12);
+    ctx.lineTo(4.5, 12);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(11, 12);
-    ctx.lineTo(20, 12);
+    ctx.moveTo(10.5, 6);
+    ctx.lineTo(4.5, 12);
+    ctx.lineTo(10.5, 18);
     ctx.stroke();
+  } else if (tipo === "juego") {
+    // Triángulo de reproducir, para el tutorial: no es una fase numerada.
     ctx.beginPath();
-    ctx.moveTo(16.8, 8.4);
-    ctx.lineTo(20.4, 12);
-    ctx.lineTo(16.8, 15.6);
+    ctx.moveTo(8, 5.5);
+    ctx.lineTo(18.5, 12);
+    ctx.lineTo(8, 18.5);
+    ctx.closePath();
     ctx.stroke();
   } else if (tipo === "copa") {
     ctx.beginPath();
@@ -442,38 +483,22 @@ function trazarRectRedondo(ctx: CanvasRenderingContext2D, x: number, y: number, 
 // Cabecera
 // ---------------------------------------------------------------------------
 
-function crearCabecera(encabezado: EncabezadoCurso, usuario?: string): Rectangle {
+function crearCabecera(encabezado: EncabezadoCurso): Rectangle {
   const cabecera = new Rectangle("cabeceraMenu");
   cabecera.width = ANCHO - 2 + "px";
   cabecera.height = "118px";
   cabecera.thickness = 0;
   cabecera.background = "transparent";
 
-  const titulo = new TextBlock("tituloMenu", encabezado.titulo.toUpperCase());
+  // Con mayúsculas y minúsculas, como los títulos del portal y la landing.
+  const titulo = new TextBlock("tituloMenu", encabezado.titulo);
   titulo.color = C.titulo;
-  titulo.fontSize = 38;
+  titulo.fontSize = 36;
   titulo.fontWeight = "600";
   titulo.height = "46px";
   titulo.top = "26px";
   titulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   cabecera.addControl(titulo);
-
-  // Quien esta jugando, arriba a la izquierda. Sin esto, en un computador
-  // compartido de planta nadie sabe con que sesion esta abierto el curso.
-  if (usuario) {
-    const identidad = new TextBlock("usuarioMenu", usuario);
-    identidad.color = C.secundario;
-    identidad.fontSize = 13;
-    identidad.width = "300px";
-    identidad.height = "20px";
-    identidad.left = "26px";
-    identidad.top = "18px";
-    identidad.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    identidad.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    identidad.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    identidad.isHitTestVisible = false;
-    cabecera.addControl(identidad);
-  }
 
   const bajada = new TextBlock("bajadaMenu", encabezado.bajada);
   bajada.color = C.secundario;
@@ -565,20 +590,28 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
   const colorTermino = estado === "bloqueado" ? C.bloqueadoFuerte : C.titulo;
   const colorTraduccion = estado === "bloqueado" ? C.bloqueadoSuave : C.secundario;
 
-  const numero = new TextBlock(
-    "numeroFila_" + nivel.numero,
-    nivel.numero === 0 ? "\u25B8" : "0" + nivel.numero
-  );
-  numero.color = colorNumero;
-  numero.fontSize = 14;
-  numero.width = "40px";
-  numero.left = "22px";
-  numero.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-  numero.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-  numero.isHitTestVisible = false;
-  zona.addControl(numero);
+  if (nivel.numero === 0) {
+    // El tutorial no es una fase: lleva el triángulo de reproducir y no un
+    // número.
+    const juego = crearIcono("numeroFila_0", "juego", colorNumero, 15);
+    juego.left = "21px";
+    juego.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    zona.addControl(juego);
+  } else {
+    const numero = new TextBlock("numeroFila_" + nivel.numero, "0" + nivel.numero);
+    numero.color = colorNumero;
+    numero.fontSize = 14;
+    numero.width = "40px";
+    numero.left = "22px";
+    numero.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    numero.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    numero.isHitTestVisible = false;
+    zona.addControl(numero);
+  }
 
-  const texto = separado.termino.toUpperCase();
+  // Mayúscula inicial y el resto en minúscula: "CONDOMINIO" y "Seiri" quedan
+  // escritos igual, como en el portal.
+  const texto = capitalizar(separado.termino);
   const termino = new TextBlock("terminoFila_" + nivel.numero, texto);
   termino.color = colorTermino;
   // El cuerpo se ajusta al largo del nombre.
@@ -591,7 +624,7 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
   // Encogerlo es mejor que ensanchar la columna: ensanchándola habría que
   // correr la descripción y el estado para todos los cursos, y los nombres
   // cortos —que son la mayoría— perderían la presencia que tienen ahora.
-  termino.fontSize = texto.length <= 9 ? 23 : texto.length <= 11 ? 20 : 17;
+  termino.fontSize = texto.length <= 10 ? 22 : 19;
   termino.fontWeight = estado === "bloqueado" ? "400" : "600";
   termino.width = "190px";
   termino.left = "70px";
@@ -649,7 +682,11 @@ function crearFila(nivel: NivelMenuInfo): { marco: Rectangle; zona: Button } {
 // Progreso
 // ---------------------------------------------------------------------------
 
-function crearProgreso(completadas: number, totalFases: number): {
+function crearProgreso(
+  completadas: number,
+  totalFases: number,
+  unidad: { una: string; varias: string }
+): {
   bloque: Rectangle;
   contador: TextBlock;
   rellenos: Rectangle[];
@@ -673,7 +710,7 @@ function crearProgreso(completadas: number, totalFases: number): {
   rotulo.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
   bloque.addControl(rotulo);
 
-  const contador = new TextBlock("contadorProgreso", "0 de " + totalFases + " fases");
+  const contador = new TextBlock("contadorProgreso", `0 de ${totalFases} ${unidad.varias}`);
   contador.color = completadas > 0 ? C.texto : C.secundario;
   contador.fontSize = 14;
   contador.fontWeight = "600";
@@ -724,7 +761,12 @@ function crearProgreso(completadas: number, totalFases: number): {
 // Barra inferior: ranking + certificado
 // ---------------------------------------------------------------------------
 
-function crearPie(certificadoListo: boolean, conSesion: boolean, totalFases: number): {
+function crearPie(
+  certificadoListo: boolean,
+  conSalida: boolean,
+  totalFases: number,
+  unidad: { una: string; varias: string }
+): {
   barra: Rectangle;
   ranking: Button;
   certificado: Button | null;
@@ -743,12 +785,13 @@ function crearPie(certificadoListo: boolean, conSesion: boolean, totalFases: num
   let certificado: Button | null = null;
   let salir: Button | null = null;
 
-  // Salir de la sesion, junto al Ranking. Centrado se solapaba con la nota
-  // del certificado, que ocupa 400 px a la derecha. Siempre visible: en un
-  // equipo compartido, el turno siguiente tiene que poder entrar con su
-  // propia cuenta sin recargar la pagina.
-  if (conSesion) {
-    salir = crearBotonPie("botonSalir", "Cerrar sesión", "salida", C.terciario, 158);
+  // Volver a la lista de cursos, junto al Ranking. Centrado se solapaba con
+  // la nota del certificado, que ocupa 400 px a la derecha.
+  //
+  // Decía "Cerrar sesión", pero nunca la cerró: lleva al catálogo, donde sí
+  // está el botón para salir. El rótulo ahora dice lo que hace.
+  if (conSalida) {
+    salir = crearBotonPie("botonSalir", "Mis cursos", "volver", C.secundario, 140);
     salir.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     salir.left = "150px";
     barra.addControl(salir);
@@ -763,7 +806,7 @@ function crearPie(certificadoListo: boolean, conSesion: boolean, totalFases: num
     // tres y el cinco venía escrito a mano de cuando solo existía el 5S.
     const nota = new TextBlock(
       "notaCertificado",
-      `El certificado se habilita al completar las ${totalFases} fases`
+      `El certificado se habilita al completar ${totalFases === 1 ? `el ${unidad.una}` : `los ${totalFases} ${unidad.varias}`}`
     );
     nota.color = C.terciario;
     nota.fontSize = 13;
@@ -780,7 +823,7 @@ function crearPie(certificadoListo: boolean, conSesion: boolean, totalFases: num
 function crearBotonPie(
   nombre: string,
   etiqueta: string,
-  icono: "copa" | "sello" | "salida",
+  icono: "copa" | "sello" | "volver",
   color: string,
   ancho: number
 ): Button {
@@ -831,6 +874,70 @@ function separador(nombre: string): Rectangle {
   marco.thickness = 0;
   marco.background = C.linea;
   return marco;
+}
+
+function capitalizar(texto: string): string {
+  const minusculas = texto.trim().toLocaleLowerCase("es");
+  return minusculas.charAt(0).toLocaleUpperCase("es") + minusculas.slice(1);
+}
+
+/**
+ * La marca de ClassPlay: el cuadro con la C y el nombre, dibujados en un
+ * lienzo con la letra Geist y puestos como imagen.
+ *
+ * Como imagen y no como dos textos: el punto final va en otro color, y dos
+ * textos de Babylon no se pueden pegar uno al otro con precisión.
+ */
+function crearMarca(): Image {
+  const ESCALA = 4;
+  const ALTO = 30;
+  const SEPARACION = 10;
+  const FUENTE = '650 21px "Geist", system-ui, sans-serif';
+
+  const medida = document.createElement("canvas").getContext("2d")!;
+  medida.font = FUENTE;
+  (medida as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "-1px";
+  const anchoNombre = Math.ceil(medida.measureText("classplay.").width) + 2;
+  const ancho = ALTO + SEPARACION + anchoNombre;
+
+  const lienzo = document.createElement("canvas");
+  lienzo.width = ancho * ESCALA;
+  lienzo.height = ALTO * ESCALA;
+  const ctx = lienzo.getContext("2d")!;
+  ctx.scale(ESCALA, ESCALA);
+
+  // El símbolo, con los trazados de inicio/img/favicon.svg.
+  ctx.save();
+  ctx.scale(ALTO / 64, ALTO / 64);
+  ctx.fillStyle = C.marcaCuadro;
+  trazarRectRedondo(ctx, 0, 0, 64, 64, 14);
+  ctx.fill();
+  ctx.strokeStyle = "#b8ed72";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "butt";
+  ctx.stroke(new Path2D("M40 17H26a15 15 0 0 0 0 30h14"));
+  ctx.fillStyle = "#b8ed72";
+  ctx.fill(new Path2D("m31 24 12 8-12 8z"));
+  ctx.restore();
+
+  ctx.font = FUENTE;
+  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "-1px";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = C.titulo;
+  ctx.fillText("classplay", ALTO + SEPARACION, ALTO / 2 + 1);
+  const anchoSinPunto = ctx.measureText("classplay").width;
+  ctx.fillStyle = C.acento;
+  ctx.fillText(".", ALTO + SEPARACION + anchoSinPunto, ALTO / 2 + 1);
+
+  const imagen = new Image("marcaMenu", lienzo.toDataURL("image/png"));
+  imagen.width = ancho + "px";
+  imagen.height = ALTO + "px";
+  imagen.left = "40px";
+  imagen.top = "32px";
+  imagen.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+  imagen.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+  imagen.isHitTestVisible = false;
+  return imagen;
 }
 
 function separarNombre(nombre: string): { termino: string; traduccion: string } {
